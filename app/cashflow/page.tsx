@@ -11,10 +11,26 @@ export default async function CashflowPage() {
     .from('income_schedule')
     .select('*')
 
-  const paymentsBeforeNextPay =
-    payments?.filter((payment) =>
-      payment.due_day && payment.due_day <= 18
-    ) || []
+  const currentMonth = new Date().getMonth() + 1
+
+const paymentsBeforeNextPay =
+  payments?.filter((payment) => {
+    const effectiveDay = payment.grace_day || payment.due_day
+
+    if (!effectiveDay || effectiveDay > 18) {
+      return false
+    }
+
+    if (payment.active_months) {
+      const months = payment.active_months
+        .split(',')
+        .map((month: string) => Number(month.trim()))
+
+      return months.includes(currentMonth)
+    }
+
+    return true
+  }) || []
 
   const totalDueBeforeNextPay =
     paymentsBeforeNextPay.reduce(
