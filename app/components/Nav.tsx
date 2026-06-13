@@ -14,6 +14,7 @@ export default function Nav() {
       <a href="/future-obligations">🔮 Futuro</a>
       <a href="/income">💵 Income</a>
       <a href="/timeline">📅 Timeline</a>
+      <a href="/assets">📦 Assets</a>
     </nav>
   )
 }
