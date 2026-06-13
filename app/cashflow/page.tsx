@@ -1,4 +1,5 @@
 import { supabase } from '@/lib/supabase'
+import Nav from '../components/Nav'
 
 export default async function CashflowPage() {
   const { data: payments } = await supabase
@@ -40,9 +41,11 @@ const paymentsBeforeNextPay =
 
   return (
     <main className="p-8 space-y-6">
-      <h1 className="text-3xl font-bold">💰 Cash Flow</h1>
+  <h1 className="text-3xl font-bold">💰 Cash Flow</h1>
 
-      <section className="border rounded p-4">
+  <Nav />
+
+  <section className="border rounded p-4">
         <h2 className="text-xl font-semibold">Próximo ingreso principal</h2>
         <p>Manuel - 18 de junio</p>
       </section>

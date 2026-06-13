@@ -8,6 +8,7 @@ export default function AdvisorPage() {
   const [accounts, setAccounts] = useState<any[]>([])
   const [payments, setPayments] = useState<any[]>([])
   const [cards, setCards] = useState<any[]>([])
+  const [income, setIncome] = useState<any[]>([])
   const [question, setQuestion] = useState('')
   const [answer, setAnswer] = useState('')
 
@@ -28,75 +29,110 @@ export default function AdvisorPage() {
       .select('*')
       .eq('is_active', true)
 
+    const { data: incomeData } = await supabase
+      .from('income_schedule')
+      .select('*')
+
     setAccounts(accountsData || [])
     setPayments(paymentsData || [])
     setCards(cardsData || [])
+    setIncome(incomeData || [])
   }
 
   useEffect(() => {
     loadData()
   }, [])
 
-  const spendableCash =
-    accounts
-      .filter((account) => account.is_spendable)
-      .reduce((sum, account) => sum + Number(account.balance || 0), 0)
+  const today = new Date()
+  const nextPayDate = new Date('2026-06-18')
 
-  const pendingPayments =
-    payments.filter((payment) => payment.status !== 'paid')
+  const spendableCash = accounts
+    .filter((account) => account.is_spendable)
+    .reduce((sum, account) => sum + Number(account.balance || 0), 0)
 
-  const pendingTotal =
-    pendingPayments.reduce(
-      (sum, payment) => sum + Number(payment.amount || 0),
-      0
-    )
+  const pendingPayments = payments.filter((payment) => payment.status !== 'paid')
 
-  const projectedCash = spendableCash - pendingTotal
+  const paymentsBeforeNextPay = pendingPayments.filter((payment) => {
+    const dueDate = new Date(payment.effective_due_date)
+    return dueDate < nextPayDate
+  })
 
-  const totalDebt =
-    cards.reduce((sum, card) => sum + Number(card.balance || 0), 0)
+  const paymentsOnOrAfterNextPay = pendingPayments.filter((payment) => {
+    const dueDate = new Date(payment.effective_due_date)
+    return dueDate >= nextPayDate
+  })
+
+  const dueBeforeNextPay = paymentsBeforeNextPay.reduce(
+    (sum, payment) => sum + Number(payment.amount || 0),
+    0
+  )
+
+  const dueOnOrAfterNextPay = paymentsOnOrAfterNextPay.reduce(
+    (sum, payment) => sum + Number(payment.amount || 0),
+    0
+  )
+
+  const knownIncomeBeforeOrOnNextPay = income
+    .filter((item) => {
+      if (!item.next_expected_date) return false
+      const incomeDate = new Date(item.next_expected_date)
+      return incomeDate <= nextPayDate
+    })
+    .reduce((sum, item) => sum + Number(item.amount || 0), 0)
+
+  const cashBeforePaycheck = spendableCash - dueBeforeNextPay
+
+  const cashAfterPaycheckAndPayments =
+    spendableCash +
+    knownIncomeBeforeOrOnNextPay -
+    dueBeforeNextPay -
+    dueOnOrAfterNextPay
+
+  const totalDebt = cards.reduce(
+    (sum, card) => sum + Number(card.balance || 0),
+    0
+  )
 
   function analyzeQuestion() {
     const lower = question.toLowerCase()
-
     const amountMatch = lower.match(/(\d+(\.\d+)?)/)
     const requestedAmount = amountMatch ? Number(amountMatch[0]) : 0
 
     if (!question.trim()) {
-      setAnswer('Escribe una pregunta o decisión para analizar.')
+      setAnswer('Escribe una decisión para analizar.')
       return
     }
 
     if (requestedAmount === 0) {
+      setAnswer('Necesito un monto para evaluar el impacto.')
+      return
+    }
+
+    const beforePaycheckAfterDecision = cashBeforePaycheck - requestedAmount
+    const afterPaycheckAfterDecision =
+      cashAfterPaycheckAndPayments - requestedAmount
+
+    if (beforePaycheckAfterDecision < 0) {
       setAnswer(
-        'Entiendo la idea, pero necesito un monto para poder evaluar el impacto en el cash flow.'
+        `⚠️ Antes del próximo cheque quedarías corto por $${Math.abs(
+          beforePaycheckAfterDecision
+        ).toLocaleString()}. Aunque algunos pagos son el día 18, primero confirma que el ingreso entra antes de pagar.`
       )
       return
     }
 
-    const remainingAfterDecision = projectedCash - requestedAmount
-
-    if (projectedCash < 0) {
+    if (afterPaycheckAfterDecision < 0) {
       setAnswer(
-        `⚠️ Ahora mismo el disponible proyectado está negativo en $${Math.abs(
-          projectedCash
-        ).toLocaleString()}. No recomiendo usar dinero en esa decisión hasta cubrir los pagos pendientes.`
+        `❌ No lo recomiendo. Después de considerar el próximo ingreso y pagos pendientes, quedarías corto por $${Math.abs(
+          afterPaycheckAfterDecision
+        ).toLocaleString()}.`
       )
       return
     }
 
-    if (remainingAfterDecision < 0) {
+    if (afterPaycheckAfterDecision < 150) {
       setAnswer(
-        `❌ No lo recomiendo ahora. Si usas $${requestedAmount.toLocaleString()}, quedarías corto por $${Math.abs(
-          remainingAfterDecision
-        ).toLocaleString()} después de los pagos pendientes.`
-      )
-      return
-    }
-
-    if (remainingAfterDecision < 100) {
-      setAnswer(
-        `⚠️ Se podría, pero quedarías con solo $${remainingAfterDecision.toLocaleString()} después de pagos pendientes. Recomiendo bajar el monto o esperar al próximo ingreso.`
+        `⚠️ Se puede, pero quedarías con solo $${afterPaycheckAfterDecision.toLocaleString()} después del próximo ingreso y pagos. Mejor usar menos o esperar.`
       )
       return
     }
@@ -108,7 +144,7 @@ export default function AdvisorPage() {
       lower.includes('andrea')
     ) {
       setAnswer(
-        `✅ Se puede considerar. Si usas $${requestedAmount.toLocaleString()}, quedarías con $${remainingAfterDecision.toLocaleString()} después de pagos pendientes. Recomendación: si no es urgente, usar una parte ahora y guardar otra para Popular Visa.`
+        `✅ Se puede considerar. Usar $${requestedAmount.toLocaleString()} para los cuartos dejaría aproximadamente $${afterPaycheckAfterDecision.toLocaleString()} después del próximo ingreso y pagos pendientes.`
       )
       return
     }
@@ -119,13 +155,13 @@ export default function AdvisorPage() {
       lower.includes('tarjeta')
     ) {
       setAnswer(
-        `✅ Tiene sentido priorizar deuda, especialmente Popular Visa. Si pagas $${requestedAmount.toLocaleString()}, aún quedarías con $${remainingAfterDecision.toLocaleString()} después de pagos pendientes.`
+        `✅ Tiene sentido atacar deuda, especialmente Popular Visa. Si pagas $${requestedAmount.toLocaleString()}, quedarías con aproximadamente $${afterPaycheckAfterDecision.toLocaleString()} después del próximo ingreso y pagos.`
       )
       return
     }
 
     setAnswer(
-      `✅ Se puede evaluar. Si usas $${requestedAmount.toLocaleString()}, quedarías con $${remainingAfterDecision.toLocaleString()} después de pagos pendientes. Antes de hacerlo, valida si hay algún pago no registrado.`
+      `✅ Se puede evaluar. Después de usar $${requestedAmount.toLocaleString()}, quedarías con aproximadamente $${afterPaycheckAfterDecision.toLocaleString()} considerando el próximo ingreso y pagos pendientes.`
     )
   }
 
@@ -138,30 +174,22 @@ export default function AdvisorPage() {
       <section className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <div className="border rounded p-4">
           <h2 className="font-semibold">💰 Disponible Hoy</h2>
-          <p className="text-3xl font-bold">
-            ${spendableCash.toLocaleString()}
-          </p>
+          <p className="text-3xl font-bold">${spendableCash.toLocaleString()}</p>
         </div>
 
         <div className="border rounded p-4">
-          <h2 className="font-semibold">📅 Pagos Pendientes</h2>
-          <p className="text-3xl font-bold">
-            ${pendingTotal.toLocaleString()}
-          </p>
+          <h2 className="font-semibold">⚠️ Antes del próximo cheque</h2>
+          <p className="text-3xl font-bold">${cashBeforePaycheck.toLocaleString()}</p>
         </div>
 
         <div className="border rounded p-4">
-          <h2 className="font-semibold">📊 Disponible Proyectado</h2>
-          <p className="text-3xl font-bold">
-            ${projectedCash.toLocaleString()}
-          </p>
+          <h2 className="font-semibold">📊 Después del cheque y pagos</h2>
+          <p className="text-3xl font-bold">${cashAfterPaycheckAndPayments.toLocaleString()}</p>
         </div>
 
         <div className="border rounded p-4">
           <h2 className="font-semibold">💳 Deuda Tarjetas</h2>
-          <p className="text-3xl font-bold">
-            ${totalDebt.toLocaleString()}
-          </p>
+          <p className="text-3xl font-bold">${totalDebt.toLocaleString()}</p>
         </div>
       </section>
 
@@ -175,15 +203,12 @@ export default function AdvisorPage() {
           onChange={(e) => setQuestion(e.target.value)}
         />
 
-        <button
-          className="border rounded p-3"
-          onClick={analyzeQuestion}
-        >
+        <button className="border rounded p-3" onClick={analyzeQuestion}>
           Analizar decisión
         </button>
 
         {answer && (
-         <div className="border rounded p-4">
+          <div className="border rounded p-4">
             <h3 className="font-bold mb-2">Respuesta</h3>
             <p>{answer}</p>
           </div>
@@ -191,12 +216,25 @@ export default function AdvisorPage() {
       </section>
 
       <section className="border rounded p-4">
-        <h2 className="text-2xl font-bold mb-4">
-          📌 Pagos considerados
-        </h2>
+        <h2 className="text-2xl font-bold mb-4">📌 Pagos antes del próximo cheque</h2>
 
         <div className="space-y-3">
-          {pendingPayments.map((payment) => (
+          {paymentsBeforeNextPay.map((payment) => (
+            <div key={payment.id} className="border rounded p-4">
+              <strong>{payment.name}</strong>
+              <p>${Number(payment.amount || 0).toLocaleString()}</p>
+              <p>Estado: {payment.status}</p>
+              <p>Fecha efectiva: {payment.effective_due_date}</p>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <section className="border rounded p-4">
+        <h2 className="text-2xl font-bold mb-4">📅 Pagos del día del cheque o después</h2>
+
+        <div className="space-y-3">
+          {paymentsOnOrAfterNextPay.map((payment) => (
             <div key={payment.id} className="border rounded p-4">
               <strong>{payment.name}</strong>
               <p>${Number(payment.amount || 0).toLocaleString()}</p>
