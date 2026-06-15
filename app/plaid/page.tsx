@@ -1,0 +1,68 @@
+'use client'
+
+import { useEffect, useState } from 'react'
+import { usePlaidLink } from 'react-plaid-link'
+import Nav from '../components/Nav'
+
+export default function PlaidPage() {
+  const [linkToken, setLinkToken] = useState<string | null>(null)
+  const [message, setMessage] = useState('')
+
+  useEffect(() => {
+    async function createLinkToken() {
+      const response = await fetch('/api/plaid/create-link-token', {
+        method: 'POST',
+      })
+
+      const data = await response.json()
+      setLinkToken(data.link_token)
+    }
+
+    createLinkToken()
+  }, [])
+
+  const { open, ready } = usePlaidLink({
+    token: linkToken,
+    onSuccess: async (public_token) => {
+      const response = await fetch('/api/plaid/exchange-public-token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ public_token }),
+      })
+
+      const data = await response.json()
+
+      if (data.access_token_received) {
+        setMessage('Plaid conectado correctamente ✅')
+      } else {
+        setMessage('No se pudo conectar Plaid.')
+      }
+    },
+  })
+
+  return (
+    <main className="p-8 space-y-6">
+      <h1 className="text-4xl font-bold">🔗 Plaid</h1>
+
+      <Nav />
+
+      <p>
+        Conecta una cuenta de prueba en Plaid Sandbox para validar balances y transacciones.
+      </p>
+
+      <button
+        className="border rounded p-3"
+        onClick={() => open()}
+        disabled={!ready}
+      >
+        Conectar con Plaid
+      </button>
+
+      {message && (
+        <div className="border rounded p-4">
+          {message}
+        </div>
+      )}
+    </main>
+  )
+}
