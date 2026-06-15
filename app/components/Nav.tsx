@@ -16,6 +16,7 @@ export default function Nav() {
       <a href="/timeline">📅 Timeline</a>
       <a href="/assets">📦 Assets</a>
       <a href="/health-score">🏥 Health Score</a>
+      <a href="/imports">📥 Imports</a>
     </nav>
   )
 }
