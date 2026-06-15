@@ -8,6 +8,7 @@ export default function PlaidPage() {
   const [linkToken, setLinkToken] = useState<string | null>(null)
   const [accessToken, setAccessToken] = useState('')
   const [accounts, setAccounts] = useState<any[]>([])
+  const [transactions, setTransactions] = useState<any[]>([])
   const [message, setMessage] = useState('')
 
   useEffect(() => {
@@ -39,6 +40,22 @@ export default function PlaidPage() {
 
     setAccounts(data.accounts || [])
   }
+  async function loadTransactions(token: string) {
+  const response = await fetch('/api/plaid/transactions', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ access_token: token }),
+  })
+
+  const data = await response.json()
+
+  if (data.error) {
+    setMessage(data.error)
+    return
+  }
+
+  setTransactions(data.added || [])
+}
 
   const { open, ready } = usePlaidLink({
     token: linkToken,
@@ -55,6 +72,7 @@ export default function PlaidPage() {
         setAccessToken(data.access_token)
         setMessage('Plaid conectado correctamente ✅')
         loadAccounts(data.access_token)
+        loadTransactions(data.access_token)
       } else {
         setMessage('No se pudo conectar Plaid.')
       }
@@ -115,6 +133,38 @@ export default function PlaidPage() {
           </div>
         </section>
       )}
+      {transactions.length > 0 && (
+  <section className="border rounded p-4">
+    <h2 className="text-2xl font-bold mb-4">Transacciones Plaid</h2>
+
+    <div className="space-y-3">
+      {transactions.map((transaction) => (
+        <div key={transaction.transaction_id} className="border rounded p-4">
+          <h3 className="font-bold">
+            {transaction.merchant_name || transaction.name}
+          </h3>
+
+          <p>Fecha: {transaction.date}</p>
+
+          <p>
+            Monto: $
+            {Number(transaction.amount || 0).toLocaleString()}
+          </p>
+
+          <p>
+            Categoría Plaid:{' '}
+            {transaction.personal_finance_category?.primary || 'N/A'}
+          </p>
+
+          <p>
+            Detalle:{' '}
+            {transaction.personal_finance_category?.detailed || 'N/A'}
+          </p>
+        </div>
+      ))}
+    </div>
+  </section>
+)}
     </main>
   )
 }
