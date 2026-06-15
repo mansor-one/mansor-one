@@ -6,6 +6,8 @@ import Nav from '../components/Nav'
 
 export default function PlaidPage() {
   const [linkToken, setLinkToken] = useState<string | null>(null)
+  const [accessToken, setAccessToken] = useState('')
+  const [accounts, setAccounts] = useState<any[]>([])
   const [message, setMessage] = useState('')
 
   useEffect(() => {
@@ -21,6 +23,23 @@ export default function PlaidPage() {
     createLinkToken()
   }, [])
 
+  async function loadAccounts(token: string) {
+    const response = await fetch('/api/plaid/accounts', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ access_token: token }),
+    })
+
+    const data = await response.json()
+
+    if (data.error) {
+      setMessage(data.error)
+      return
+    }
+
+    setAccounts(data.accounts || [])
+  }
+
   const { open, ready } = usePlaidLink({
     token: linkToken,
     onSuccess: async (public_token) => {
@@ -33,7 +52,9 @@ export default function PlaidPage() {
       const data = await response.json()
 
       if (data.access_token_received) {
+        setAccessToken(data.access_token)
         setMessage('Plaid conectado correctamente ✅')
+        loadAccounts(data.access_token)
       } else {
         setMessage('No se pudo conectar Plaid.')
       }
@@ -62,6 +83,37 @@ export default function PlaidPage() {
         <div className="border rounded p-4">
           {message}
         </div>
+      )}
+
+      {accessToken && (
+        <div className="border rounded p-4">
+          <h2 className="font-bold">Access Token recibido</h2>
+          <p>Sandbox token activo ✅</p>
+        </div>
+      )}
+
+      {accounts.length > 0 && (
+        <section className="border rounded p-4">
+          <h2 className="text-2xl font-bold mb-4">Cuentas Plaid</h2>
+
+          <div className="space-y-3">
+            {accounts.map((account) => (
+              <div key={account.account_id} className="border rounded p-4">
+                <h3 className="font-bold">{account.name}</h3>
+                <p>Tipo: {account.type}</p>
+                <p>Subtipo: {account.subtype}</p>
+                <p>
+                  Balance disponible: $
+                  {Number(account.balances.available || 0).toLocaleString()}
+                </p>
+                <p>
+                  Balance actual: $
+                  {Number(account.balances.current || 0).toLocaleString()}
+                </p>
+              </div>
+            ))}
+          </div>
+        </section>
       )}
     </main>
   )

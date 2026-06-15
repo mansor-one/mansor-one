@@ -15,16 +15,25 @@ const configuration = new Configuration({
 
 const client = new PlaidApi(configuration)
 
+let sandboxAccessToken = ''
+
 export async function POST(request: Request) {
   const body = await request.json()
 
-  const response = await client.itemPublicTokenExchange({
-    public_token: body.public_token,
+  if (body.access_token) {
+    sandboxAccessToken = body.access_token
+  }
+
+  if (!sandboxAccessToken) {
+    return NextResponse.json(
+      { error: 'No access token available yet.' },
+      { status: 400 }
+    )
+  }
+
+  const response = await client.accountsBalanceGet({
+    access_token: sandboxAccessToken,
   })
 
-  return NextResponse.json({
-    item_id: response.data.item_id,
-    access_token: response.data.access_token,
-    access_token_received: true,
-  })
+  return NextResponse.json(response.data)
 }
