@@ -7,17 +7,26 @@ import Nav from '../components/Nav'
 export default function PlaidPage() {
   const [linkToken, setLinkToken] = useState<string | null>(null)
   const [accessToken, setAccessToken] = useState('')
+  const [mounted, setMounted] = useState(false)
   const [accounts, setAccounts] = useState<any[]>([])
   const [transactions, setTransactions] = useState<any[]>([])
   const [message, setMessage] = useState('')
 
   useEffect(() => {
+    setMounted(true)
+
     async function createLinkToken() {
       const response = await fetch('/api/plaid/create-link-token', {
         method: 'POST',
       })
 
       const data = await response.json()
+
+      if (data.error) {
+        setMessage(data.error)
+        return
+      }
+
       setLinkToken(data.link_token)
     }
 
@@ -40,22 +49,23 @@ export default function PlaidPage() {
 
     setAccounts(data.accounts || [])
   }
+
   async function loadTransactions(token: string) {
-  const response = await fetch('/api/plaid/transactions', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ access_token: token }),
-  })
+    const response = await fetch('/api/plaid/transactions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ access_token: token }),
+    })
 
-  const data = await response.json()
+    const data = await response.json()
 
-  if (data.error) {
-    setMessage(data.error)
-    return
+    if (data.error) {
+      setMessage(data.error)
+      return
+    }
+
+    setTransactions(data.added || [])
   }
-
-  setTransactions(data.added || [])
-}
 
   const { open, ready } = usePlaidLink({
     token: linkToken,
@@ -86,20 +96,26 @@ export default function PlaidPage() {
       <Nav />
 
       <p>
-        Conecta una cuenta de prueba en Plaid Sandbox para validar balances y transacciones.
+        Conecta una cuenta bancaria con Plaid para validar balances y transacciones.
       </p>
 
       <button
         className="border rounded p-3"
         onClick={() => open()}
-        disabled={!ready}
+        disabled={!mounted || !ready || !linkToken}
       >
-        Conectar con Plaid
+        {linkToken ? 'Conectar con Plaid' : 'Cargando Plaid...'}
       </button>
 
       {message && (
         <div className="border rounded p-4">
           {message}
+        </div>
+      )}
+
+      {accessToken && (
+        <div className="border rounded p-4">
+          Banco conectado correctamente ✅
         </div>
       )}
 
@@ -126,38 +142,39 @@ export default function PlaidPage() {
           </div>
         </section>
       )}
+
       {transactions.length > 0 && (
-  <section className="border rounded p-4">
-    <h2 className="text-2xl font-bold mb-4">Transacciones Plaid</h2>
+        <section className="border rounded p-4">
+          <h2 className="text-2xl font-bold mb-4">Transacciones Plaid</h2>
 
-    <div className="space-y-3">
-      {transactions.map((transaction) => (
-        <div key={transaction.transaction_id} className="border rounded p-4">
-          <h3 className="font-bold">
-            {transaction.merchant_name || transaction.name}
-          </h3>
+          <div className="space-y-3">
+            {transactions.map((transaction) => (
+              <div key={transaction.transaction_id} className="border rounded p-4">
+                <h3 className="font-bold">
+                  {transaction.merchant_name || transaction.name}
+                </h3>
 
-          <p>Fecha: {transaction.date}</p>
+                <p>Fecha: {transaction.date}</p>
 
-          <p>
-            Monto: $
-            {Number(transaction.amount || 0).toLocaleString()}
-          </p>
+                <p>
+                  Monto: $
+                  {Number(transaction.amount || 0).toLocaleString()}
+                </p>
 
-          <p>
-            Categoría Plaid:{' '}
-            {transaction.personal_finance_category?.primary || 'N/A'}
-          </p>
+                <p>
+                  Categoría Plaid:{' '}
+                  {transaction.personal_finance_category?.primary || 'N/A'}
+                </p>
 
-          <p>
-            Detalle:{' '}
-            {transaction.personal_finance_category?.detailed || 'N/A'}
-          </p>
-        </div>
-      ))}
-    </div>
-  </section>
-)}
+                <p>
+                  Detalle:{' '}
+                  {transaction.personal_finance_category?.detailed || 'N/A'}
+                </p>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
     </main>
   )
 }
