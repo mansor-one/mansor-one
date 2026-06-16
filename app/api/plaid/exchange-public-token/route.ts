@@ -1,3 +1,4 @@
+import { encrypt } from '@/lib/security/encryption'
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { Configuration, PlaidApi, PlaidEnvironments } from 'plaid'
@@ -29,15 +30,19 @@ export async function POST(request: Request) {
   })
 
   const accessToken = response.data.access_token
+  const encryptedToken = encrypt(accessToken)
   const itemId = response.data.item_id
 
   const { error } = await supabaseAdmin
-    .from('plaid_connections')
-    .insert({
-      item_id: itemId,
-      access_token: accessToken,
-      institution_name: body.institution_name || 'Unknown',
-    })
+  .from('plaid_connections')
+  .insert({
+    item_id: itemId,
+    access_token: null,
+    encrypted_access_token: encryptedToken.encrypted,
+    token_iv: encryptedToken.iv,
+    token_auth_tag: encryptedToken.authTag,
+    institution_name: body.institution_name || 'Unknown',
+  })
 
   if (error) {
   console.log('SUPABASE ERROR:', error)
