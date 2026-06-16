@@ -6,10 +6,7 @@ import Nav from '../components/Nav'
 
 export default function PlaidPage() {
   const [linkToken, setLinkToken] = useState<string | null>(null)
-  const [accessToken, setAccessToken] = useState('')
   const [mounted, setMounted] = useState(false)
-  const [accounts, setAccounts] = useState<any[]>([])
-  const [transactions, setTransactions] = useState<any[]>([])
   const [message, setMessage] = useState('')
 
   useEffect(() => {
@@ -33,40 +30,6 @@ export default function PlaidPage() {
     createLinkToken()
   }, [])
 
-  async function loadAccounts(token: string) {
-    const response = await fetch('/api/plaid/accounts', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ access_token: token }),
-    })
-
-    const data = await response.json()
-
-    if (data.error) {
-      setMessage(data.error)
-      return
-    }
-
-    setAccounts(data.accounts || [])
-  }
-
-  async function loadTransactions(token: string) {
-    const response = await fetch('/api/plaid/transactions', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ access_token: token }),
-    })
-
-    const data = await response.json()
-
-    if (data.error) {
-      setMessage(data.error)
-      return
-    }
-
-    setTransactions(data.added || [])
-  }
-
   const { open, ready } = usePlaidLink({
     token: linkToken,
     onSuccess: async (public_token) => {
@@ -79,12 +42,9 @@ export default function PlaidPage() {
       const data = await response.json()
 
       if (data.access_token_received) {
-        setAccessToken(data.access_token)
-        setMessage('Plaid conectado correctamente ✅')
-        loadAccounts(data.access_token)
-        loadTransactions(data.access_token)
+        setMessage('Banco conectado correctamente ✅')
       } else {
-        setMessage('No se pudo conectar Plaid.')
+        setMessage(data.error || 'No se pudo conectar Plaid.')
       }
     },
   })
@@ -96,7 +56,7 @@ export default function PlaidPage() {
       <Nav />
 
       <p>
-        Conecta una cuenta bancaria con Plaid para validar balances y transacciones.
+        Conecta una cuenta bancaria con Plaid. La conexión se guardará de forma segura en el servidor.
       </p>
 
       <button
@@ -111,69 +71,6 @@ export default function PlaidPage() {
         <div className="border rounded p-4">
           {message}
         </div>
-      )}
-
-      {accessToken && (
-        <div className="border rounded p-4">
-          Banco conectado correctamente ✅
-        </div>
-      )}
-
-      {accounts.length > 0 && (
-        <section className="border rounded p-4">
-          <h2 className="text-2xl font-bold mb-4">Cuentas Plaid</h2>
-
-          <div className="space-y-3">
-            {accounts.map((account) => (
-              <div key={account.account_id} className="border rounded p-4">
-                <h3 className="font-bold">{account.name}</h3>
-                <p>Tipo: {account.type}</p>
-                <p>Subtipo: {account.subtype}</p>
-                <p>
-                  Balance disponible: $
-                  {Number(account.balances.available || 0).toLocaleString()}
-                </p>
-                <p>
-                  Balance actual: $
-                  {Number(account.balances.current || 0).toLocaleString()}
-                </p>
-              </div>
-            ))}
-          </div>
-        </section>
-      )}
-
-      {transactions.length > 0 && (
-        <section className="border rounded p-4">
-          <h2 className="text-2xl font-bold mb-4">Transacciones Plaid</h2>
-
-          <div className="space-y-3">
-            {transactions.map((transaction) => (
-              <div key={transaction.transaction_id} className="border rounded p-4">
-                <h3 className="font-bold">
-                  {transaction.merchant_name || transaction.name}
-                </h3>
-
-                <p>Fecha: {transaction.date}</p>
-
-                <p>
-                  Monto: $
-                  {Number(transaction.amount || 0).toLocaleString()}
-                </p>
-
-                <p>
-                  Categoría Plaid:{' '}
-                  {transaction.personal_finance_category?.primary || 'N/A'}
-                </p>
-
-                <p>
-                  Detalle:{' '}
-                  {transaction.personal_finance_category?.detailed || 'N/A'}
-                </p>
-              </div>
-            ))}
-          </div>
-        </section>
       )}
     </main>
   )

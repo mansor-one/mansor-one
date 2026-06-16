@@ -18,6 +18,7 @@ export default function Nav() {
       <a href="/health-score">🏥 Health Score</a>
       <a href="/imports">📥 Imports</a>
       <a href="/plaid">🔗 Plaid</a>
+      <a href="/plaid-import">📥 Plaid Import</a>
     </nav>
   )
 }
