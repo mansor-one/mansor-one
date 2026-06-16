@@ -40,7 +40,25 @@ export default function PlaidImportPage() {
     setMessage(`Sincronización completada. Transacciones recibidas: ${data.imported_count}`)
     loadImports()
   }
+async function importTransaction(id: string) {
+  setMessage('Importando transacción...')
 
+  const response = await fetch('/api/plaid/import-transaction', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ id }),
+  })
+
+  const data = await response.json()
+
+  if (data.error) {
+    setMessage(data.error)
+    return
+  }
+
+  setMessage('Transacción importada correctamente ✅')
+  loadImports()
+}
   useEffect(() => {
     loadImports()
   }, [])
@@ -108,6 +126,12 @@ export default function PlaidImportPage() {
               Estado:{' '}
               {item.imported ? 'Importada' : 'Pendiente'}
             </p>
+            <button
+  className="border rounded p-2 mt-2"
+  onClick={() => importTransaction(item.id)}
+>
+  Importar
+</button>
           </div>
         ))}
       </section>
