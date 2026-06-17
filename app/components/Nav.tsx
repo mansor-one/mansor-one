@@ -10,6 +10,7 @@ export default function Nav() {
       <a href="/cards">💳 Tarjetas</a>
       <a href="/payments">📅 Pagos Base</a>
       <a href="/advisor">🤖 Advisor</a>
+      <a href="/advisor-v2">🤖 Advisor V2</a>
       <a href="/priorities">🎯 Prioridades</a>
       <a href="/future-obligations">🔮 Futuro</a>
       <a href="/income">💵 Income</a>

@@ -23,19 +23,26 @@ export async function POST(request: Request) {
       { status: 400 }
     )
   }
+let category = item.suggested_category || 'Revisar'
 
+if (category === 'Transferencia') {
+  category =
+    Number(item.amount) < 0
+      ? 'Transferencia Enviada'
+      : 'Transferencia Recibida'
+}
   const { error: entryError } = await supabaseAdmin
-    .from('quick_entries')
-    .insert({
-      entry_date: item.transaction_date,
-      description: item.merchant,
-      amount: Math.abs(Number(item.amount || 0)),
-      entry_type: Number(item.amount) < 0 ? 'income' : 'expense',
-      owner: 'Manuel',
-      category: item.suggested_category || 'Revisar',
-      source: 'plaid',
-      plaid_transaction_id: item.plaid_transaction_id,
-    })
+  .from('quick_entries')
+  .insert({
+    entry_date: item.transaction_date,
+    description: item.merchant,
+    amount: Number(item.amount || 0),
+    entry_type: Number(item.amount) < 0 ? 'income' : 'expense',
+    owner: 'Manuel',
+    category: category,
+    source: 'plaid',
+    plaid_transaction_id: item.plaid_transaction_id,
+  })
 
   if (entryError) {
     return NextResponse.json(
