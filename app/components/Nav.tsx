@@ -20,6 +20,7 @@ export default function Nav() {
       <a href="/plaid">🔗 Plaid</a>
       <a href="/plaid-import">📥 Plaid Import</a>
       <a href="/spending">📊 Spending</a>
+      <a href="/merchant-rules">🧠 Merchant Rules</a>
     </nav>
   )
 }

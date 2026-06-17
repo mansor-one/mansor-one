@@ -109,6 +109,18 @@ export default async function SpendingPage() {
             <h3 className="text-xl font-bold">{category}</h3>
             <p>Total: ${value.total.toLocaleString()}</p>
             <p>Transacciones: {value.count}</p>
+            <div className="mt-3 space-y-1">
+  {entries
+    ?.filter((entry) => (entry.category || 'Sin categoría') === category)
+    .slice(0, 10)
+    .map((entry) => (
+      <div key={entry.id} className="text-sm border-t pt-1">
+        <span>{entry.entry_date}</span>{' '}
+        <span>{entry.description}</span>{' '}
+        <strong>${Number(entry.amount || 0).toLocaleString()}</strong>
+      </div>
+    ))}
+</div>
           </div>
         ))}
       </section>
