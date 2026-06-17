@@ -17,7 +17,9 @@ export async function POST(request: Request) {
 
   if (itemError || !item) {
     return NextResponse.json(
-      { error: itemError?.message || 'Transaction not found' },
+      {
+        error: itemError?.message || 'Transaction not found',
+      },
       { status: 400 }
     )
   }
@@ -31,26 +33,35 @@ export async function POST(request: Request) {
       owner: 'Manuel',
       category: item.suggested_category || 'Revisar',
       source: 'plaid',
+      plaid_transaction_id: item.plaid_transaction_id,
     })
 
   if (entryError) {
     return NextResponse.json(
-      { error: entryError.message },
+      {
+        error: entryError.message,
+      },
       { status: 500 }
     )
   }
 
   const { error: updateError } = await supabaseAdmin
     .from('plaid_imports')
-    .update({ imported: true })
+    .update({
+      imported: true,
+    })
     .eq('id', item.id)
 
   if (updateError) {
     return NextResponse.json(
-      { error: updateError.message },
+      {
+        error: updateError.message,
+      },
       { status: 500 }
     )
   }
 
-  return NextResponse.json({ success: true })
+  return NextResponse.json({
+    success: true,
+  })
 }

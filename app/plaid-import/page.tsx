@@ -37,34 +37,59 @@ export default function PlaidImportPage() {
       return
     }
 
-    setMessage(`Sincronización completada. Transacciones recibidas: ${data.imported_count}`)
+    setMessage(
+      `Sincronización completada. Transacciones recibidas: ${data.imported_count}`
+    )
     loadImports()
   }
-async function importTransaction(id: string) {
-  setMessage('Importando transacción...')
 
-  const response = await fetch('/api/plaid/import-transaction', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ id }),
-  })
+  async function importTransaction(id: string) {
+    setMessage('Importando transacción...')
 
-  const data = await response.json()
+    const response = await fetch('/api/plaid/import-transaction', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id }),
+    })
 
-  if (data.error) {
-    setMessage(data.error)
-    return
-  }
+    const data = await response.json()
 
-  setMessage('Transacción importada correctamente ✅')
-  loadImports()
-}
-  useEffect(() => {
+    if (data.error) {
+      setMessage(data.error)
+      return
+    }
+
+    setMessage('Transacción importada correctamente ✅')
     loadImports()
-  }, [])
+  }
 
   const pending = imports.filter((item) => !item.imported)
   const imported = imports.filter((item) => item.imported)
+
+  async function importAllKnown() {
+    setMessage('Importando transacciones conocidas...')
+
+    const known = pending.filter(
+      (item) =>
+        item.suggested_category &&
+        item.suggested_category !== 'Revisar'
+    )
+
+    for (const item of known) {
+      await fetch('/api/plaid/import-transaction', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: item.id }),
+      })
+    }
+
+    setMessage(`Importadas ${known.length} transacciones conocidas ✅`)
+    loadImports()
+  }
+
+  useEffect(() => {
+    loadImports()
+  }, [])
 
   return (
     <main className="p-8 space-y-6">
@@ -72,12 +97,21 @@ async function importTransaction(id: string) {
 
       <Nav />
 
-      <button
-        className="border rounded p-3"
-        onClick={syncPlaid}
-      >
-        🔄 Sincronizar Plaid
-      </button>
+      <div className="space-x-2">
+        <button
+          className="border rounded p-3"
+          onClick={syncPlaid}
+        >
+          🔄 Sincronizar Plaid
+        </button>
+
+        <button
+          className="border rounded p-3"
+          onClick={importAllKnown}
+        >
+          Importar Todo Conocido
+        </button>
+      </div>
 
       {message && (
         <div className="border rounded p-4">
@@ -123,15 +157,15 @@ async function importTransaction(id: string) {
             </p>
 
             <p>
-              Estado:{' '}
-              {item.imported ? 'Importada' : 'Pendiente'}
+              Estado: {item.imported ? 'Importada' : 'Pendiente'}
             </p>
+
             <button
-  className="border rounded p-2 mt-2"
-  onClick={() => importTransaction(item.id)}
->
-  Importar
-</button>
+              className="border rounded p-2 mt-2"
+              onClick={() => importTransaction(item.id)}
+            >
+              Importar
+            </button>
           </div>
         ))}
       </section>
