@@ -25,6 +25,11 @@ export default async function Home() {
     .order('created_at', { ascending: false })
     .limit(5)
 
+    const { data: plaidEntries } = await supabase
+  .from('quick_entries')
+  .select('*')
+  .eq('source', 'plaid')
+
   const spendableCash =
     accounts
       ?.filter((account) => account.is_spendable)
@@ -44,6 +49,18 @@ export default async function Home() {
 
   const projectedAvailable = spendableCash - totalPending
 
+  const realMonthlySpending =
+  plaidEntries
+    ?.filter(
+      (entry) =>
+        Number(entry.amount) > 0 &&
+        entry.category !== 'Transferencia Recibida'
+    )
+    .reduce(
+      (sum, entry) => sum + Number(entry.amount || 0),
+      0
+    ) || 0
+
   return (
     <main className="p-8 space-y-8">
       <h1 className="text-4xl font-bold">Mansor One</h1>
@@ -52,7 +69,7 @@ export default async function Home() {
 
       <section className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <div className="border rounded p-4">
-          <h2 className="font-semibold">💰 Disponible Hoy</h2>
+          <h2 className="font-semibold">💰 Disponible Hoy Manual</h2>
           <p className="text-3xl font-bold">
             ${spendableCash.toLocaleString()}
           </p>
@@ -66,7 +83,7 @@ export default async function Home() {
         </div>
 
         <div className="border rounded p-4">
-          <h2 className="font-semibold">✅ Disponible después de pagos</h2>
+          <h2 className="font-semibold">⚠️ Proyección sin incluir próximo ingreso</h2>
           <p className="text-3xl font-bold">
             ${projectedAvailable.toLocaleString()}
           </p>
@@ -79,6 +96,13 @@ export default async function Home() {
           </p>
         </div>
       </section>
+
+      <div className="border rounded p-4">
+  <h2 className="font-semibold">📊 Gasto real del mes</h2>
+  <p className="text-3xl font-bold">
+    ${realMonthlySpending.toLocaleString()}
+  </p>
+</div>
 
       <section className="border rounded p-4">
         <h2 className="text-2xl font-bold mb-2">🤖 Recomendación</h2>
