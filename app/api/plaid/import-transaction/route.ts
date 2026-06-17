@@ -27,6 +27,7 @@ export async function POST(request: Request) {
   const { error: entryError } = await supabaseAdmin
     .from('quick_entries')
     .insert({
+      entry_date: item.transaction_date,
       description: item.merchant,
       amount: Math.abs(Number(item.amount || 0)),
       entry_type: Number(item.amount) < 0 ? 'income' : 'expense',

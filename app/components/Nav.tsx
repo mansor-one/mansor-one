@@ -19,6 +19,7 @@ export default function Nav() {
       <a href="/imports">📥 Imports</a>
       <a href="/plaid">🔗 Plaid</a>
       <a href="/plaid-import">📥 Plaid Import</a>
+      <a href="/spending">📊 Spending</a>
     </nav>
   )
 }
