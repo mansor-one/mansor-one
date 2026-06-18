@@ -1,39 +1,38 @@
 import { NextResponse } from 'next/server'
-import { Configuration, PlaidApi, PlaidEnvironments } from 'plaid'
+import { createClient } from '@supabase/supabase-js'
 
-const configuration = new Configuration({
-  basePath: PlaidEnvironments[
-    process.env.PLAID_ENV as keyof typeof PlaidEnvironments
-  ],
-  baseOptions: {
-    headers: {
-      'PLAID-CLIENT-ID': process.env.PLAID_CLIENT_ID,
-      'PLAID-SECRET': process.env.PLAID_SECRET,
-    },
-  },
-})
+const supabaseAdmin = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!
+)
 
-const client = new PlaidApi(configuration)
+export async function GET() {
+  try {
+    const { data, error } = await supabaseAdmin
+      .from('plaid_accounts')
+      .select(
+        'id, name, type, subtype, available_balance, current_balance, currency, updated_at'
+      )
+      .order('name', { ascending: true })
 
-let sandboxAccessToken = ''
+    if (error) {
+      console.error('Plaid accounts read error:', error)
 
-export async function POST(request: Request) {
-  const body = await request.json()
+      return NextResponse.json(
+        { error: 'Could not load Plaid accounts' },
+        { status: 500 }
+      )
+    }
 
-  if (body.access_token) {
-    sandboxAccessToken = body.access_token
-  }
+    return NextResponse.json({
+      accounts: data || [],
+    })
+  } catch (error) {
+    console.error('Plaid accounts endpoint error:', error)
 
-  if (!sandboxAccessToken) {
     return NextResponse.json(
-      { error: 'No access token available yet.' },
-      { status: 400 }
+      { error: 'Unexpected server error' },
+      { status: 500 }
     )
   }
-
-  const response = await client.accountsBalanceGet({
-    access_token: sandboxAccessToken,
-  })
-
-  return NextResponse.json(response.data)
 }
