@@ -93,6 +93,9 @@ function getSuggestedCategory(merchant: string, plaidPrimary: string | null) {
     return 'Entretenimiento'
   }
 
+  if (plaidPrimary === 'ENTERTAINMENT') {
+  return 'Entretenimiento'
+}
   return 'Revisar'
 }
 

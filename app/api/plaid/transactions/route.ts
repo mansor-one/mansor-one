@@ -1,34 +1,39 @@
 import { NextResponse } from 'next/server'
-import { Configuration, PlaidApi, PlaidEnvironments } from 'plaid'
+import { createClient } from '@supabase/supabase-js'
 
-const configuration = new Configuration({
-  basePath: PlaidEnvironments[
-    process.env.PLAID_ENV as keyof typeof PlaidEnvironments
-  ],
-  baseOptions: {
-    headers: {
-      'PLAID-CLIENT-ID': process.env.PLAID_CLIENT_ID,
-      'PLAID-SECRET': process.env.PLAID_SECRET,
-    },
-  },
-})
+const supabaseAdmin = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!
+)
 
-const client = new PlaidApi(configuration)
+export async function GET() {
+  try {
+    const { data, error } = await supabaseAdmin
+      .from('plaid_imports')
+      .select(
+        'id, plaid_transaction_id, transaction_date, merchant, amount, plaid_category, suggested_category, imported'
+      )
+      .order('transaction_date', { ascending: false })
+      .limit(100)
 
-export async function POST(request: Request) {
-  const body = await request.json()
+    if (error) {
+      console.error('Plaid transactions read error:', error)
 
-  if (!body.access_token) {
+      return NextResponse.json(
+        { error: 'Could not load Plaid transactions' },
+        { status: 500 }
+      )
+    }
+
+    return NextResponse.json({
+      transactions: data || [],
+    })
+  } catch (error) {
+    console.error('Plaid transactions endpoint error:', error)
+
     return NextResponse.json(
-      { error: 'Missing access_token' },
-      { status: 400 }
+      { error: 'Unexpected server error' },
+      { status: 500 }
     )
   }
-
-  const response = await client.transactionsSync({
-    access_token: body.access_token,
-    count: 20,
-  })
-
-  return NextResponse.json(response.data)
 }
