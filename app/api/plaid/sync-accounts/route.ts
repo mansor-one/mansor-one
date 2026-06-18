@@ -9,13 +9,14 @@ const supabaseAdmin = createClient(
 )
 
 const configuration = new Configuration({
-  basePath: PlaidEnvironments[
-    process.env.PLAID_ENV as keyof typeof PlaidEnvironments
-  ],
+  basePath:
+    PlaidEnvironments[
+      process.env.PLAID_ENV as keyof typeof PlaidEnvironments
+    ],
   baseOptions: {
     headers: {
-      'PLAID-CLIENT-ID': process.env.PLAID_CLIENT_ID,
-      'PLAID-SECRET': process.env.PLAID_SECRET,
+      'PLAID-CLIENT-ID': process.env.PLAID_CLIENT_ID!,
+      'PLAID-SECRET': process.env.PLAID_SECRET!,
     },
   },
 })
@@ -23,61 +24,69 @@ const configuration = new Configuration({
 const plaidClient = new PlaidApi(configuration)
 
 export async function POST() {
-  const { data: connection, error: connectionError } = await supabaseAdmin
-    .from('plaid_connections')
-    .select('*')
-    .order('created_at', { ascending: false })
-    .limit(1)
-    .single()
+  try {
+    const { data: connection, error: connectionError } = await supabaseAdmin
+      .from('plaid_connections')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .single()
 
-  if (connectionError || !connection) {
-    return NextResponse.json(
-      { error: connectionError?.message || 'No Plaid connection found' },
-      { status: 400 }
-    )
-  }
-
-  const accessToken = decrypt(
-    connection.encrypted_access_token,
-    connection.token_iv,
-    connection.token_auth_tag
-  )
-
-  const response = await plaidClient.accountsBalanceGet({
-    access_token: accessToken,
-  })
-
-  const accounts = response.data.accounts || []
-
-  for (const account of accounts) {
-    const { error } = await supabaseAdmin
-      .from('plaid_accounts')
-      .upsert(
-        {
-          user_id: connection.user_id,
-          plaid_account_id: account.account_id,
-          name: account.name,
-          type: account.type,
-          subtype: account.subtype,
-          available_balance: account.balances.available,
-          current_balance: account.balances.current,
-          currency: account.balances.iso_currency_code,
-          updated_at: new Date().toISOString(),
-        },
-        {
-          onConflict: 'plaid_account_id',
-        }
-      )
-
-    if (error) {
+    if (connectionError || !connection) {
       return NextResponse.json(
-        { error: error.message },
+        { error: 'No Plaid connection found' },
+        { status: 404 }
+      )
+    }
+
+    const accessToken = decrypt(
+      connection.encrypted_access_token,
+      connection.token_iv,
+      connection.token_auth_tag
+    )
+
+    const response = await plaidClient.accountsBalanceGet({
+      access_token: accessToken,
+    })
+
+    const accounts = response.data.accounts || []
+
+    const rows = accounts.map((account) => ({
+      user_id: connection.user_id,
+      plaid_account_id: account.account_id,
+      name: account.name,
+      type: account.type,
+      subtype: account.subtype,
+      available_balance: account.balances.available,
+      current_balance: account.balances.current,
+      currency: account.balances.iso_currency_code,
+      updated_at: new Date().toISOString(),
+    }))
+
+    const { error: upsertError } = await supabaseAdmin
+      .from('plaid_accounts')
+      .upsert(rows, {
+        onConflict: 'plaid_account_id',
+      })
+
+    if (upsertError) {
+      console.error('Plaid accounts upsert error:', upsertError)
+
+      return NextResponse.json(
+        { error: 'Could not sync Plaid accounts' },
         { status: 500 }
       )
     }
-  }
 
-  return NextResponse.json({
-    synced_accounts: accounts.length,
-  })
+    return NextResponse.json({
+      synced_accounts: accounts.length,
+    })
+  } catch (error) {
+    console.error('Plaid sync-accounts error:', error)
+
+    return NextResponse.json(
+      { error: 'Unable to sync Plaid accounts' },
+      { status: 500 }
+    )
+  }
 }
