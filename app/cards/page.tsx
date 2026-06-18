@@ -1,23 +1,48 @@
 import { supabase } from '@/lib/supabase'
+import Nav from '../components/Nav'
 
 export default async function CardsPage() {
-  const { data: cards } = await supabase
+  const { data: cards, error } = await supabase
     .from('credit_cards')
     .select('*')
+    .eq('is_active', true)
     .order('balance', { ascending: false })
 
+  const totalDebt =
+    cards?.reduce((sum, card) => sum + Number(card.balance || 0), 0) || 0
+
+  const totalMinimum =
+    cards?.reduce((sum, card) => sum + Number(card.minimum_payment || 0), 0) || 0
+
   return (
-    <main className="p-8">
-      <h1 className="text-3xl font-bold mb-6">Tarjetas</h1>
+    <main className="p-8 space-y-6">
+      <h1 className="text-4xl font-bold">💳 Tarjetas</h1>
+
+      <Nav />
+
+      {error && <div className="border rounded p-4">{error.message}</div>}
+
+      <section className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="border rounded p-4">
+          <h2 className="font-semibold">Deuda total</h2>
+          <p className="text-3xl font-bold">${totalDebt.toLocaleString()}</p>
+        </div>
+
+        <div className="border rounded p-4">
+          <h2 className="font-semibold">Pagos mínimos</h2>
+          <p className="text-3xl font-bold">${totalMinimum.toLocaleString()}</p>
+        </div>
+      </section>
 
       <div className="space-y-4">
         {cards?.map((card) => (
           <div key={card.id} className="border rounded p-4">
             <h2 className="text-xl font-semibold">{card.name}</h2>
-            <p>Banco: {card.bank}</p>
+            <p>Banco: {card.bank || 'N/A'}</p>
             <p>Balance: ${Number(card.balance || 0).toLocaleString()}</p>
             <p>Pago mínimo: ${Number(card.minimum_payment || 0).toLocaleString()}</p>
             <p>Día de pago: {card.due_day || 'N/A'}</p>
+            <p>APR: {card.apr ? `${card.apr}%` : 'N/A'}</p>
           </div>
         ))}
       </div>

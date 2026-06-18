@@ -1,4 +1,5 @@
 import { supabase } from '@/lib/supabase'
+import Nav from '../components/Nav'
 
 export default async function PaymentsPage() {
   const { data: payments, error } = await supabase
@@ -19,7 +20,7 @@ export default async function PaymentsPage() {
       <h1 className="text-3xl font-bold">
         📅 Pagos Programados
       </h1>
-
+<Nav />
       {error && (
         <div className="border border-red-500 rounded p-4">
           <pre>{JSON.stringify(error, null, 2)}</pre>

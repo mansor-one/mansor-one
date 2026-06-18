@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
+import Nav from '../components/Nav'
 
 export default function PaymentInstancesPage() {
   const [payments, setPayments] = useState<any[]>([])
@@ -53,6 +54,7 @@ export default function PaymentInstancesPage() {
   return (
     <main className="p-8 space-y-6">
       <h1 className="text-3xl font-bold">📌 Pagos del Mes</h1>
+      <Nav />
 
       {message && <p>{message}</p>}
 

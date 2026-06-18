@@ -4,13 +4,14 @@ import { createClient } from '@supabase/supabase-js'
 import { Configuration, PlaidApi, PlaidEnvironments } from 'plaid'
 
 const configuration = new Configuration({
-  basePath: PlaidEnvironments[
-    process.env.PLAID_ENV as keyof typeof PlaidEnvironments
-  ],
+  basePath:
+    PlaidEnvironments[
+      process.env.PLAID_ENV as keyof typeof PlaidEnvironments
+    ],
   baseOptions: {
     headers: {
-      'PLAID-CLIENT-ID': process.env.PLAID_CLIENT_ID,
-      'PLAID-SECRET': process.env.PLAID_SECRET,
+      'PLAID-CLIENT-ID': process.env.PLAID_CLIENT_ID!,
+      'PLAID-SECRET': process.env.PLAID_SECRET!,
     },
   },
 })
@@ -23,42 +24,63 @@ const supabaseAdmin = createClient(
 )
 
 export async function POST(request: Request) {
-  const body = await request.json()
+  try {
+    const body = await request.json()
 
-  const response = await client.itemPublicTokenExchange({
-    public_token: body.public_token,
-  })
+    if (!body?.public_token || typeof body.public_token !== 'string') {
+      return NextResponse.json(
+        { error: 'Invalid public token' },
+        { status: 400 }
+      )
+    }
 
-  const accessToken = response.data.access_token
-  const encryptedToken = encrypt(accessToken)
-  const itemId = response.data.item_id
+    const response = await client.itemPublicTokenExchange({
+      public_token: body.public_token,
+    })
 
-  const { error } = await supabaseAdmin
-  .from('plaid_connections')
-  .insert({
-    item_id: itemId,
-    access_token: null,
-    encrypted_access_token: encryptedToken.encrypted,
-    token_iv: encryptedToken.iv,
-    token_auth_tag: encryptedToken.authTag,
-    institution_name: body.institution_name || 'Unknown',
-  })
+    const accessToken = response.data.access_token
+    const encryptedToken = encrypt(accessToken)
+    const itemId = response.data.item_id
 
-  if (error) {
-  console.log('SUPABASE ERROR:', error)
+    const { error } = await supabaseAdmin
+      .from('plaid_connections')
+      .insert({
+        item_id: itemId,
+        access_token: null,
+        encrypted_access_token: encryptedToken.encrypted,
+        token_iv: encryptedToken.iv,
+        token_auth_tag: encryptedToken.authTag,
+        institution_name:
+          typeof body.institution_name === 'string'
+            ? body.institution_name
+            : 'Unknown',
+      })
 
-  return NextResponse.json(
-    {
-      error: error.message,
-      details: error,
-      access_token_received: false,
-    },
-    { status: 500 }
-  )
-}
+    if (error) {
+      console.error('Plaid connection insert error:', error)
 
-  return NextResponse.json({
-    item_id: itemId,
-    access_token_received: true,
-  })
+      return NextResponse.json(
+        {
+          error: 'Could not save Plaid connection',
+          access_token_received: false,
+        },
+        { status: 500 }
+      )
+    }
+
+    return NextResponse.json({
+      item_id: itemId,
+      access_token_received: true,
+    })
+  } catch (error) {
+    console.error('Plaid exchange-public-token error:', error)
+
+    return NextResponse.json(
+      {
+        error: 'Unable to exchange Plaid public token',
+        access_token_received: false,
+      },
+      { status: 500 }
+    )
+  }
 }
