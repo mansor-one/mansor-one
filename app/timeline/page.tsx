@@ -7,10 +7,13 @@ function formatDate(dateString: string) {
 }
 
 export default async function TimelinePage() {
-  const { data: accounts } = await supabase
-    .from('accounts')
+  const now = new Date()
+  const month = now.getMonth() + 1
+  const year = now.getFullYear()
+
+  const { data: plaidAccounts } = await supabase
+    .from('plaid_accounts')
     .select('*')
-    .eq('is_active', true)
 
   const { data: incomes } = await supabase
     .from('income_schedule')
@@ -20,14 +23,16 @@ export default async function TimelinePage() {
   const { data: payments } = await supabase
     .from('payment_instances')
     .select('*')
-    .eq('payment_month', 6)
-    .eq('payment_year', 2026)
+    .eq('payment_month', month)
+    .eq('payment_year', year)
     .neq('status', 'paid')
 
   const startingCash =
-    accounts
-      ?.filter((account) => account.is_spendable)
-      .reduce((sum, account) => sum + Number(account.balance || 0), 0) || 0
+    plaidAccounts?.reduce(
+      (sum, account) =>
+        sum + Number(account.available_balance ?? account.current_balance ?? 0),
+      0
+    ) || 0
 
   const incomeEvents =
     incomes
@@ -54,10 +59,7 @@ export default async function TimelinePage() {
       })) || []
 
   const events = [...incomeEvents, ...paymentEvents].sort((a, b) => {
-    if (a.date === b.date) {
-      return b.amount - a.amount
-    }
-
+    if (a.date === b.date) return b.amount - a.amount
     return a.date.localeCompare(b.date)
   })
 
@@ -65,7 +67,6 @@ export default async function TimelinePage() {
 
   const timeline = events.map((event) => {
     runningBalance += event.amount
-
     return {
       ...event,
       balanceAfter: runningBalance,
@@ -85,7 +86,7 @@ export default async function TimelinePage() {
 
       <section className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div className="border rounded p-4">
-          <h2 className="font-semibold">Balance inicial disponible</h2>
+          <h2 className="font-semibold">Balance inicial Plaid</h2>
           <p className="text-3xl font-bold">
             ${startingCash.toLocaleString()}
           </p>
@@ -93,7 +94,11 @@ export default async function TimelinePage() {
 
         <div className="border rounded p-4">
           <h2 className="font-semibold">Punto más bajo proyectado</h2>
-          <p className="text-3xl font-bold">
+          <p
+            className={`text-3xl font-bold ${
+              minimumBalance < 0 ? 'text-red-600' : ''
+            }`}
+          >
             ${minimumBalance.toLocaleString()}
           </p>
         </div>
@@ -116,8 +121,7 @@ export default async function TimelinePage() {
             <p>Fecha: {formatDate(event.date)}</p>
 
             <p>
-              Monto:{' '}
-              {event.amount >= 0 ? '+' : '-'}$
+              Monto: {event.amount >= 0 ? '+' : '-'}$
               {Math.abs(event.amount).toLocaleString()}
             </p>
 

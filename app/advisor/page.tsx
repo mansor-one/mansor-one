@@ -19,16 +19,19 @@ export default function AdvisorPage() {
   const [answer, setAnswer] = useState('')
 
   async function loadData() {
+    const now = new Date()
+    const month = now.getMonth() + 1
+    const year = now.getFullYear()
+
     const { data: accountsData } = await supabase
-      .from('accounts')
+      .from('plaid_accounts')
       .select('*')
-      .eq('is_active', true)
 
     const { data: paymentsData } = await supabase
       .from('payment_instances')
       .select('*')
-      .eq('payment_month', 6)
-      .eq('payment_year', 2026)
+      .eq('payment_month', month)
+      .eq('payment_year', year)
 
     const { data: cardsData } = await supabase
       .from('credit_cards')
@@ -62,13 +65,30 @@ export default function AdvisorPage() {
     loadData()
   }, [])
 
-  const nextPayDate = new Date('2026-06-18')
+  const sortedIncome = income
+    .filter((item) => item.next_expected_date)
+    .sort((a, b) =>
+      a.next_expected_date.localeCompare(b.next_expected_date)
+    )
 
-  const spendableCash = accounts
-    .filter((account) => account.is_spendable)
-    .reduce((sum, account) => sum + Number(account.balance || 0), 0)
+  const nextPayDate = sortedIncome[0]?.next_expected_date
+    ? new Date(sortedIncome[0].next_expected_date)
+    : new Date()
 
-  const pendingPayments = payments.filter((payment) => payment.status !== 'paid')
+  const spendableCash = accounts.reduce(
+    (sum, account) =>
+      sum +
+      Number(
+        account.available_balance ??
+          account.current_balance ??
+          0
+      ),
+    0
+  )
+
+  const pendingPayments = payments.filter(
+    (payment) => payment.status !== 'paid'
+  )
 
   const paymentsBeforeNextPay = pendingPayments.filter((payment) => {
     const dueDate = new Date(payment.effective_due_date)
@@ -144,14 +164,18 @@ export default function AdvisorPage() {
       return
     }
 
-    const beforePaycheckAfterDecision = cashBeforePaycheck - requestedAmount
+    const beforePaycheckAfterDecision =
+      cashBeforePaycheck - requestedAmount
+
     const afterPaycheckAfterDecision =
       cashAfterPaycheckAndPayments - requestedAmount
 
     const hasCriticalOpen = criticalPriorities.length > 0
+
     const hasMarbete = priorities.some((p) =>
       p.name?.toLowerCase().includes('marbete')
     )
+
     const hasAutoExpreso = priorities.some((p) =>
       p.name?.toLowerCase().includes('autoexpreso')
     )
@@ -166,9 +190,9 @@ export default function AdvisorPage() {
         setAnswer(
           `⚠️ No lo pondría como prioridad ahora. Antes de usar ${formatMoney(
             requestedAmount
-          )} en los cuartos, resolvería prioridades críticas como hipoteca, seguro, US Bank y marbete. Después del próximo cheque quedarías con ${formatMoney(
+          )} en los cuartos, resolvería prioridades críticas como hipoteca, seguro, US Bank y marbete. Después del próximo ingreso quedarías con ${formatMoney(
             afterPaycheckAfterDecision
-          )}, pero todavía hay obligaciones importantes abiertas.`
+          )}.`
         )
         return
       }
@@ -176,7 +200,7 @@ export default function AdvisorPage() {
 
     if (beforePaycheckAfterDecision < 0) {
       setAnswer(
-        `⚠️ Antes del próximo cheque quedarías corto por ${formatMoney(
+        `⚠️ Antes del próximo ingreso quedarías corto por ${formatMoney(
           Math.abs(beforePaycheckAfterDecision)
         )}. No recomiendo usar ese dinero ahora salvo que sea para una prioridad crítica.`
       )
@@ -211,7 +235,7 @@ export default function AdvisorPage() {
           requestedAmount
         )}, quedarías con aproximadamente ${formatMoney(
           afterPaycheckAfterDecision
-        )} después del próximo ingreso y pagos. Antes de hacerlo, confirma que marbete, hipoteca, seguro y US Bank estén cubiertos.`
+        )} después del próximo ingreso y pagos.`
       )
       return
     }
@@ -222,7 +246,7 @@ export default function AdvisorPage() {
           requestedAmount
         )}, quedarías con aproximadamente ${formatMoney(
           afterPaycheckAfterDecision
-        )}. Yo separaría algo para AutoExpreso o marbete antes de gastos discrecionales.`
+        )}.`
       )
       return
     }
@@ -245,16 +269,20 @@ export default function AdvisorPage() {
       <section className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <div className="border rounded p-4">
           <h2 className="font-semibold">💰 Disponible Hoy</h2>
-          <p className="text-3xl font-bold">{formatMoney(spendableCash)}</p>
+          <p className="text-3xl font-bold">
+            {formatMoney(spendableCash)}
+          </p>
         </div>
 
         <div className="border rounded p-4">
-          <h2 className="font-semibold">⚠️ Antes del próximo cheque</h2>
-          <p className="text-3xl font-bold">{formatMoney(cashBeforePaycheck)}</p>
+          <h2 className="font-semibold">⚠️ Antes del próximo ingreso</h2>
+          <p className="text-3xl font-bold">
+            {formatMoney(cashBeforePaycheck)}
+          </p>
         </div>
 
         <div className="border rounded p-4">
-          <h2 className="font-semibold">📊 Después del cheque y pagos</h2>
+          <h2 className="font-semibold">📊 Después de ingresos y pagos</h2>
           <p className="text-3xl font-bold">
             {formatMoney(cashAfterPaycheckAndPayments)}
           </p>
@@ -262,12 +290,16 @@ export default function AdvisorPage() {
 
         <div className="border rounded p-4">
           <h2 className="font-semibold">💳 Deuda Tarjetas</h2>
-          <p className="text-3xl font-bold">{formatMoney(totalDebt)}</p>
+          <p className="text-3xl font-bold">
+            {formatMoney(totalDebt)}
+          </p>
         </div>
       </section>
 
       <section className="border rounded p-4">
-        <h2 className="text-2xl font-bold mb-4">🚨 Riesgos y prioridades</h2>
+        <h2 className="text-2xl font-bold mb-4">
+          🚨 Riesgos y prioridades
+        </h2>
 
         <div className="space-y-3">
           {criticalPriorities.map((item) => (
@@ -289,7 +321,9 @@ export default function AdvisorPage() {
       </section>
 
       <section className="border rounded p-4">
-        <h2 className="text-2xl font-bold mb-4">🔮 Próximas obligaciones</h2>
+        <h2 className="text-2xl font-bold mb-4">
+          🔮 Próximas obligaciones
+        </h2>
 
         <p className="mb-3">
           Total futuro identificado: {formatMoney(totalFutureObligations)}
@@ -299,7 +333,10 @@ export default function AdvisorPage() {
           {nextFutureObligations.map((item) => (
             <div key={item.id} className="border rounded p-3">
               <strong>{item.name}</strong>
-              <p>Estimado: {formatMoney(Number(item.estimated_amount || 0))}</p>
+              <p>
+                Estimado:{' '}
+                {formatMoney(Number(item.estimated_amount || 0))}
+              </p>
               <p>Fecha objetivo: {item.target_date}</p>
               <p>Prioridad: {item.priority}</p>
             </div>
@@ -312,12 +349,15 @@ export default function AdvisorPage() {
 
         <textarea
           className="border rounded p-3 w-full min-h-28"
-          placeholder="Ejemplo: Quiero usar $200 para los cuartos de las nenas"
+          placeholder="Ejemplo: Quiero usar $200 para las gomas Honda"
           value={question}
           onChange={(e) => setQuestion(e.target.value)}
         />
 
-        <button className="border rounded p-3" onClick={analyzeQuestion}>
+        <button
+          className="border rounded p-3"
+          onClick={analyzeQuestion}
+        >
           Analizar decisión
         </button>
 
@@ -331,7 +371,7 @@ export default function AdvisorPage() {
 
       <section className="border rounded p-4">
         <h2 className="text-2xl font-bold mb-4">
-          📌 Pagos antes del próximo cheque
+          📌 Pagos antes del próximo ingreso
         </h2>
 
         <div className="space-y-3">
@@ -348,7 +388,7 @@ export default function AdvisorPage() {
 
       <section className="border rounded p-4">
         <h2 className="text-2xl font-bold mb-4">
-          📅 Pagos del día del cheque o después
+          📅 Pagos del próximo ingreso o después
         </h2>
 
         <div className="space-y-3">
