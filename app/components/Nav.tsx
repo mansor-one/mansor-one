@@ -2,27 +2,20 @@ export default function Nav() {
   return (
     <nav className="flex gap-4 flex-wrap border-b pb-4 mb-6">
       <a href="/">🏠 Dashboard</a>
-      <a href="/cashflow">💰 Cash Flow</a>
-      <a href="/payment-instances">📌 Pagos del Mes</a>
-      <a href="/quick-entry">⚡ Quick Entry</a>
-      <a href="/history">📜 Historial</a>
-      <a href="/accounts">🏦 Cuentas</a>
-      <a href="/cards">💳 Tarjetas</a>
-      <a href="/payments">📅 Pagos Base</a>
-      <a href="/advisor">🤖 Advisor</a>
-      <a href="/advisor-v2">🤖 Advisor V2</a>
-      <a href="/priorities">🎯 Prioridades</a>
-      <a href="/future-obligations">🔮 Futuro</a>
-      <a href="/income">💵 Income</a>
+      <a href="/advisor">🤖 Pablo Advisor</a>
       <a href="/timeline">📅 Timeline</a>
-      <a href="/assets">📦 Assets</a>
-      <a href="/health-score">🏥 Health Score</a>
-      <a href="/goals">🎯 Goals</a>
-      <a href="/imports">📥 Imports</a>
-      <a href="/plaid">🔗 Plaid</a>
-      <a href="/plaid-import">📥 Plaid Import</a>
-      <a href="/spending">📊 Spending</a>
-      <a href="/merchant-rules">🧠 Merchant Rules</a>
+      <a href="/spending">📊 Gastos</a>
+      <a href="/history">📜 Movimientos</a>
+      <a href="/payment-instances">📌 Pagos del Mes</a>
+      <a href="/income">💵 Ingresos</a>
+      <a href="/goals">🎯 Metas</a>
+      <a href="/assets">📦 Activos</a>
+      <a href="/cards">💳 Tarjetas</a>
+      <a href="/accounts">🏦 Cuentas</a>
+      <a href="/plaid">🔗 Conectar Bancos</a>
+      <a href="/plaid-import">📥 Movimientos Bancarios</a>
+      <a href="/quick-entry">⚡ Movimiento Manual</a>
+      <a href="/merchant-rules">🧠 Reglas</a>
     </nav>
   )
 }
