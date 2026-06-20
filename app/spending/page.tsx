@@ -1,15 +1,18 @@
 import { supabase } from '@/lib/supabase'
 import Nav from '../components/Nav'
 
+export const dynamic = 'force-dynamic'
+
+function formatMoney(value: number) {
+  return `$${Number(value || 0).toLocaleString()}`
+}
+
 export default async function SpendingPage() {
   const now = new Date()
   const year = now.getFullYear()
   const month = now.getMonth()
 
-  const startOfMonth = new Date(year, month, 1)
-    .toISOString()
-    .slice(0, 10)
-
+  const startOfMonth = new Date(year, month, 1).toISOString().slice(0, 10)
   const today = now.toISOString().slice(0, 10)
 
   const day = now.getDate()
@@ -18,33 +21,77 @@ export default async function SpendingPage() {
       ? new Date(year, month, 1).toISOString().slice(0, 10)
       : new Date(year, month, 16).toISOString().slice(0, 10)
 
-  const { data: entries, error } = await supabase
+  const { data: quickEntries, error: quickError } = await supabase
     .from('quick_entries')
     .select('*')
-    .eq('source', 'plaid')
     .gte('entry_date', startOfMonth)
     .lte('entry_date', today)
+
+  const { data: plaidImports, error: plaidError } = await supabase
+    .from('plaid_imports')
+    .select('*')
+    .gte('transaction_date', startOfMonth)
+    .lte('transaction_date', today)
+    .order('transaction_date', { ascending: false })
+
+  const manualRows =
+    quickEntries?.map((entry) => ({
+      id: `manual-${entry.id}`,
+      date: entry.entry_date,
+      description: entry.description,
+      category: entry.category || 'Sin categoría',
+      amount: Number(entry.amount || 0),
+      source: 'Manual',
+    })) || []
+
+  const plaidRows =
+    plaidImports?.map((entry) => ({
+      id: `plaid-${entry.id}`,
+      date: entry.transaction_date,
+      description: entry.merchant || 'Transacción Plaid',
+      category:
+        entry.suggested_category ||
+        entry.plaid_category ||
+        'Sin categoría',
+      amount: Number(entry.amount || 0),
+      source: 'Banco',
+    })) || []
+
+const excludedCategories = [
+  'Transferencia Recibida',
+  'Transferencia',
+  'Ingreso',
+  'Income',
+  'Efectivo',
+]
+
+const entries = [...manualRows, ...plaidRows]
+  .filter((entry) => entry.amount > 0)
+  .filter(
+    (entry) =>
+      !excludedCategories.includes(entry.category || '')
+  )
+  .sort((a, b) => b.date.localeCompare(a.date))
 
   const monthlyTotals: Record<string, { total: number; count: number }> = {}
   const quincenaTotals: Record<string, { total: number; count: number }> = {}
 
-  entries?.forEach((entry) => {
+  entries.forEach((entry) => {
     const category = entry.category || 'Sin categoría'
-    const amount = Number(entry.amount || 0)
 
     if (!monthlyTotals[category]) {
       monthlyTotals[category] = { total: 0, count: 0 }
     }
 
-    monthlyTotals[category].total += amount
+    monthlyTotals[category].total += entry.amount
     monthlyTotals[category].count += 1
 
-    if (entry.entry_date >= startOfQuincena) {
+    if (entry.date >= startOfQuincena) {
       if (!quincenaTotals[category]) {
         quincenaTotals[category] = { total: 0, count: 0 }
       }
 
-      quincenaTotals[category].total += amount
+      quincenaTotals[category].total += entry.amount
       quincenaTotals[category].count += 1
     }
   })
@@ -73,9 +120,9 @@ export default async function SpendingPage() {
 
       <Nav />
 
-      {error && (
+      {(quickError || plaidError) && (
         <div className="border rounded p-4">
-          {error.message}
+          {quickError?.message || plaidError?.message}
         </div>
       )}
 
@@ -85,9 +132,7 @@ export default async function SpendingPage() {
           <p className="text-sm opacity-70">
             Desde {startOfMonth} hasta {today}
           </p>
-          <p className="text-4xl font-bold">
-            ${monthlyTotal.toLocaleString()}
-          </p>
+          <p className="text-4xl font-bold">{formatMoney(monthlyTotal)}</p>
         </div>
 
         <div className="border rounded p-4">
@@ -95,9 +140,7 @@ export default async function SpendingPage() {
           <p className="text-sm opacity-70">
             Desde {startOfQuincena} hasta {today}
           </p>
-          <p className="text-4xl font-bold">
-            ${quincenaTotal.toLocaleString()}
-          </p>
+          <p className="text-4xl font-bold">{formatMoney(quincenaTotal)}</p>
         </div>
       </section>
 
@@ -107,32 +150,22 @@ export default async function SpendingPage() {
         {monthlyRows.map(([category, value]) => (
           <div key={category} className="border rounded p-4">
             <h3 className="text-xl font-bold">{category}</h3>
-            <p>Total: ${value.total.toLocaleString()}</p>
+            <p>Total: {formatMoney(value.total)}</p>
             <p>Transacciones: {value.count}</p>
+
             <div className="mt-3 space-y-1">
-  {entries
-    ?.filter((entry) => (entry.category || 'Sin categoría') === category)
-    .slice(0, 10)
-    .map((entry) => (
-      <div key={entry.id} className="text-sm border-t pt-1">
-        <span>{entry.entry_date}</span>{' '}
-        <span>{entry.description}</span>{' '}
-        <strong>${Number(entry.amount || 0).toLocaleString()}</strong>
-      </div>
-    ))}
-</div>
-          </div>
-        ))}
-      </section>
-
-      <section className="space-y-3">
-        <h2 className="text-2xl font-bold">Esta quincena por categoría</h2>
-
-        {quincenaRows.map(([category, value]) => (
-          <div key={category} className="border rounded p-4">
-            <h3 className="text-xl font-bold">{category}</h3>
-            <p>Total: ${value.total.toLocaleString()}</p>
-            <p>Transacciones: {value.count}</p>
+              {entries
+                .filter((entry) => (entry.category || 'Sin categoría') === category)
+                .slice(0, 10)
+                .map((entry) => (
+                  <div key={entry.id} className="text-sm border-t pt-1">
+                    <span>{entry.date}</span>{' '}
+                    <span>{entry.description}</span>{' '}
+                    <strong>{formatMoney(entry.amount)}</strong>{' '}
+                    <span className="opacity-60">({entry.source})</span>
+                  </div>
+                ))}
+            </div>
           </div>
         ))}
       </section>
