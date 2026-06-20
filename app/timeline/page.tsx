@@ -1,5 +1,6 @@
 import { supabase } from '@/lib/supabase'
 import Nav from '../components/Nav'
+export const dynamic = 'force-dynamic'
 
 function formatDate(dateString: string) {
   const [year, month, day] = dateString.split('-')
@@ -27,12 +28,12 @@ export default async function TimelinePage() {
     .eq('payment_year', year)
     .neq('status', 'paid')
 
-  const startingCash =
-    plaidAccounts?.reduce(
-      (sum, account) =>
-        sum + Number(account.available_balance ?? account.current_balance ?? 0),
-      0
-    ) || 0
+ const startingCash =
+  plaidAccounts?.reduce(
+    (sum, account) =>
+      sum + Number(account.current_balance ?? account.available_balance ?? 0),
+    0
+  ) || 0
 
   const incomeEvents =
     incomes

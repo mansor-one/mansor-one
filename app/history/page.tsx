@@ -1,6 +1,12 @@
 import { supabase } from '@/lib/supabase'
 import Nav from '../components/Nav'
 
+export const dynamic = 'force-dynamic'
+
+function formatMoney(value: number) {
+  return `$${Number(value || 0).toLocaleString()}`
+}
+
 function formatDatePR(dateString: string) {
   const date = new Date(dateString)
   date.setHours(date.getHours() - 4)
@@ -12,29 +18,68 @@ function formatDatePR(dateString: string) {
 }
 
 export default async function HistoryPage() {
-  const { data: entries, error } = await supabase
+  const { data: quickEntries, error: quickError } = await supabase
     .from('quick_entries')
     .select('*')
     .order('created_at', { ascending: false })
 
-  const totalExpenses =
-    entries
-      ?.filter((entry) => entry.entry_type !== 'income')
-      .reduce((sum, entry) => sum + Number(entry.amount || 0), 0) || 0
+  const { data: plaidImports, error: plaidError } = await supabase
+    .from('plaid_imports')
+    .select('*')
+    .order('transaction_date', { ascending: false })
 
-  const totalIncome =
-    entries
-      ?.filter((entry) => entry.entry_type === 'income')
-      .reduce((sum, entry) => sum + Number(entry.amount || 0), 0) || 0
+  const manualRows =
+    quickEntries?.map((entry) => ({
+      id: `manual-${entry.id}`,
+      description: entry.description,
+      type: entry.entry_type,
+      category: entry.category || 'Sin categoría',
+      account: entry.account_name || 'N/A',
+      amount: Number(entry.amount || 0),
+      owner: entry.owner || 'N/A',
+      date: entry.created_at,
+      displayDate: formatDatePR(entry.created_at),
+      source: 'Manual',
+    })) || []
 
-  const categoryTotals =
-    entries
-      ?.filter((entry) => entry.entry_type !== 'income')
-      .reduce((acc: Record<string, number>, entry) => {
-        const category = entry.category || 'Sin categoría'
-        acc[category] = (acc[category] || 0) + Number(entry.amount || 0)
-        return acc
-      }, {}) || {}
+  const plaidRows =
+    plaidImports?.map((entry) => ({
+      id: `plaid-${entry.id}`,
+      description: entry.merchant || 'Transacción banco',
+      type: Number(entry.amount || 0) < 0 ? 'income' : 'expense',
+      category:
+        entry.suggested_category ||
+        entry.plaid_category ||
+        'Sin categoría',
+      account: 'Banco',
+      amount: Number(entry.amount || 0),
+      owner: 'N/A',
+      date: entry.transaction_date,
+      displayDate: entry.transaction_date,
+      source: 'Banco',
+    })) || []
+
+  const entries = [...manualRows, ...plaidRows].sort((a, b) =>
+    b.date.localeCompare(a.date)
+  )
+
+  const totalExpenses = entries
+    .filter((entry) => entry.type !== 'income')
+    .filter((entry) => entry.amount > 0)
+    .reduce((sum, entry) => sum + Number(entry.amount || 0), 0)
+
+  const totalIncome = entries
+    .filter((entry) => entry.type === 'income' || entry.amount < 0)
+    .reduce((sum, entry) => sum + Math.abs(Number(entry.amount || 0)), 0)
+
+  const categoryTotals = entries
+    .filter((entry) => entry.type !== 'income')
+    .filter((entry) => entry.amount > 0)
+    .reduce((acc: Record<string, number>, entry) => {
+      const category = entry.category || 'Sin categoría'
+      acc[category] = (acc[category] || 0) + Number(entry.amount || 0)
+      return acc
+    }, {})
 
   const categoryRows = Object.entries(categoryTotals).sort(
     (a, b) => b[1] - a[1]
@@ -46,25 +91,26 @@ export default async function HistoryPage() {
 
       <Nav />
 
-      {error && (
+      {(quickError || plaidError) && (
         <pre className="border rounded p-4">
-          {JSON.stringify(error, null, 2)}
+          {JSON.stringify(quickError || plaidError, null, 2)}
         </pre>
       )}
 
-      <section className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <section className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div className="border rounded p-4">
           <h2 className="font-semibold">💸 Gastos registrados</h2>
-          <p className="text-3xl font-bold">
-            ${totalExpenses.toLocaleString()}
-          </p>
+          <p className="text-3xl font-bold">{formatMoney(totalExpenses)}</p>
         </div>
 
         <div className="border rounded p-4">
           <h2 className="font-semibold">💰 Ingresos registrados</h2>
-          <p className="text-3xl font-bold">
-            ${totalIncome.toLocaleString()}
-          </p>
+          <p className="text-3xl font-bold">{formatMoney(totalIncome)}</p>
+        </div>
+
+        <div className="border rounded p-4">
+          <h2 className="font-semibold">📌 Movimientos</h2>
+          <p className="text-3xl font-bold">{entries.length}</p>
         </div>
       </section>
 
@@ -73,33 +119,25 @@ export default async function HistoryPage() {
 
         <div className="space-y-2">
           {categoryRows.map(([category, total]) => (
-            <div
-              key={category}
-              className="flex justify-between border rounded p-3"
-            >
+            <div key={category} className="flex justify-between border rounded p-3">
               <span>{category}</span>
-              <strong>${total.toLocaleString()}</strong>
+              <strong>{formatMoney(total)}</strong>
             </div>
           ))}
         </div>
       </section>
 
       <section className="space-y-4">
-        {entries?.map((entry) => (
+        {entries.slice(0, 100).map((entry) => (
           <div key={entry.id} className="border rounded p-4">
             <h2 className="font-bold text-lg">{entry.description}</h2>
-
-            <p>Tipo: {entry.entry_type}</p>
-
+            <p>Origen: {entry.source}</p>
+            <p>Tipo: {entry.type}</p>
             <p>Categoría: {entry.category || 'Sin categoría'}</p>
-
-            <p>Cuenta: {entry.account_name || 'N/A'}</p>
-
-            <p>Monto: ${Number(entry.amount || 0).toLocaleString()}</p>
-
+            <p>Cuenta: {entry.account}</p>
+            <p>Monto: {formatMoney(Math.abs(Number(entry.amount || 0)))}</p>
             <p>Dueño: {entry.owner}</p>
-
-            <p>Fecha: {formatDatePR(entry.created_at)}</p>
+            <p>Fecha: {entry.displayDate}</p>
           </div>
         ))}
       </section>
