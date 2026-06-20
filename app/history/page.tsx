@@ -1,4 +1,4 @@
-import { supabase } from '@/lib/supabase'
+import { requireUser } from '@/lib/auth/requireUser'
 import Nav from '../components/Nav'
 
 export const dynamic = 'force-dynamic'
@@ -18,19 +18,16 @@ function formatDatePR(dateString: string) {
 }
 
 export default async function HistoryPage() {
-  const { data: quickEntries, error: quickError } = await supabase
+  const { supabase } = await requireUser()
+
+  const { data: rawEntries, error } = await supabase
     .from('quick_entries')
     .select('*')
     .order('created_at', { ascending: false })
 
-  const { data: plaidImports, error: plaidError } = await supabase
-    .from('plaid_imports')
-    .select('*')
-    .order('transaction_date', { ascending: false })
-
-  const manualRows =
-    quickEntries?.map((entry) => ({
-      id: `manual-${entry.id}`,
+  const entries =
+    rawEntries?.map((entry) => ({
+      id: entry.id,
       description: entry.description,
       type: entry.entry_type,
       category: entry.category || 'Sin categoría',
@@ -39,29 +36,8 @@ export default async function HistoryPage() {
       owner: entry.owner || 'N/A',
       date: entry.created_at,
       displayDate: formatDatePR(entry.created_at),
-      source: 'Manual',
+      source: entry.source || 'Registrado',
     })) || []
-
-  const plaidRows =
-    plaidImports?.map((entry) => ({
-      id: `plaid-${entry.id}`,
-      description: entry.merchant || 'Transacción banco',
-      type: Number(entry.amount || 0) < 0 ? 'income' : 'expense',
-      category:
-        entry.suggested_category ||
-        entry.plaid_category ||
-        'Sin categoría',
-      account: 'Banco',
-      amount: Number(entry.amount || 0),
-      owner: 'N/A',
-      date: entry.transaction_date,
-      displayDate: entry.transaction_date,
-      source: 'Banco',
-    })) || []
-
-  const entries = [...manualRows, ...plaidRows].sort((a, b) =>
-    b.date.localeCompare(a.date)
-  )
 
   const totalExpenses = entries
     .filter((entry) => entry.type !== 'income')
@@ -91,11 +67,11 @@ export default async function HistoryPage() {
 
       <Nav />
 
-      {(quickError || plaidError) && (
-        <pre className="border rounded p-4">
-          {JSON.stringify(quickError || plaidError, null, 2)}
-        </pre>
-      )}
+  {error && (
+  <pre className="border rounded p-4">
+    {JSON.stringify(error, null, 2)}
+  </pre>
+)}
 
       <section className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div className="border rounded p-4">

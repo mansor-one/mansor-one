@@ -1,4 +1,4 @@
-import { supabase } from '@/lib/supabase'
+import { requireUser } from '@/lib/auth/requireUser'
 import Nav from '../components/Nav'
 
 export const dynamic = 'force-dynamic'
@@ -8,6 +8,8 @@ function formatMoney(value: number) {
 }
 
 export default async function SpendingPage() {
+  
+  const { supabase } = await requireUser()
   const now = new Date()
   const year = now.getFullYear()
   const month = now.getMonth()
@@ -44,8 +46,24 @@ export default async function SpendingPage() {
       source: 'Manual',
     })) || []
 
-  const plaidRows =
-    plaidImports?.map((entry) => ({
+  const manualKeys = new Set(
+  manualRows.map((entry) =>
+    `${entry.date}|${entry.amount.toFixed(2)}|${entry.description.toLowerCase().trim()}`
+  )
+)
+
+const plaidRows =
+  plaidImports
+    ?.filter((entry) => {
+      const key = `${entry.transaction_date}|${Number(entry.amount || 0).toFixed(2)}|${String(
+        entry.merchant || ''
+      )
+        .toLowerCase()
+        .trim()}`
+
+      return !manualKeys.has(key)
+    })
+    .map((entry) => ({
       id: `plaid-${entry.id}`,
       date: entry.transaction_date,
       description: entry.merchant || 'Transacción Plaid',
