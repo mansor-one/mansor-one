@@ -23,7 +23,9 @@ export default function AdvisorPage() {
     const month = 6
     const year = 2026
 
-    const { data: accountsData } = await supabase.from('plaid_accounts').select('*')
+    const { data: accountsData } = await supabase
+      .from('plaid_accounts')
+      .select('*')
 
     const { data: paymentsData } = await supabase
       .from('payment_instances')
@@ -149,55 +151,21 @@ export default function AdvisorPage() {
 
     if (projectedAfterDecision < 0) {
       setAnswer(
-        `❌ No lo recomiendo ahora. Si usas ${formatMoney(requestedAmount)}, quedarías corto por ${formatMoney(Math.abs(projectedAfterDecision))} considerando ingresos y pagos pendientes.`
-      )
-      return
-    }
-
-    if (projectedAfterDecision < 200) {
-      setAnswer(
-        `⚠️ Se puede, pero quedarías muy justo con ${formatMoney(projectedAfterDecision)}. Yo esperaría o usaría menos.`
-      )
-      return
-    }
-
-    if (
-      lower.includes('popular') ||
-      lower.includes('visa') ||
-      lower.includes('tarjeta') ||
-      lower.includes('deuda')
-    ) {
-      setAnswer(
-        `✅ Tiene sentido atacar deuda. Si pagas ${formatMoney(requestedAmount)}, todavía quedarías con aproximadamente ${formatMoney(projectedAfterDecision)} después de ingresos y pagos pendientes.`
-      )
-      return
-    }
-
-    if (
-      lower.includes('goma') ||
-      lower.includes('honda') ||
-      lower.includes('carro') ||
-      lower.includes('mantenimiento')
-    ) {
-      setAnswer(
-        `✅ Esto parece relacionado a mantenimiento de un asset. Si usas ${formatMoney(requestedAmount)}, quedarías con aproximadamente ${formatMoney(projectedAfterDecision)}. Si afecta seguridad o uso del vehículo/casa, lo trataría como prioridad antes que un gasto opcional.`
-      )
-      return
-    }
-
-    if (
-      lower.includes('kayak') ||
-      lower.includes('crucero') ||
-      lower.includes('vacaciones')
-    ) {
-      setAnswer(
-        `⚠️ Es posible, pero lo trataría como gasto opcional. Si usas ${formatMoney(requestedAmount)}, quedarías con ${formatMoney(projectedAfterDecision)}. Antes confirmaría que pagos, metas importantes, mantenimiento y tarjetas estén controladas.`
+        `❌ No lo recomiendo ahora. Si usas ${formatMoney(
+          requestedAmount
+        )}, quedarías corto por ${formatMoney(
+          Math.abs(projectedAfterDecision)
+        )} considerando ingresos y pagos pendientes.`
       )
       return
     }
 
     setAnswer(
-      `✅ Se puede evaluar. Después de usar ${formatMoney(requestedAmount)}, quedarías con aproximadamente ${formatMoney(projectedAfterDecision)} considerando ingresos y pagos pendientes.`
+      `✅ Se puede evaluar. Después de usar ${formatMoney(
+        requestedAmount
+      )}, quedarías con aproximadamente ${formatMoney(
+        projectedAfterDecision
+      )} considerando ingresos y pagos pendientes.`
     )
   }
 
