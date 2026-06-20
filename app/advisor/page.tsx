@@ -20,56 +20,60 @@ export default function AdvisorPage() {
   const [answer, setAnswer] = useState('')
 
   async function loadData() {
-    const month = 6
-    const year = 2026
+  const month = 6
+  const year = 2026
 
-    const { data: accountsData } = await supabase
-      .from('plaid_accounts')
-      .select('*')
+  const { data: accountsData } = await supabase
+    .from('plaid_accounts')
+    .select('*')
 
-    const { data: paymentsData } = await supabase
-      .from('payment_instances')
-      .select('*')
-      .eq('payment_month', month)
-      .eq('payment_year', year)
+  const { data: paymentsData, error: paymentsError } = await supabase
+    .from('payment_instances')
+    .select('*')
+    .eq('payment_month', month)
+    .eq('payment_year', year)
 
-    const { data: cardsData } = await supabase
-      .from('credit_cards')
-      .select('*')
-      .eq('is_active', true)
+  const { data: cardsData, error: cardsError } = await supabase
+    .from('credit_cards')
+    .select('*')
+    .eq('is_active', true)
 
-    const { data: incomeData } = await supabase
-      .from('income_schedule')
-      .select('*')
-      .eq('is_active', true)
+  const { data: incomeData, error: incomeError } = await supabase
+    .from('income_schedule')
+    .select('*')
+    .eq('is_active', true)
 
-    const { data: goalsData } = await supabase
-      .from('financial_goals')
-      .select('*')
-      .eq('is_active', true)
-      .order('priority', { ascending: true })
+  const { data: goalsData } = await supabase
+    .from('financial_goals')
+    .select('*')
+    .eq('is_active', true)
+    .order('priority', { ascending: true })
 
-    const { data: maintenanceData } = await supabase
-      .from('asset_maintenance')
-      .select('*')
-      .eq('is_active', true)
-      .neq('status', 'done')
-      .order('priority', { ascending: true })
+  const { data: maintenanceData } = await supabase
+    .from('asset_maintenance')
+    .select('*')
+    .eq('is_active', true)
+    .neq('status', 'done')
+    .order('priority', { ascending: true })
 
-    const { data: liabilitiesData } = await supabase
-      .from('liabilities')
-      .select('*')
-      .eq('is_active', true)
-      .order('balance', { ascending: false })
+  const { data: liabilitiesData } = await supabase
+    .from('liabilities')
+    .select('*')
+    .eq('is_active', true)
+    .order('balance', { ascending: false })
 
-    setAccounts(accountsData || [])
-    setPayments(paymentsData || [])
-    setCards(cardsData || [])
-    setIncome(incomeData || [])
-    setGoals(goalsData || [])
-    setMaintenance(maintenanceData || [])
-    setLiabilities(liabilitiesData || [])
-  }
+  console.log('paymentsError', paymentsError)
+  console.log('cardsError', cardsError)
+  console.log('incomeError', incomeError)
+
+  setAccounts(accountsData || [])
+  setPayments(paymentsData || [])
+  setCards(cardsData || [])
+  setIncome(incomeData || [])
+  setGoals(goalsData || [])
+  setMaintenance(maintenanceData || [])
+  setLiabilities(liabilitiesData || [])
+}
 
   useEffect(() => {
     loadData()
