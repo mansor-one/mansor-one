@@ -178,6 +178,7 @@ export default function AdvisorPage() {
       <h1 className="text-4xl font-bold">🤖 Mansor Advisor</h1>
 
       <Nav />
+  
 
       <section className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <div className="border rounded p-4">
@@ -287,7 +288,14 @@ export default function AdvisorPage() {
           {maintenance.map((item) => (
             <div key={item.id} className="border rounded p-4">
               <strong>{item.name}</strong>
-              <p>Asset ID: {item.asset_id}</p>
+              <p>
+  Asset:{' '}
+  {item.asset_id === 'e3081886-a459-476e-8097-ec420651f46b'
+    ? 'Honda'
+    : item.asset_id === 'ede26719-17f7-4f6f-ab55-6d6b2984d75a'
+    ? 'Toyota Corolla Cross'
+    : 'Sin asset asociado'}
+</p>
               <p>Costo estimado: {formatMoney(Number(item.estimated_cost || 0))}</p>
               {item.due_date && <p>Fecha objetivo: {item.due_date}</p>}
               {item.due_mileage && <p>Millaje objetivo: {item.due_mileage}</p>}
