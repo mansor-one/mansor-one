@@ -13,19 +13,17 @@ export default function AdvisorPage() {
   const [payments, setPayments] = useState<any[]>([])
   const [cards, setCards] = useState<any[]>([])
   const [income, setIncome] = useState<any[]>([])
-  const [priorities, setPriorities] = useState<any[]>([])
-  const [futureObligations, setFutureObligations] = useState<any[]>([])
+  const [goals, setGoals] = useState<any[]>([])
+  const [maintenance, setMaintenance] = useState<any[]>([])
+  const [liabilities, setLiabilities] = useState<any[]>([])
   const [question, setQuestion] = useState('')
   const [answer, setAnswer] = useState('')
 
   async function loadData() {
-    const now = new Date()
-    const month = now.getMonth() + 1
-    const year = now.getFullYear()
+    const month = 6
+    const year = 2026
 
-    const { data: accountsData } = await supabase
-      .from('plaid_accounts')
-      .select('*')
+    const { data: accountsData } = await supabase.from('plaid_accounts').select('*')
 
     const { data: paymentsData } = await supabase
       .from('payment_instances')
@@ -43,111 +41,94 @@ export default function AdvisorPage() {
       .select('*')
       .eq('is_active', true)
 
-    const { data: prioritiesData } = await supabase
-      .from('priorities')
+    const { data: goalsData } = await supabase
+      .from('financial_goals')
       .select('*')
-      .neq('status', 'paid')
+      .eq('is_active', true)
+      .order('priority', { ascending: true })
 
-    const { data: futureData } = await supabase
-      .from('future_obligations')
+    const { data: maintenanceData } = await supabase
+      .from('asset_maintenance')
       .select('*')
+      .eq('is_active', true)
       .neq('status', 'done')
+      .order('priority', { ascending: true })
+
+    const { data: liabilitiesData } = await supabase
+      .from('liabilities')
+      .select('*')
+      .eq('is_active', true)
+      .order('balance', { ascending: false })
 
     setAccounts(accountsData || [])
     setPayments(paymentsData || [])
     setCards(cardsData || [])
     setIncome(incomeData || [])
-    setPriorities(prioritiesData || [])
-    setFutureObligations(futureData || [])
+    setGoals(goalsData || [])
+    setMaintenance(maintenanceData || [])
+    setLiabilities(liabilitiesData || [])
   }
 
   useEffect(() => {
     loadData()
   }, [])
 
-  const sortedIncome = income
-    .filter((item) => item.next_expected_date)
-    .sort((a, b) =>
-      a.next_expected_date.localeCompare(b.next_expected_date)
-    )
-
-  const nextPayDate = sortedIncome[0]?.next_expected_date
-    ? new Date(sortedIncome[0].next_expected_date)
-    : new Date()
-
   const spendableCash = accounts.reduce(
     (sum, account) =>
-      sum +
-      Number(
-        account.available_balance ??
-          account.current_balance ??
-          0
-      ),
+      sum + Number(account.available_balance ?? account.current_balance ?? 0),
     0
   )
 
-  const pendingPayments = payments.filter(
-    (payment) => payment.status !== 'paid'
-  )
+  const pendingPayments = payments.filter((payment) => payment.status !== 'paid')
 
-  const paymentsBeforeNextPay = pendingPayments.filter((payment) => {
-    const dueDate = new Date(payment.effective_due_date)
-    return dueDate < nextPayDate
-  })
-
-  const paymentsOnOrAfterNextPay = pendingPayments.filter((payment) => {
-    const dueDate = new Date(payment.effective_due_date)
-    return dueDate >= nextPayDate
-  })
-
-  const dueBeforeNextPay = paymentsBeforeNextPay.reduce(
+  const totalPendingPayments = pendingPayments.reduce(
     (sum, payment) => sum + Number(payment.amount || 0),
     0
   )
 
-  const dueOnOrAfterNextPay = paymentsOnOrAfterNextPay.reduce(
-    (sum, payment) => sum + Number(payment.amount || 0),
+  const upcomingIncome = income
+    .filter((item) => item.amount && item.next_expected_date)
+    .sort((a, b) => a.next_expected_date.localeCompare(b.next_expected_date))
+
+  const totalUpcomingIncome = upcomingIncome.reduce(
+    (sum, item) => sum + Number(item.amount || 0),
     0
   )
 
-  const knownIncomeBeforeOrOnNextPay = income
-    .filter((item) => {
-      if (!item.next_expected_date) return false
-      const incomeDate = new Date(item.next_expected_date)
-      return incomeDate <= nextPayDate
-    })
-    .reduce((sum, item) => sum + Number(item.amount || 0), 0)
-
-  const cashBeforePaycheck = spendableCash - dueBeforeNextPay
-
-  const cashAfterPaycheckAndPayments =
-    spendableCash +
-    knownIncomeBeforeOrOnNextPay -
-    dueBeforeNextPay -
-    dueOnOrAfterNextPay
+  const projectedCash = spendableCash + totalUpcomingIncome - totalPendingPayments
 
   const totalDebt = cards.reduce(
     (sum, card) => sum + Number(card.balance || 0),
     0
   )
 
-  const criticalPriorities = priorities.filter(
-    (item) => item.priority_level === 'critical'
-  )
-
-  const highPriorities = priorities.filter(
-    (item) => item.priority_level === 'high'
-  )
-
-  const nextFutureObligations = futureObligations
-    .filter((item) => item.target_date)
-    .sort((a, b) => a.target_date.localeCompare(b.target_date))
-    .slice(0, 3)
-
-  const totalFutureObligations = futureObligations.reduce(
-    (sum, item) => sum + Number(item.estimated_amount || 0),
+  const totalMaintenance = maintenance.reduce(
+    (sum, item) => sum + Number(item.estimated_cost || 0),
     0
   )
+
+  const totalLiabilities = liabilities.reduce(
+    (sum, item) => sum + Number(item.balance || 0),
+    0
+  )
+
+  const totalMonthlyDebtPayments = liabilities.reduce(
+    (sum, item) => sum + Number(item.monthly_payment || 0),
+    0
+  )
+
+  const activeGoals = goals.map((goal) => {
+    const target = Number(goal.target_amount || 0)
+    const current = Number(goal.current_amount || 0)
+    const remaining = Math.max(target - current, 0)
+
+    return { ...goal, target, current, remaining }
+  })
+
+  const urgentGoals = activeGoals
+    .filter((goal) => goal.remaining > 0)
+    .sort((a, b) => Number(a.priority || 99) - Number(b.priority || 99))
+    .slice(0, 3)
 
   function analyzeQuestion() {
     const lower = question.toLowerCase()
@@ -164,63 +145,18 @@ export default function AdvisorPage() {
       return
     }
 
-    const beforePaycheckAfterDecision =
-      cashBeforePaycheck - requestedAmount
+    const projectedAfterDecision = projectedCash - requestedAmount
 
-    const afterPaycheckAfterDecision =
-      cashAfterPaycheckAndPayments - requestedAmount
-
-    const hasCriticalOpen = criticalPriorities.length > 0
-
-    const hasMarbete = priorities.some((p) =>
-      p.name?.toLowerCase().includes('marbete')
-    )
-
-    const hasAutoExpreso = priorities.some((p) =>
-      p.name?.toLowerCase().includes('autoexpreso')
-    )
-
-    if (
-      lower.includes('cuarto') ||
-      lower.includes('nena') ||
-      lower.includes('gaby') ||
-      lower.includes('andrea')
-    ) {
-      if (hasCriticalOpen || hasMarbete) {
-        setAnswer(
-          `⚠️ No lo pondría como prioridad ahora. Antes de usar ${formatMoney(
-            requestedAmount
-          )} en los cuartos, resolvería prioridades críticas como hipoteca, seguro, US Bank y marbete. Después del próximo ingreso quedarías con ${formatMoney(
-            afterPaycheckAfterDecision
-          )}.`
-        )
-        return
-      }
-    }
-
-    if (beforePaycheckAfterDecision < 0) {
+    if (projectedAfterDecision < 0) {
       setAnswer(
-        `⚠️ Antes del próximo ingreso quedarías corto por ${formatMoney(
-          Math.abs(beforePaycheckAfterDecision)
-        )}. No recomiendo usar ese dinero ahora salvo que sea para una prioridad crítica.`
+        `❌ No lo recomiendo ahora. Si usas ${formatMoney(requestedAmount)}, quedarías corto por ${formatMoney(Math.abs(projectedAfterDecision))} considerando ingresos y pagos pendientes.`
       )
       return
     }
 
-    if (afterPaycheckAfterDecision < 0) {
+    if (projectedAfterDecision < 200) {
       setAnswer(
-        `❌ No lo recomiendo. Después de considerar el próximo ingreso y pagos pendientes, quedarías corto por ${formatMoney(
-          Math.abs(afterPaycheckAfterDecision)
-        )}.`
-      )
-      return
-    }
-
-    if (afterPaycheckAfterDecision < 150) {
-      setAnswer(
-        `⚠️ Se puede, pero quedarías con solo ${formatMoney(
-          afterPaycheckAfterDecision
-        )} después del próximo ingreso y pagos. Mejor usar menos o esperar.`
+        `⚠️ Se puede, pero quedarías muy justo con ${formatMoney(projectedAfterDecision)}. Yo esperaría o usaría menos.`
       )
       return
     }
@@ -228,35 +164,40 @@ export default function AdvisorPage() {
     if (
       lower.includes('popular') ||
       lower.includes('visa') ||
-      lower.includes('tarjeta')
+      lower.includes('tarjeta') ||
+      lower.includes('deuda')
     ) {
       setAnswer(
-        `✅ Tiene sentido atacar deuda, especialmente deuda cara como Popular Visa. Si pagas ${formatMoney(
-          requestedAmount
-        )}, quedarías con aproximadamente ${formatMoney(
-          afterPaycheckAfterDecision
-        )} después del próximo ingreso y pagos.`
+        `✅ Tiene sentido atacar deuda. Si pagas ${formatMoney(requestedAmount)}, todavía quedarías con aproximadamente ${formatMoney(projectedAfterDecision)} después de ingresos y pagos pendientes.`
       )
       return
     }
 
-    if (hasAutoExpreso) {
+    if (
+      lower.includes('goma') ||
+      lower.includes('honda') ||
+      lower.includes('carro') ||
+      lower.includes('mantenimiento')
+    ) {
       setAnswer(
-        `✅ Se puede evaluar, pero recuerda que AutoExpreso sigue como obligación alta. Si usas ${formatMoney(
-          requestedAmount
-        )}, quedarías con aproximadamente ${formatMoney(
-          afterPaycheckAfterDecision
-        )}.`
+        `✅ Esto parece relacionado a mantenimiento de un asset. Si usas ${formatMoney(requestedAmount)}, quedarías con aproximadamente ${formatMoney(projectedAfterDecision)}. Si afecta seguridad o uso del vehículo/casa, lo trataría como prioridad antes que un gasto opcional.`
+      )
+      return
+    }
+
+    if (
+      lower.includes('kayak') ||
+      lower.includes('crucero') ||
+      lower.includes('vacaciones')
+    ) {
+      setAnswer(
+        `⚠️ Es posible, pero lo trataría como gasto opcional. Si usas ${formatMoney(requestedAmount)}, quedarías con ${formatMoney(projectedAfterDecision)}. Antes confirmaría que pagos, metas importantes, mantenimiento y tarjetas estén controladas.`
       )
       return
     }
 
     setAnswer(
-      `✅ Se puede evaluar. Después de usar ${formatMoney(
-        requestedAmount
-      )}, quedarías con aproximadamente ${formatMoney(
-        afterPaycheckAfterDecision
-      )} considerando el próximo ingreso y pagos pendientes.`
+      `✅ Se puede evaluar. Después de usar ${formatMoney(requestedAmount)}, quedarías con aproximadamente ${formatMoney(projectedAfterDecision)} considerando ingresos y pagos pendientes.`
     )
   }
 
@@ -269,78 +210,40 @@ export default function AdvisorPage() {
       <section className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <div className="border rounded p-4">
           <h2 className="font-semibold">💰 Disponible Hoy</h2>
-          <p className="text-3xl font-bold">
-            {formatMoney(spendableCash)}
-          </p>
+          <p className="text-3xl font-bold">{formatMoney(spendableCash)}</p>
         </div>
 
         <div className="border rounded p-4">
-          <h2 className="font-semibold">⚠️ Antes del próximo ingreso</h2>
-          <p className="text-3xl font-bold">
-            {formatMoney(cashBeforePaycheck)}
-          </p>
+          <h2 className="font-semibold">💵 Próximos Ingresos</h2>
+          <p className="text-3xl font-bold">{formatMoney(totalUpcomingIncome)}</p>
         </div>
 
         <div className="border rounded p-4">
-          <h2 className="font-semibold">📊 Después de ingresos y pagos</h2>
-          <p className="text-3xl font-bold">
-            {formatMoney(cashAfterPaycheckAndPayments)}
-          </p>
+          <h2 className="font-semibold">📅 Pagos Pendientes</h2>
+          <p className="text-3xl font-bold">{formatMoney(totalPendingPayments)}</p>
+        </div>
+
+        <div className="border rounded p-4">
+          <h2 className="font-semibold">📊 Cash Proyectado</h2>
+          <p className="text-3xl font-bold">{formatMoney(projectedCash)}</p>
         </div>
 
         <div className="border rounded p-4">
           <h2 className="font-semibold">💳 Deuda Tarjetas</h2>
-          <p className="text-3xl font-bold">
-            {formatMoney(totalDebt)}
+          <p className="text-3xl font-bold">{formatMoney(totalDebt)}</p>
+        </div>
+
+        <div className="border rounded p-4">
+          <h2 className="font-semibold">🏦 Deudas Grandes</h2>
+          <p className="text-3xl font-bold">{formatMoney(totalLiabilities)}</p>
+          <p className="text-sm opacity-70">
+            Pagos mensuales: {formatMoney(totalMonthlyDebtPayments)}
           </p>
         </div>
-      </section>
 
-      <section className="border rounded p-4">
-        <h2 className="text-2xl font-bold mb-4">
-          🚨 Riesgos y prioridades
-        </h2>
-
-        <div className="space-y-3">
-          {criticalPriorities.map((item) => (
-            <div key={item.id} className="border rounded p-3">
-              <strong>🔴 {item.name}</strong>
-              <p>{formatMoney(Number(item.amount || 0))}</p>
-              <p>Status: {item.status}</p>
-            </div>
-          ))}
-
-          {highPriorities.map((item) => (
-            <div key={item.id} className="border rounded p-3">
-              <strong>🟠 {item.name}</strong>
-              <p>{formatMoney(Number(item.amount || 0))}</p>
-              <p>Status: {item.status}</p>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      <section className="border rounded p-4">
-        <h2 className="text-2xl font-bold mb-4">
-          🔮 Próximas obligaciones
-        </h2>
-
-        <p className="mb-3">
-          Total futuro identificado: {formatMoney(totalFutureObligations)}
-        </p>
-
-        <div className="space-y-3">
-          {nextFutureObligations.map((item) => (
-            <div key={item.id} className="border rounded p-3">
-              <strong>{item.name}</strong>
-              <p>
-                Estimado:{' '}
-                {formatMoney(Number(item.estimated_amount || 0))}
-              </p>
-              <p>Fecha objetivo: {item.target_date}</p>
-              <p>Prioridad: {item.priority}</p>
-            </div>
-          ))}
+        <div className="border rounded p-4">
+          <h2 className="font-semibold">🛠️ Mantenimiento</h2>
+          <p className="text-3xl font-bold">{formatMoney(totalMaintenance)}</p>
         </div>
       </section>
 
@@ -349,15 +252,12 @@ export default function AdvisorPage() {
 
         <textarea
           className="border rounded p-3 w-full min-h-28"
-          placeholder="Ejemplo: Quiero usar $200 para las gomas Honda"
+          placeholder="Ejemplo: ¿Puedo pagar $500 extra a Popular?"
           value={question}
           onChange={(e) => setQuestion(e.target.value)}
         />
 
-        <button
-          className="border rounded p-3"
-          onClick={analyzeQuestion}
-        >
+        <button className="border rounded p-3" onClick={analyzeQuestion}>
           Analizar decisión
         </button>
 
@@ -370,29 +270,68 @@ export default function AdvisorPage() {
       </section>
 
       <section className="border rounded p-4">
-        <h2 className="text-2xl font-bold mb-4">
-          📌 Pagos antes del próximo ingreso
-        </h2>
+        <h2 className="text-2xl font-bold mb-4">🏦 Liabilities / Deudas</h2>
 
         <div className="space-y-3">
-          {paymentsBeforeNextPay.map((payment) => (
-            <div key={payment.id} className="border rounded p-4">
-              <strong>{payment.name}</strong>
-              <p>{formatMoney(Number(payment.amount || 0))}</p>
-              <p>Estado: {payment.status}</p>
-              <p>Fecha efectiva: {payment.effective_due_date}</p>
+          {liabilities.map((item) => (
+            <div key={item.id} className="border rounded p-4">
+              <strong>{item.name}</strong>
+              <p>Tipo: {item.liability_type}</p>
+              <p>Banco/Entidad: {item.lender}</p>
+              <p>Dueño: {item.owner}</p>
+              <p>Balance: {formatMoney(Number(item.balance || 0))}</p>
+              <p>APR: {item.apr}%</p>
+              <p>Pago mensual: {formatMoney(Number(item.monthly_payment || 0))}</p>
+              <p>Vence día: {item.due_day}</p>
+              {item.grace_day && <p>Fecha límite: día {item.grace_day}</p>}
+              {item.remaining_payments && <p>Pagos restantes: {item.remaining_payments}</p>}
+              {item.notes && <p className="text-sm opacity-70">{item.notes}</p>}
             </div>
           ))}
         </div>
       </section>
 
       <section className="border rounded p-4">
-        <h2 className="text-2xl font-bold mb-4">
-          📅 Pagos del próximo ingreso o después
-        </h2>
+        <h2 className="text-2xl font-bold mb-4">🎯 Metas activas</h2>
 
         <div className="space-y-3">
-          {paymentsOnOrAfterNextPay.map((payment) => (
+          {urgentGoals.map((goal) => (
+            <div key={goal.id} className="border rounded p-4">
+              <strong>{goal.name}</strong>
+              <p>Meta: {formatMoney(goal.target)}</p>
+              <p>Ahorrado: {formatMoney(goal.current)}</p>
+              <p>Faltante: {formatMoney(goal.remaining)}</p>
+              <p>Fecha objetivo: {goal.target_date}</p>
+              <p>Prioridad: {goal.priority}</p>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <section className="border rounded p-4">
+        <h2 className="text-2xl font-bold mb-4">🛠️ Mantenimiento de Assets</h2>
+
+        <div className="space-y-3">
+          {maintenance.map((item) => (
+            <div key={item.id} className="border rounded p-4">
+              <strong>{item.name}</strong>
+              <p>Asset ID: {item.asset_id}</p>
+              <p>Costo estimado: {formatMoney(Number(item.estimated_cost || 0))}</p>
+              {item.due_date && <p>Fecha objetivo: {item.due_date}</p>}
+              {item.due_mileage && <p>Millaje objetivo: {item.due_mileage}</p>}
+              <p>Prioridad: {item.priority}</p>
+              <p>Estado: {item.status}</p>
+              {item.notes && <p className="text-sm opacity-70">{item.notes}</p>}
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <section className="border rounded p-4">
+        <h2 className="text-2xl font-bold mb-4">📌 Pagos pendientes</h2>
+
+        <div className="space-y-3">
+          {pendingPayments.map((payment) => (
             <div key={payment.id} className="border rounded p-4">
               <strong>{payment.name}</strong>
               <p>{formatMoney(Number(payment.amount || 0))}</p>

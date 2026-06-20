@@ -3,6 +3,7 @@ import {
   Configuration,
   PlaidApi,
   PlaidEnvironments,
+  Products,
 } from 'plaid'
 
 const configuration = new Configuration({
@@ -27,8 +28,8 @@ export async function POST() {
         client_user_id: crypto.randomUUID(),
       },
       client_name: 'Mansor One',
-      products: ['transactions'],
-      country_codes: ['US'],
+      products: [Products.Transactions],
+      country_codes: ['US' as any],
       language: 'en',
     })
 

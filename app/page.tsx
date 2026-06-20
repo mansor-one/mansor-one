@@ -1,9 +1,10 @@
-import { supabase } from '@/lib/supabase'
+import { requireUser } from '@/lib/auth/requireUser'
 import Nav from './components/Nav'
 
 export const dynamic = 'force-dynamic'
 
 export default async function Home() {
+  const { supabase } = await requireUser()
   const { data: plaidAccounts, error: plaidAccountsError } = await supabase
     .from('plaid_accounts')
     .select('name, available_balance, current_balance')
