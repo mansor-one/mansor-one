@@ -16,72 +16,39 @@ export default function AdvisorPage() {
   const [goals, setGoals] = useState<any[]>([])
   const [maintenance, setMaintenance] = useState<any[]>([])
   const [liabilities, setLiabilities] = useState<any[]>([])
+  const [assets, setAssets] = useState<any[]>([])
   const [question, setQuestion] = useState('')
   const [answer, setAnswer] = useState('')
 
   async function loadData() {
-  const month = 6
-  const year = 2026
+    const month = 6
+    const year = 2026
 
-  const { data: accountsData } = await supabase
-    .from('plaid_accounts')
-    .select('*')
+    const { data: assetsData } = await supabase.from('assets').select('*').eq('is_active', true)
+    const { data: accountsData } = await supabase.from('plaid_accounts').select('*')
+    const { data: paymentsData } = await supabase.from('payment_instances').select('*').eq('payment_month', month).eq('payment_year', year)
+    const { data: cardsData } = await supabase.from('credit_cards').select('*').eq('is_active', true)
+    const { data: incomeData } = await supabase.from('income_schedule').select('*').eq('is_active', true)
+    const { data: goalsData } = await supabase.from('financial_goals').select('*').eq('is_active', true).order('priority', { ascending: true })
+    const { data: maintenanceData } = await supabase.from('asset_maintenance').select('*').eq('is_active', true).neq('status', 'done').order('priority', { ascending: true })
+    const { data: liabilitiesData } = await supabase.from('liabilities').select('*').eq('is_active', true).order('balance', { ascending: false })
 
-  const { data: paymentsData, error: paymentsError } = await supabase
-    .from('payment_instances')
-    .select('*')
-    .eq('payment_month', month)
-    .eq('payment_year', year)
-
-  const { data: cardsData, error: cardsError } = await supabase
-    .from('credit_cards')
-    .select('*')
-    .eq('is_active', true)
-
-  const { data: incomeData, error: incomeError } = await supabase
-    .from('income_schedule')
-    .select('*')
-    .eq('is_active', true)
-
-  const { data: goalsData } = await supabase
-    .from('financial_goals')
-    .select('*')
-    .eq('is_active', true)
-    .order('priority', { ascending: true })
-
-  const { data: maintenanceData } = await supabase
-    .from('asset_maintenance')
-    .select('*')
-    .eq('is_active', true)
-    .neq('status', 'done')
-    .order('priority', { ascending: true })
-
-  const { data: liabilitiesData } = await supabase
-    .from('liabilities')
-    .select('*')
-    .eq('is_active', true)
-    .order('balance', { ascending: false })
-
-  console.log('paymentsError', paymentsError)
-  console.log('cardsError', cardsError)
-  console.log('incomeError', incomeError)
-
-  setAccounts(accountsData || [])
-  setPayments(paymentsData || [])
-  setCards(cardsData || [])
-  setIncome(incomeData || [])
-  setGoals(goalsData || [])
-  setMaintenance(maintenanceData || [])
-  setLiabilities(liabilitiesData || [])
-}
+    setAssets(assetsData || [])
+    setAccounts(accountsData || [])
+    setPayments(paymentsData || [])
+    setCards(cardsData || [])
+    setIncome(incomeData || [])
+    setGoals(goalsData || [])
+    setMaintenance(maintenanceData || [])
+    setLiabilities(liabilitiesData || [])
+  }
 
   useEffect(() => {
     loadData()
   }, [])
 
   const spendableCash = accounts.reduce(
-    (sum, account) =>
-      sum + Number(account.available_balance ?? account.current_balance ?? 0),
+    (sum, account) => sum + Number(account.available_balance ?? account.current_balance ?? 0),
     0
   )
 
@@ -92,21 +59,13 @@ export default function AdvisorPage() {
     0
   )
 
-  const upcomingIncome = income
+  const totalUpcomingIncome = income
     .filter((item) => item.amount && item.next_expected_date)
-    .sort((a, b) => a.next_expected_date.localeCompare(b.next_expected_date))
-
-  const totalUpcomingIncome = upcomingIncome.reduce(
-    (sum, item) => sum + Number(item.amount || 0),
-    0
-  )
+    .reduce((sum, item) => sum + Number(item.amount || 0), 0)
 
   const projectedCash = spendableCash + totalUpcomingIncome - totalPendingPayments
 
-  const totalDebt = cards.reduce(
-    (sum, card) => sum + Number(card.balance || 0),
-    0
-  )
+  const totalDebt = cards.reduce((sum, card) => sum + Number(card.balance || 0), 0)
 
   const totalMaintenance = maintenance.reduce(
     (sum, item) => sum + Number(item.estimated_cost || 0),
@@ -123,13 +82,42 @@ export default function AdvisorPage() {
     0
   )
 
+  const totalAssets = assets.reduce(
+    (sum, item) => sum + Number(item.estimated_value || 0),
+    0
+  )
+
+  const netWorth = totalAssets - totalLiabilities - totalDebt
+
   const activeGoals = goals.map((goal) => {
     const target = Number(goal.target_amount || 0)
     const current = Number(goal.current_amount || 0)
     const remaining = Math.max(target - current, 0)
-
     return { ...goal, target, current, remaining }
   })
+
+  const emergencyFundTarget = 2000
+  const emergencyGoal = activeGoals.find((g) => g.name === 'Fondo Emergencia')
+
+  const emergencyFundScore = Math.min(
+    ((Number(emergencyGoal?.current || 0) / emergencyFundTarget) * 20),
+    20
+  )
+
+  const liquidityScore =
+    spendableCash >= 2000 ? 20 : Math.round((spendableCash / 2000) * 20)
+
+  const debtScore =
+    totalDebt < 10000 ? 20 : totalDebt < 25000 ? 15 : totalDebt < 50000 ? 10 : 5
+
+  const assetScore = totalAssets >= 250000 ? 20 : totalAssets >= 100000 ? 15 : 10
+
+  const cashFlowScore =
+    projectedCash > 3000 ? 20 : projectedCash > 1000 ? 15 : projectedCash > 0 ? 10 : 0
+
+  const healthScore = Math.round(
+    emergencyFundScore + liquidityScore + debtScore + assetScore + cashFlowScore
+  )
 
   const urgentGoals = activeGoals
     .filter((goal) => goal.remaining > 0)
@@ -137,8 +125,7 @@ export default function AdvisorPage() {
     .slice(0, 3)
 
   function analyzeQuestion() {
-    const lower = question.toLowerCase()
-    const amountMatch = lower.match(/(\d+(\.\d+)?)/)
+    const amountMatch = question.toLowerCase().match(/(\d+(\.\d+)?)/)
     const requestedAmount = amountMatch ? Number(amountMatch[0]) : 0
 
     if (!question.trim()) {
@@ -155,103 +142,55 @@ export default function AdvisorPage() {
 
     if (projectedAfterDecision < 0) {
       setAnswer(
-        `❌ No lo recomiendo ahora. Si usas ${formatMoney(
-          requestedAmount
-        )}, quedarías corto por ${formatMoney(
-          Math.abs(projectedAfterDecision)
-        )} considerando ingresos y pagos pendientes.`
+        `❌ No lo recomiendo ahora. Si usas ${formatMoney(requestedAmount)}, quedarías corto por ${formatMoney(Math.abs(projectedAfterDecision))}.`
       )
       return
     }
 
     setAnswer(
-      `✅ Se puede evaluar. Después de usar ${formatMoney(
-        requestedAmount
-      )}, quedarías con aproximadamente ${formatMoney(
-        projectedAfterDecision
-      )} considerando ingresos y pagos pendientes.`
+      `✅ Se puede evaluar. Después de usar ${formatMoney(requestedAmount)}, quedarías con aproximadamente ${formatMoney(projectedAfterDecision)}.`
     )
   }
 
   return (
     <main className="p-8 space-y-6">
       <h1 className="text-4xl font-bold">🤖 Mansor Advisor</h1>
-
       <Nav />
-  
 
       <section className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <div className="border rounded p-4">
-          <h2 className="font-semibold">💰 Disponible Hoy</h2>
-          <p className="text-3xl font-bold">{formatMoney(spendableCash)}</p>
-        </div>
+        <div className="border rounded p-4"><h2 className="font-semibold">💰 Disponible Hoy</h2><p className="text-3xl font-bold">{formatMoney(spendableCash)}</p></div>
+        <div className="border rounded p-4"><h2 className="font-semibold">💵 Próximos Ingresos</h2><p className="text-3xl font-bold">{formatMoney(totalUpcomingIncome)}</p></div>
+        <div className="border rounded p-4"><h2 className="font-semibold">📅 Pagos Pendientes</h2><p className="text-3xl font-bold">{formatMoney(totalPendingPayments)}</p></div>
+        <div className="border rounded p-4"><h2 className="font-semibold">📊 Cash Proyectado</h2><p className="text-3xl font-bold">{formatMoney(projectedCash)}</p></div>
+        <div className="border rounded p-4"><h2 className="font-semibold">💳 Deuda Tarjetas</h2><p className="text-3xl font-bold">{formatMoney(totalDebt)}</p></div>
+        <div className="border rounded p-4"><h2 className="font-semibold">🏦 Deudas Grandes</h2><p className="text-3xl font-bold">{formatMoney(totalLiabilities)}</p><p className="text-sm opacity-70">Pagos mensuales: {formatMoney(totalMonthlyDebtPayments)}</p></div>
+        <div className="border rounded p-4"><h2 className="font-semibold">🛠️ Mantenimiento</h2><p className="text-3xl font-bold">{formatMoney(totalMaintenance)}</p></div>
+        <div className="border rounded p-4"><h2 className="font-semibold">🏦 Net Worth</h2><p className="text-3xl font-bold">{formatMoney(netWorth)}</p><p className="text-sm opacity-70">Assets: {formatMoney(totalAssets)}</p></div>
 
         <div className="border rounded p-4">
-          <h2 className="font-semibold">💵 Próximos Ingresos</h2>
-          <p className="text-3xl font-bold">{formatMoney(totalUpcomingIncome)}</p>
-        </div>
-
-        <div className="border rounded p-4">
-          <h2 className="font-semibold">📅 Pagos Pendientes</h2>
-          <p className="text-3xl font-bold">{formatMoney(totalPendingPayments)}</p>
-        </div>
-
-        <div className="border rounded p-4">
-          <h2 className="font-semibold">📊 Cash Proyectado</h2>
-          <p className="text-3xl font-bold">{formatMoney(projectedCash)}</p>
-        </div>
-
-        <div className="border rounded p-4">
-          <h2 className="font-semibold">💳 Deuda Tarjetas</h2>
-          <p className="text-3xl font-bold">{formatMoney(totalDebt)}</p>
-        </div>
-
-        <div className="border rounded p-4">
-          <h2 className="font-semibold">🏦 Deudas Grandes</h2>
-          <p className="text-3xl font-bold">{formatMoney(totalLiabilities)}</p>
-          <p className="text-sm opacity-70">
-            Pagos mensuales: {formatMoney(totalMonthlyDebtPayments)}
-          </p>
-        </div>
-
-        <div className="border rounded p-4">
-          <h2 className="font-semibold">🛠️ Mantenimiento</h2>
-          <p className="text-3xl font-bold">{formatMoney(totalMaintenance)}</p>
+          <h2 className="font-semibold">🏥 Financial Health</h2>
+          <p className="text-3xl font-bold">{healthScore}/100</p>
+          <p className="text-sm">Liquidity: {liquidityScore}/20</p>
+          <p className="text-sm">Emergency Fund: {Math.round(emergencyFundScore)}/20</p>
+          <p className="text-sm">Debt Load: {debtScore}/20</p>
+          <p className="text-sm">Asset Strength: {assetScore}/20</p>
+          <p className="text-sm">Cash Flow: {cashFlowScore}/20</p>
         </div>
       </section>
 
       <section className="border rounded p-4 space-y-4">
         <h2 className="text-2xl font-bold">Pregúntale a Pablo</h2>
-
-        <textarea
-          className="border rounded p-3 w-full min-h-28"
-          placeholder="Ejemplo: ¿Puedo pagar $500 extra a Popular?"
-          value={question}
-          onChange={(e) => setQuestion(e.target.value)}
-        />
-
-        <button className="border rounded p-3" onClick={analyzeQuestion}>
-          Analizar decisión
-        </button>
-
-        {answer && (
-          <div className="border rounded p-4">
-            <h3 className="font-bold mb-2">Respuesta</h3>
-            <p>{answer}</p>
-          </div>
-        )}
+        <textarea className="border rounded p-3 w-full min-h-28" placeholder="Ejemplo: ¿Puedo pagar $500 extra a Popular?" value={question} onChange={(e) => setQuestion(e.target.value)} />
+        <button className="border rounded p-3" onClick={analyzeQuestion}>Analizar decisión</button>
+        {answer && <div className="border rounded p-4"><h3 className="font-bold mb-2">Respuesta</h3><p>{answer}</p></div>}
       </section>
 
       <section className="border rounded p-4">
         <h2 className="text-2xl font-bold mb-4">🏦 Liabilities / Deudas</h2>
-
         <div className="space-y-3">
           {liabilities.map((item) => (
             <div key={item.id} className="border rounded p-4">
               <strong>{item.name}</strong>
-              <p>Tipo: {item.liability_type}</p>
-              <p>Banco/Entidad: {item.lender}</p>
-              <p>Dueño: {item.owner}</p>
               <p>Balance: {formatMoney(Number(item.balance || 0))}</p>
               <p>APR: {item.apr}%</p>
               <p>Pago mensual: {formatMoney(Number(item.monthly_payment || 0))}</p>
@@ -266,7 +205,6 @@ export default function AdvisorPage() {
 
       <section className="border rounded p-4">
         <h2 className="text-2xl font-bold mb-4">🎯 Metas activas</h2>
-
         <div className="space-y-3">
           {urgentGoals.map((goal) => (
             <div key={goal.id} className="border rounded p-4">
@@ -283,25 +221,22 @@ export default function AdvisorPage() {
 
       <section className="border rounded p-4">
         <h2 className="text-2xl font-bold mb-4">🛠️ Mantenimiento de Assets</h2>
-
         <div className="space-y-3">
           {maintenance.map((item) => (
             <div key={item.id} className="border rounded p-4">
               <strong>{item.name}</strong>
               <p>
-  Asset:{' '}
-  {item.asset_id === 'e3081886-a459-476e-8097-ec420651f46b'
-    ? 'Honda'
-    : item.asset_id === 'ede26719-17f7-4f6f-ab55-6d6b2984d75a'
-    ? 'Toyota Corolla Cross'
-    : 'Sin asset asociado'}
-</p>
+                Asset:{' '}
+                {item.asset_id === 'e3081886-a459-476e-8097-ec420651f46b'
+                  ? 'Honda'
+                  : item.asset_id === 'ede26719-17f7-4f6f-ab55-6d6b2984d75a'
+                  ? 'Toyota Corolla Cross'
+                  : 'Sin asset asociado'}
+              </p>
               <p>Costo estimado: {formatMoney(Number(item.estimated_cost || 0))}</p>
               {item.due_date && <p>Fecha objetivo: {item.due_date}</p>}
               {item.due_mileage && <p>Millaje objetivo: {item.due_mileage}</p>}
-              <p>Prioridad: {item.priority}</p>
               <p>Estado: {item.status}</p>
-              {item.notes && <p className="text-sm opacity-70">{item.notes}</p>}
             </div>
           ))}
         </div>
@@ -309,7 +244,6 @@ export default function AdvisorPage() {
 
       <section className="border rounded p-4">
         <h2 className="text-2xl font-bold mb-4">📌 Pagos pendientes</h2>
-
         <div className="space-y-3">
           {pendingPayments.map((payment) => (
             <div key={payment.id} className="border rounded p-4">
