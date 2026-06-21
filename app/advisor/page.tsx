@@ -62,6 +62,25 @@ export default function AdvisorPage() {
     .filter((a) => a.type === 'credit')
     .reduce((sum, account) => sum + Number(account.current_balance ?? 0), 0)
 
+  const bankTotals = accounts
+    .filter((a) => a.type === 'depository')
+    .reduce((acc, account) => {
+      const institution = account.institution_name || 'Unknown'
+      acc[institution] = (acc[institution] || 0) + Number(account.available_balance ?? account.current_balance ?? 0)
+      return acc
+    }, {} as Record<string, number>)
+
+  const creditTotals = accounts
+    .filter((a) => a.type === 'credit')
+    .reduce((acc, account) => {
+      const institution = account.institution_name || 'Unknown'
+      acc[institution] = (acc[institution] || 0) + Number(account.available_balance ?? 0)
+      return acc
+    }, {} as Record<string, number>)
+
+  const bankTotalsEntries = Object.entries(bankTotals) as [string, number][]
+  const creditTotalsEntries = Object.entries(creditTotals) as [string, number][]
+
   const pendingPayments = payments.filter((payment) => payment.status !== 'paid')
 
   const totalPendingPayments = pendingPayments.reduce(
@@ -224,6 +243,8 @@ export default function AdvisorPage() {
         <div className="border rounded p-4"><h2 className="font-semibold">📊 Cash Proyectado</h2><p className="text-3xl font-bold">{formatMoney(projectedCash)}</p></div>
         <div className="border rounded p-4"><h2 className="font-semibold">💳 Deuda Tarjetas</h2><p className="text-3xl font-bold">{formatMoney(totalDebt)}</p></div>
         <div className="border rounded p-4"><h2 className="font-semibold">💳 Crédito disponible (tarjetas)</h2><p className="text-3xl font-bold">{formatMoney(creditAvailable)}</p></div>
+        <div className="border rounded p-4"><h2 className="font-semibold">🏦 Instituciones conectadas</h2><div className="space-y-1">{bankTotalsEntries.map(([name, amount]) => (<p key={name}>{name}: {formatMoney(amount)}</p>))}</div></div>
+        <div className="border rounded p-4"><h2 className="font-semibold">🏦 Crédito por institución</h2><div className="space-y-1">{creditTotalsEntries.map(([name, amount]) => (<p key={name}>{name}: {formatMoney(amount)}</p>))}</div></div>
         <div className="border rounded p-4"><h2 className="font-semibold">🏦 Deudas Grandes</h2><p className="text-3xl font-bold">{formatMoney(totalLiabilities)}</p><p className="text-sm opacity-70">Pagos mensuales: {formatMoney(totalMonthlyDebtPayments)}</p></div>
         <div className="border rounded p-4"><h2 className="font-semibold">🛠️ Mantenimiento</h2><p className="text-3xl font-bold">{formatMoney(totalMaintenance)}</p></div>
         <div className="border rounded p-4"><h2 className="font-semibold">🏦 Net Worth</h2><p className="text-3xl font-bold">{formatMoney(netWorth)}</p><p className="text-sm opacity-70">Assets: {formatMoney(totalAssets)}</p></div>

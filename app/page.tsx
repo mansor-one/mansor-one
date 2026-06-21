@@ -7,7 +7,7 @@ export default async function Home() {
   const { supabase } = await requireUser()
   const { data: plaidAccounts, error: plaidAccountsError } = await supabase
     .from('plaid_accounts')
-    .select('name, available_balance, current_balance, type')
+    .select('name, available_balance, current_balance, type, institution_name, connection_id')
 
   const { data: cards } = await supabase
     .from('credit_cards')
@@ -76,6 +76,19 @@ export default async function Home() {
       (sum, account) => sum + Number(account.current_balance || 0),
       0
     ) || 0
+
+  const bankTotals = plaidDepository.reduce((acc, account) => {
+    const institution = account.institution_name || 'Unknown'
+    acc[institution] = (acc[institution] || 0) + Number(account.available_balance || 0)
+    return acc
+  }, {} as Record<string, number>)
+
+  const creditTotals = plaidCredit.reduce((acc, account) => {
+    const institution = account.institution_name || 'Unknown'
+    acc[institution] = (acc[institution] || 0) + Number(account.available_balance || 0)
+    return acc
+  }, {} as Record<string, number>)
+
 
   const totalDebt =
     cards?.reduce((sum, card) => sum + Number(card.balance || 0), 0) || 0
@@ -205,7 +218,31 @@ const projectedAvailableWithIncome =
           </p>
         </div>
       </section>
-
+      <section className="border rounded p-4">
+        <h2 className="text-2xl font-bold mb-3">Instituciones conectadas</h2>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="border rounded p-4">
+            <h3 className="font-semibold">Dinero en bancos</h3>
+            <div className="space-y-2">
+              {Object.entries(bankTotals).map(([institution, amount]) => (
+                <p key={institution}>
+                  {institution}: ${amount.toLocaleString()}
+                </p>
+              ))}
+            </div>
+          </div>
+          <div className="border rounded p-4">
+            <h3 className="font-semibold">Crédito disponible</h3>
+            <div className="space-y-2">
+              {Object.entries(creditTotals).map(([institution, amount]) => (
+                <p key={institution}>
+                  {institution}: ${amount.toLocaleString()}
+                </p>
+              ))}
+            </div>
+          </div>
+        </div>
+      </section>
       <div className="border rounded p-4">
         <h2 className="font-semibold">📊 Gasto real del mes</h2>
         <p className="text-3xl font-bold">

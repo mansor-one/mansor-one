@@ -113,6 +113,20 @@ export default function AccountsPage() {
     0
   )
 
+  type PlaidAccount = typeof plaidAccounts[number]
+
+  const plaidByInstitution = plaidAccounts.reduce(
+    (acc, account) => {
+      const institution = account.institution_name || 'Unknown'
+      if (!acc[institution]) acc[institution] = []
+      acc[institution].push(account)
+      return acc
+    }, {} as Record<string, PlaidAccount[]>)
+
+  const plaidInstitutionEntries = Object.entries(
+    plaidByInstitution
+  ) as [string, PlaidAccount[]][]
+
   return (
     <main className="p-8 space-y-6">
       <h1 className="text-4xl font-bold">🏦 Cuentas</h1>
@@ -172,25 +186,32 @@ export default function AccountsPage() {
       <section className="space-y-4">
         <h2 className="text-2xl font-bold">Cuentas Plaid</h2>
 
-        {plaidAccounts.map((account) => (
-          <div key={account.id} className="border rounded p-4 space-y-2">
-            <h3 className="text-xl font-semibold">{account.name}</h3>
-            <p>Tipo: {account.type}</p>
-            <p>Subtipo: {account.subtype}</p>
+        {plaidInstitutionEntries.map(([institution, accounts]) => (
+          <div key={institution} className="border rounded p-4 space-y-4">
+            <h3 className="text-xl font-semibold">{institution}</h3>
+            <div className="space-y-3">
+              {accounts.map((account) => (
+                <div key={account.id} className="border rounded p-4 space-y-2">
+                  <h4 className="font-semibold">{account.name}</h4>
+                  <p>Tipo: {account.type}</p>
+                  <p>Subtipo: {account.subtype}</p>
 
-            {account.type === 'credit' ? (
-              <>
-                <p>Crédito disponible: {money(account.available_balance)}</p>
-                <p>Balance adeudado: {money(account.current_balance)}</p>
-              </>
-            ) : (
-              <>
-                <p>Disponible: {money(account.available_balance)}</p>
-                <p>Balance actual: {money(account.current_balance)}</p>
-              </>
-            )}
+                  {account.type === 'credit' ? (
+                    <>
+                      <p>Crédito disponible: {money(account.available_balance)}</p>
+                      <p>Balance adeudado: {money(account.current_balance)}</p>
+                    </>
+                  ) : (
+                    <>
+                      <p>Disponible: {money(account.available_balance)}</p>
+                      <p>Balance actual: {money(account.current_balance)}</p>
+                    </>
+                  )}
 
-            <p>Actualizado: {account.updated_at}</p>
+                  <p>Actualizado: {account.updated_at}</p>
+                </div>
+              ))}
+            </div>
           </div>
         ))}
       </section>

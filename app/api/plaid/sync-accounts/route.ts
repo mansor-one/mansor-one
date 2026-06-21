@@ -86,24 +86,45 @@ export async function POST() {
 
         const accounts = response.data.accounts || []
 
-        const rows = accounts.map((account) => ({
-          user_id: user.id,
-          plaid_account_id: account.account_id,
-          name: account.name,
-          type: account.type,
-          subtype: account.subtype,
-          available_balance: account.balances.available,
-          current_balance: account.balances.current,
-          currency: account.balances.iso_currency_code,
-          updated_at: new Date().toISOString(),
-        }))
+        const rows = accounts.map((account) => {
+          console.log('Syncing Plaid account', {
+            name: account.name,
+            institution_name: connection.institution_name,
+            connection_id: connection.id,
+          })
+
+          return {
+            user_id: user.id,
+            connection_id: connection.id,
+            institution_name: connection.institution_name || 'Unknown',
+            plaid_account_id: account.account_id,
+            name: account.name,
+            type: account.type,
+            subtype: account.subtype,
+            available_balance: account.balances.available,
+            current_balance: account.balances.current,
+            currency: account.balances.iso_currency_code,
+            updated_at: new Date().toISOString(),
+          }
+        })
+
+        console.log('Connection', {
+          id: connection.id,
+          institution_name: connection.institution_name,
+        })
+        console.log('Rows sample', rows[0])
 
         if (rows.length > 0) {
           const { error: upsertError } = await supabaseAdmin
             .from('plaid_accounts')
             .upsert(rows, {
-              onConflict: 'user_id,plaid_account_id',
+              onConflict: 'plaid_account_id',
             })
+
+          console.log('Upsert result', {
+            error: upsertError,
+            rows: rows.length,
+          })
 
           if (upsertError) {
             throw upsertError
