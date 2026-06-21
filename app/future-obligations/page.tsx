@@ -1,4 +1,4 @@
-import { supabase } from '@/lib/supabase'
+import { requireUser } from '@/lib/auth/requireUser'
 import Nav from '../components/Nav'
 
 function formatDate(dateString: string | null) {
@@ -27,6 +27,7 @@ function weeklyReserve(amount: number, dateString: string | null) {
 }
 
 export default async function FutureObligationsPage() {
+  const { supabase } = await requireUser()
   const { data: obligations, error } = await supabase
     .from('future_obligations')
     .select('*')

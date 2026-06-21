@@ -6,6 +6,7 @@ import Nav from '../components/Nav'
 
 export default function PaymentInstancesPage() {
   const [payments, setPayments] = useState<any[]>([])
+  const [liabilities, setLiabilities] = useState<any[]>([])
   const [message, setMessage] = useState('')
 
   async function loadPayments() {
@@ -22,6 +23,13 @@ export default function PaymentInstancesPage() {
     }
 
     setPayments(data || [])
+    // load liabilities for this month to show large debts if not represented in payment_instances
+    const { data: liabilitiesData } = await supabase
+      .from('liabilities')
+      .select('*')
+      .eq('is_active', true)
+
+    setLiabilities(liabilitiesData || [])
   }
 
   async function updateStatus(id: string, status: string) {
@@ -50,6 +58,50 @@ export default function PaymentInstancesPage() {
   const totalPaid = payments
     .filter((p) => p.status === 'paid')
     .reduce((sum, p) => sum + Number(p.amount || 0), 0)
+
+  // helper for flexible name matching
+  const hasMatchingPayment = (liabilityName: string, isPaid: boolean = false) => {
+    return payments.some((p: any) => {
+      if (isPaid && p.status !== 'paid') return false
+      if (!isPaid && p.status === 'paid') return false
+      const pName = String(p.name || '').toLowerCase().trim()
+      const lName = String(liabilityName || '').toLowerCase().trim()
+      return pName.includes(lName.split(' ')[0]) || lName.includes(pName.split(' ')[0])
+    })
+  }
+
+  const liabilitiesDueNotInPayments = liabilities.filter((l) => {
+    if (!l.monthly_payment) return false
+    // exclude if already has a paid payment_instance with flexible matching
+    return !hasMatchingPayment(l.name, true)
+  })
+
+  // compute suggested state for liabilities not in payments
+  const now = new Date()
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+  const msPerDay = 1000 * 60 * 60 * 24
+
+  const liabilitiesWithSuggested = liabilitiesDueNotInPayments.map((l) => {
+    const dueDay = l.due_day ? Number(l.due_day) : null
+    const graceDay = l.grace_day ? Number(l.grace_day) : null
+    let suggested = 'normal'
+    let status = 'normal'
+
+    if (dueDay) {
+      const dueDate = new Date(now.getFullYear(), now.getMonth(), dueDay)
+      const daysUntil = Math.ceil((dueDate.getTime() - today.getTime()) / msPerDay)
+      if (daysUntil === 0) { status = 'due_today'; suggested = 'attention' }
+      else if (daysUntil < 0) {
+        if (graceDay) {
+          const graceDate = new Date(now.getFullYear(), now.getMonth(), graceDay)
+          if (today.getTime() <= graceDate.getTime()) { status = 'in_grace'; suggested = 'attention' }
+          else { status = 'overdue'; suggested = 'overdue' }
+        } else { status = 'overdue'; suggested = 'overdue' }
+      } else if (daysUntil > 0 && daysUntil <= 7) { status = 'due_soon'; suggested = 'soon' }
+    }
+
+    return { ...l, status, suggested }
+  })
 
   return (
     <main className="p-8 space-y-6">
@@ -119,6 +171,27 @@ export default function PaymentInstancesPage() {
           </div>
         ))}
       </section>
+
+      {liabilitiesWithSuggested.length > 0 && (
+        <section className="border rounded p-4">
+          <h2 className="text-2xl font-bold mb-4">🏦 Deudas grandes / préstamos</h2>
+          <div className="space-y-3">
+            {liabilitiesWithSuggested.map((l) => (
+              <div key={l.id} className="border rounded p-4">
+                <div className="flex items-center justify-between">
+                  <strong>{l.name}</strong>
+                  <span className="text-sm opacity-70">{l.status === 'due_today' ? 'Vence hoy' : l.status === 'in_grace' ? 'En gracia' : l.status === 'overdue' ? 'Vencida' : l.status === 'due_soon' ? 'Próxima' : ''}</span>
+                </div>
+                <p>Monto mensual: ${Number(l.monthly_payment || 0).toLocaleString()}</p>
+                <p>Vence día: {l.due_day || 'N/A'}</p>
+                {l.grace_day && <p>Fecha límite / gracia: día {l.grace_day}</p>}
+                <p>Balance: ${Number(l.balance || 0).toLocaleString()}</p>
+                <p className="text-sm opacity-80">Estado sugerido: {l.suggested === 'attention' ? 'Requiere atención' : l.suggested === 'overdue' ? 'Vencida - acción requerida' : l.suggested === 'soon' ? 'Próxima' : 'Normal'}</p>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
     </main>
   )
 }

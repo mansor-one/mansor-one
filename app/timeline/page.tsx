@@ -29,11 +29,13 @@ export default async function TimelinePage() {
     .neq('status', 'paid')
 
  const startingCash =
-  plaidAccounts?.reduce(
-    (sum, account) =>
-      sum + Number(account.current_balance ?? account.available_balance ?? 0),
-    0
-  ) || 0
+  (plaidAccounts
+    ?.filter((a) => a.type === 'depository')
+    .reduce(
+      (sum, account) =>
+        sum + Number(account.available_balance ?? account.current_balance ?? 0),
+      0
+    ) || 0)
 
   const incomeEvents =
     incomes
@@ -87,7 +89,7 @@ export default async function TimelinePage() {
 
       <section className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div className="border rounded p-4">
-          <h2 className="font-semibold">Balance inicial Plaid</h2>
+          <h2 className="font-semibold">Dinero inicial disponible</h2>
           <p className="text-3xl font-bold">
             ${startingCash.toLocaleString()}
           </p>

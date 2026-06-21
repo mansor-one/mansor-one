@@ -7,7 +7,7 @@ export default async function Home() {
   const { supabase } = await requireUser()
   const { data: plaidAccounts, error: plaidAccountsError } = await supabase
     .from('plaid_accounts')
-    .select('name, available_balance, current_balance')
+    .select('name, available_balance, current_balance, type')
 
   const { data: cards } = await supabase
     .from('credit_cards')
@@ -20,6 +20,11 @@ export default async function Home() {
     .eq('payment_month', 6)
     .eq('payment_year', 2026)
     .order('effective_due_date', { ascending: true })
+
+  const { data: liabilities } = await supabase
+    .from('liabilities')
+    .select('id, name, monthly_payment, due_day, grace_day, notes, balance')
+    .eq('is_active', true)
 
   const { data: entries } = await supabase
     .from('quick_entries')
@@ -42,14 +47,32 @@ export default async function Home() {
   .lte('next_expected_date', '2026-06-30')
   .order('next_expected_date', { ascending: true })
 
-  const availableTodayPlaid =
-    plaidAccounts?.reduce(
+  const plaidDepository = plaidAccounts?.filter(
+    (a) => a.type === 'depository'
+  ) || []
+
+  const plaidCredit = plaidAccounts?.filter((a) => a.type === 'credit') || []
+
+  const availableTodayBanks =
+    plaidDepository?.reduce(
       (sum, account) => sum + Number(account.available_balance || 0),
       0
     ) || 0
 
-  const realBalancePlaid =
-    plaidAccounts?.reduce(
+  const realBalanceBanks =
+    plaidDepository?.reduce(
+      (sum, account) => sum + Number(account.current_balance || 0),
+      0
+    ) || 0
+
+  const creditAvailable =
+    plaidCredit?.reduce(
+      (sum, account) => sum + Number(account.available_balance || 0),
+      0
+    ) || 0
+
+  const creditDebt =
+    plaidCredit?.reduce(
       (sum, account) => sum + Number(account.current_balance || 0),
       0
     ) || 0
@@ -70,9 +93,52 @@ const totalUpcomingIncome =
     0
   ) || 0
 
+  // compute critical liabilities: overdue, due today, in grace, within 7 days
+  const now = new Date()
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+  const msPerDay = 1000 * 60 * 60 * 24
+
+  // helper for flexible name matching
+  const hasMatchingPaidPayment = (liabilityName: string) => {
+    return payments?.some((p: any) => {
+      if (p.status !== 'paid') return false
+      const pName = String(p.name || '').toLowerCase().trim()
+      const lName = String(liabilityName || '').toLowerCase().trim()
+      return pName.includes(lName.split(' ')[0]) || lName.includes(pName.split(' ')[0])
+    }) || false
+  }
+
+  const criticalLiabilities = (liabilities || [])
+    .filter((l: any) => !hasMatchingPaidPayment(l.name))
+    .map((l: any) => {
+      const dueDay = l.due_day ? Number(l.due_day) : null
+      const graceDay = l.grace_day ? Number(l.grace_day) : null
+      let status = 'normal'
+      let daysUntil = null as number | null
+
+      if (dueDay) {
+        const dueDate = new Date(now.getFullYear(), now.getMonth(), dueDay)
+        daysUntil = Math.ceil((dueDate.getTime() - today.getTime()) / msPerDay)
+
+        if (daysUntil === 0) status = 'due_today'
+        else if (daysUntil < 0) {
+          if (graceDay) {
+            const graceDate = new Date(now.getFullYear(), now.getMonth(), graceDay)
+            if (today.getTime() <= graceDate.getTime()) status = 'in_grace'
+            else status = 'overdue'
+          } else {
+            status = 'overdue'
+          }
+        } else if (daysUntil > 0 && daysUntil <= 7) status = 'due_soon'
+      }
+
+      return { ...l, status, daysUntil }
+    })
+    .filter((l: any) => l.status !== 'normal')
+
 const projectedAvailableWithIncome =
-  availableTodayPlaid + totalUpcomingIncome - totalPending
-  const projectedAvailable = availableTodayPlaid - totalPending
+  availableTodayBanks + totalUpcomingIncome - totalPending
+  const projectedAvailable = availableTodayBanks - totalPending
 
   const realMonthlySpending =
     plaidEntries
@@ -91,16 +157,30 @@ const projectedAvailableWithIncome =
 
       <section className="grid grid-cols-1 md:grid-cols-5 gap-4">
         <div className="border rounded p-4">
-          <h2 className="font-semibold">💰 Disponible Hoy Plaid</h2>
+          <h2 className="font-semibold">💰 Dinero disponible en bancos</h2>
           <p className="text-3xl font-bold">
-            ${availableTodayPlaid.toLocaleString()}
+            ${availableTodayBanks.toLocaleString()}
           </p>
         </div>
 
         <div className="border rounded p-4">
-          <h2 className="font-semibold">🏦 Balance Real Plaid</h2>
+          <h2 className="font-semibold">🏦 Balance real en bancos</h2>
           <p className="text-3xl font-bold">
-            ${realBalancePlaid.toLocaleString()}
+            ${realBalanceBanks.toLocaleString()}
+          </p>
+        </div>
+
+        <div className="border rounded p-4">
+          <h2 className="font-semibold">💳 Crédito disponible en tarjetas</h2>
+          <p className="text-3xl font-bold">
+            ${creditAvailable.toLocaleString()}
+          </p>
+        </div>
+
+        <div className="border rounded p-4">
+          <h2 className="font-semibold">💳 Deuda actual en tarjetas conectadas</h2>
+          <p className="text-3xl font-bold">
+            ${creditDebt.toLocaleString()}
           </p>
         </div>
 
@@ -141,18 +221,18 @@ const projectedAvailableWithIncome =
   </p>
 </div>
 
-<div>
-  <p className="font-semibold">Disponible proyectado con ingresos</p>
-  <p className="text-2xl font-bold">
-    ${projectedAvailableWithIncome.toLocaleString()}
-  </p>
+      <div>
+      <p className="font-semibold">Disponible proyectado con ingresos</p>
+      <p className="text-2xl font-bold">
+        ${projectedAvailableWithIncome.toLocaleString()}
+      </p>
 </div>
 
   <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
     <div>
       <p className="font-semibold">Disponible hoy</p>
       <p className="text-2xl font-bold">
-        ${availableTodayPlaid.toLocaleString()}
+        ${availableTodayBanks.toLocaleString()}
       </p>
     </div>
 
@@ -171,15 +251,34 @@ const projectedAvailableWithIncome =
     </div>
   </div>
 
- {projectedAvailableWithIncome < 0 ? (
-  <p className="text-red-600 font-semibold">
-    ⚠️ Alerta: aun incluyendo los próximos ingresos, faltaría dinero para cubrir los pagos pendientes.
-  </p>
-) : (
-  <p className="text-green-600 font-semibold">
-    ✅ Vas bien: incluyendo los próximos ingresos, los pagos pendientes quedan cubiertos.
-  </p>
-)}
+ {(() => {
+    const criticalWithoutPayment = criticalLiabilities.filter((l: any) => l.status === 'due_today' || l.status === 'in_grace' || l.status === 'overdue')
+    const totalCriticalMonthly = criticalWithoutPayment.reduce((sum, l: any) => sum + Number(l.monthly_payment || 0), 0)
+    const hasCriticalUncovered = criticalWithoutPayment.length > 0 && availableTodayBanks < totalCriticalMonthly
+
+    if (hasCriticalUncovered) {
+      const criticalName = criticalWithoutPayment[0]?.name || 'Compromiso crítico'
+      return (
+        <p className="text-orange-600 font-semibold">
+          ⚠️ Atención: el efectivo disponible hoy no cubre compromisos críticos como {criticalName}. Evita pagos extra y no uses crédito como efectivo. Prioriza promesa de pago o espera próximo ingreso si aún estás dentro de gracia.
+        </p>
+      )
+    }
+
+    if (projectedAvailableWithIncome < 0) {
+      return (
+        <p className="text-red-600 font-semibold">
+          ⚠️ Alerta: aun incluyendo los próximos ingresos, faltaría dinero para cubrir los pagos pendientes.
+        </p>
+      )
+    }
+
+    return (
+      <p className="text-green-600 font-semibold">
+        ✅ Vas bien: incluyendo los próximos ingresos, los pagos pendientes quedan cubiertos.
+      </p>
+    )
+  })()}
 </section>
       <section className="border rounded p-4">
         <h2 className="text-2xl font-bold mb-2">🤖 Recomendación</h2>
@@ -188,6 +287,26 @@ const projectedAvailableWithIncome =
           Popular Visa antes de acelerar US Bank.
         </p>
       </section>
+
+      {criticalLiabilities.length > 0 && (
+        <section className="border rounded p-4">
+          <h2 className="text-2xl font-bold mb-2">🚨 Compromisos críticos</h2>
+          <div className="space-y-3">
+            {criticalLiabilities.map((l: any) => (
+              <div key={l.id} className="border rounded p-3">
+                <div className="flex items-center justify-between">
+                  <strong>{l.name}</strong>
+                  <span className="text-sm opacity-70">{l.status === 'due_today' ? 'Vence hoy' : l.status === 'in_grace' ? 'En gracia' : l.status === 'overdue' ? 'Vencida' : 'Próxima'}</span>
+                </div>
+                <p>Monto mensual: ${Number(l.monthly_payment || 0).toLocaleString()}</p>
+                <p>Vence día: {l.due_day || 'N/A'}</p>
+                {l.grace_day && <p>Fecha límite / gracia: día {l.grace_day}</p>}
+                {l.notes && <p className="text-sm opacity-70">{l.notes}</p>}
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
 
       <section>
         <h2 className="text-2xl font-bold mb-4">

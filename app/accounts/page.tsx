@@ -4,6 +4,10 @@ import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import Nav from '../components/Nav'
 
+function money(value: number) {
+  return `$${Number(value || 0).toLocaleString()}`
+}
+
 export default function AccountsPage() {
   const [accounts, setAccounts] = useState<any[]>([])
   const [plaidAccounts, setPlaidAccounts] = useState<any[]>([])
@@ -81,12 +85,30 @@ export default function AccountsPage() {
     .filter((account) => account.is_spendable)
     .reduce((sum, account) => sum + Number(account.balance || 0), 0)
 
-  const plaidAvailableBalance = plaidAccounts.reduce(
+  const plaidCashAccounts = plaidAccounts.filter(
+    (account) => account.type === 'depository'
+  )
+
+  const plaidCreditAccounts = plaidAccounts.filter(
+    (account) => account.type === 'credit'
+  )
+
+  const plaidCashAvailableBalance = plaidCashAccounts.reduce(
     (sum, account) => sum + Number(account.available_balance || 0),
     0
   )
 
-  const plaidCurrentBalance = plaidAccounts.reduce(
+  const plaidCashCurrentBalance = plaidCashAccounts.reduce(
+    (sum, account) => sum + Number(account.current_balance || 0),
+    0
+  )
+
+  const plaidCreditAvailableBalance = plaidCreditAccounts.reduce(
+    (sum, account) => sum + Number(account.available_balance || 0),
+    0
+  )
+
+  const plaidCreditDebtBalance = plaidCreditAccounts.reduce(
     (sum, account) => sum + Number(account.current_balance || 0),
     0
   )
@@ -97,41 +119,52 @@ export default function AccountsPage() {
 
       <Nav />
 
-      <button
-        className="border rounded p-3"
-        onClick={syncPlaidAccounts}
-      >
+      <button className="border rounded p-3" onClick={syncPlaidAccounts}>
         🔄 Actualizar balances Plaid
       </button>
 
       {message && <p>{message}</p>}
 
-      <section className="grid grid-cols-1 md:grid-cols-4 gap-4">
+      <section className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div className="border rounded p-4">
-          <h2 className="font-semibold">Disponible Plaid</h2>
+          <h2 className="font-semibold">Cash Disponible Plaid</h2>
           <p className="text-3xl font-bold">
-            ${plaidAvailableBalance.toLocaleString()}
+            {money(plaidCashAvailableBalance)}
           </p>
         </div>
 
         <div className="border rounded p-4">
-          <h2 className="font-semibold">Balance Actual Plaid</h2>
+          <h2 className="font-semibold">Cash Actual Plaid</h2>
           <p className="text-3xl font-bold">
-            ${plaidCurrentBalance.toLocaleString()}
+            {money(plaidCashCurrentBalance)}
+          </p>
+        </div>
+
+        <div className="border rounded p-4">
+          <h2 className="font-semibold">Crédito Disponible</h2>
+          <p className="text-3xl font-bold">
+            {money(plaidCreditAvailableBalance)}
+          </p>
+        </div>
+
+        <div className="border rounded p-4">
+          <h2 className="font-semibold">Deuda Tarjetas Plaid</h2>
+          <p className="text-3xl font-bold">
+            {money(plaidCreditDebtBalance)}
           </p>
         </div>
 
         <div className="border rounded p-4">
           <h2 className="font-semibold">Balance Manual</h2>
           <p className="text-3xl font-bold">
-            ${manualTotalBalance.toLocaleString()}
+            {money(manualTotalBalance)}
           </p>
         </div>
 
         <div className="border rounded p-4">
           <h2 className="font-semibold">Manual Disponible</h2>
           <p className="text-3xl font-bold">
-            ${manualSpendableBalance.toLocaleString()}
+            {money(manualSpendableBalance)}
           </p>
         </div>
       </section>
@@ -144,14 +177,19 @@ export default function AccountsPage() {
             <h3 className="text-xl font-semibold">{account.name}</h3>
             <p>Tipo: {account.type}</p>
             <p>Subtipo: {account.subtype}</p>
-            <p>
-              Disponible: $
-              {Number(account.available_balance || 0).toLocaleString()}
-            </p>
-            <p>
-              Balance actual: $
-              {Number(account.current_balance || 0).toLocaleString()}
-            </p>
+
+            {account.type === 'credit' ? (
+              <>
+                <p>Crédito disponible: {money(account.available_balance)}</p>
+                <p>Balance adeudado: {money(account.current_balance)}</p>
+              </>
+            ) : (
+              <>
+                <p>Disponible: {money(account.available_balance)}</p>
+                <p>Balance actual: {money(account.current_balance)}</p>
+              </>
+            )}
+
             <p>Actualizado: {account.updated_at}</p>
           </div>
         ))}

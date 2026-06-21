@@ -1,5 +1,6 @@
 import { encrypt } from '@/lib/security/encryption'
 import { NextResponse } from 'next/server'
+import { createClient as createServerSupabase } from '@/lib/supabase/server'
 import { createClient } from '@supabase/supabase-js'
 import { Configuration, PlaidApi, PlaidEnvironments } from 'plaid'
 
@@ -33,18 +34,30 @@ export async function POST(request: Request) {
         { status: 400 }
       )
     }
+const userSupabase = await createServerSupabase()
 
+const {
+  data: { user },
+  error: userError,
+} = await userSupabase.auth.getUser()
+
+if (userError || !user) {
+  return NextResponse.json(
+    { error: 'Not authenticated' },
+    { status: 401 }
+  )
+}
     const response = await client.itemPublicTokenExchange({
       public_token: body.public_token,
     })
 
-    const accessToken = response.data.access_token
-    const encryptedToken = encrypt(accessToken)
+    const encryptedToken = encrypt(response.data.access_token)
     const itemId = response.data.item_id
 
     const { error } = await supabaseAdmin
       .from('plaid_connections')
       .insert({
+       user_id: user.id,
         item_id: itemId,
         access_token: null,
         encrypted_access_token: encryptedToken.encrypted,
@@ -57,7 +70,11 @@ export async function POST(request: Request) {
       })
 
     if (error) {
-      console.error('Plaid connection insert error:', error)
+      const errorMessage =
+        error instanceof Error ? error.message : String(error)
+      console.error('Plaid connection insert error:', {
+        message: errorMessage,
+      })
 
       return NextResponse.json(
         {
@@ -73,7 +90,11 @@ export async function POST(request: Request) {
       access_token_received: true,
     })
   } catch (error) {
-    console.error('Plaid exchange-public-token error:', error)
+    const errorMessage =
+      error instanceof Error ? error.message : String(error)
+    console.error('Plaid exchange-public-token error:', {
+      message: errorMessage,
+    })
 
     return NextResponse.json(
       {

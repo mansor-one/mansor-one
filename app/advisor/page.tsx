@@ -47,10 +47,20 @@ export default function AdvisorPage() {
     loadData()
   }, [])
 
-  const spendableCash = accounts.reduce(
-    (sum, account) => sum + Number(account.available_balance ?? account.current_balance ?? 0),
-    0
-  )
+  const spendableCash = accounts
+    .filter((a) => a.type === 'depository')
+    .reduce(
+      (sum, account) => sum + Number(account.available_balance ?? account.current_balance ?? 0),
+      0
+    )
+
+  const creditAvailable = accounts
+    .filter((a) => a.type === 'credit')
+    .reduce((sum, account) => sum + Number(account.available_balance ?? 0), 0)
+
+  const creditDebt = accounts
+    .filter((a) => a.type === 'credit')
+    .reduce((sum, account) => sum + Number(account.current_balance ?? 0), 0)
 
   const pendingPayments = payments.filter((payment) => payment.status !== 'paid')
 
@@ -124,6 +134,56 @@ export default function AdvisorPage() {
     .sort((a, b) => Number(a.priority || 99) - Number(b.priority || 99))
     .slice(0, 3)
 
+  // compute critical liabilities similar to dashboard
+  const now = new Date()
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+  const msPerDay = 1000 * 60 * 60 * 24
+
+  const criticalLiabilities = liabilities
+    .map((l: any) => {
+      const dueDay = l.due_day ? Number(l.due_day) : null
+      const graceDay = l.grace_day ? Number(l.grace_day) : null
+      let status = 'normal'
+      let daysUntil = null as number | null
+
+      if (dueDay) {
+        const dueDate = new Date(now.getFullYear(), now.getMonth(), dueDay)
+        daysUntil = Math.ceil((dueDate.getTime() - today.getTime()) / msPerDay)
+
+        if (daysUntil === 0) status = 'due_today'
+        else if (daysUntil < 0) {
+          if (graceDay) {
+            const graceDate = new Date(now.getFullYear(), now.getMonth(), graceDay)
+            if (today.getTime() <= graceDate.getTime()) status = 'in_grace'
+            else status = 'overdue'
+          } else {
+            status = 'overdue'
+          }
+        } else if (daysUntil > 0 && daysUntil <= 7) status = 'due_soon'
+      }
+
+      return { ...l, status, daysUntil }
+    })
+    .filter((l: any) => l.status !== 'normal')
+
+  // helper to check if liability name matches any paid payment_instance flexibly
+  const hasMatchingPaidPayment = (liabilityName: string) => {
+    return payments.some((p: any) => {
+      if (p.status !== 'paid') return false
+      const pName = String(p.name || '').toLowerCase().trim()
+      const lName = String(liabilityName || '').toLowerCase().trim()
+      return pName.includes(lName.split(' ')[0]) || lName.includes(pName.split(' ')[0])
+    })
+  }
+
+  // find critical liability not covered by paid payment_instance, prioritizing overdue > in_grace > due_today > due_soon
+  const criticalNeedsAttention = criticalLiabilities
+    .filter((l: any) => l.name && !hasMatchingPaidPayment(l.name))
+    .sort((a: any, b: any) => {
+      const statusPriority: { [key: string]: number } = { overdue: 0, in_grace: 1, due_today: 2, due_soon: 3 }
+      return (statusPriority[a.status] ?? 99) - (statusPriority[b.status] ?? 99)
+    })[0] || null
+
   function analyzeQuestion() {
     const amountMatch = question.toLowerCase().match(/(\d+(\.\d+)?)/)
     const requestedAmount = amountMatch ? Number(amountMatch[0]) : 0
@@ -163,6 +223,7 @@ export default function AdvisorPage() {
         <div className="border rounded p-4"><h2 className="font-semibold">📅 Pagos Pendientes</h2><p className="text-3xl font-bold">{formatMoney(totalPendingPayments)}</p></div>
         <div className="border rounded p-4"><h2 className="font-semibold">📊 Cash Proyectado</h2><p className="text-3xl font-bold">{formatMoney(projectedCash)}</p></div>
         <div className="border rounded p-4"><h2 className="font-semibold">💳 Deuda Tarjetas</h2><p className="text-3xl font-bold">{formatMoney(totalDebt)}</p></div>
+        <div className="border rounded p-4"><h2 className="font-semibold">💳 Crédito disponible (tarjetas)</h2><p className="text-3xl font-bold">{formatMoney(creditAvailable)}</p></div>
         <div className="border rounded p-4"><h2 className="font-semibold">🏦 Deudas Grandes</h2><p className="text-3xl font-bold">{formatMoney(totalLiabilities)}</p><p className="text-sm opacity-70">Pagos mensuales: {formatMoney(totalMonthlyDebtPayments)}</p></div>
         <div className="border rounded p-4"><h2 className="font-semibold">🛠️ Mantenimiento</h2><p className="text-3xl font-bold">{formatMoney(totalMaintenance)}</p></div>
         <div className="border rounded p-4"><h2 className="font-semibold">🏦 Net Worth</h2><p className="text-3xl font-bold">{formatMoney(netWorth)}</p><p className="text-sm opacity-70">Assets: {formatMoney(totalAssets)}</p></div>
@@ -184,6 +245,14 @@ export default function AdvisorPage() {
         <button className="border rounded p-3" onClick={analyzeQuestion}>Analizar decisión</button>
         {answer && <div className="border rounded p-4"><h3 className="font-bold mb-2">Respuesta</h3><p>{answer}</p></div>}
       </section>
+
+      {criticalNeedsAttention && (
+        <section className="border rounded p-4">
+          <h2 className="text-2xl font-bold mb-2">🚨 Atención crítica</h2>
+          <p className="font-semibold">{criticalNeedsAttention.name} requiere atención inmediata.</p>
+          <p className="text-sm opacity-80">No uses crédito como efectivo. Evalúa promesa de pago o pagar cuando entre el próximo ingreso si aún estás dentro de la gracia.</p>
+        </section>
+      )}
 
       <section className="border rounded p-4">
         <h2 className="text-2xl font-bold mb-4">🏦 Liabilities / Deudas</h2>

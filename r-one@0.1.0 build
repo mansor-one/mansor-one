@@ -1,0 +1,608 @@
+[1mdiff --git a/app/accounts/page.tsx b/app/accounts/page.tsx[m
+[1mindex 5f974aa..7591dc6 100644[m
+[1m--- a/app/accounts/page.tsx[m
+[1m+++ b/app/accounts/page.tsx[m
+[36m@@ -4,6 +4,10 @@[m [mimport { useEffect, useState } from 'react'[m
+ import { supabase } from '@/lib/supabase'[m
+ import Nav from '../components/Nav'[m
+ [m
+[32m+[m[32mfunction money(value: number) {[m
+[32m+[m[32m  return `$${Number(value || 0).toLocaleString()}`[m
+[32m+[m[32m}[m
+[32m+[m
+ export default function AccountsPage() {[m
+   const [accounts, setAccounts] = useState<any[]>([])[m
+   const [plaidAccounts, setPlaidAccounts] = useState<any[]>([])[m
+[36m@@ -81,12 +85,30 @@[m [mexport default function AccountsPage() {[m
+     .filter((account) => account.is_spendable)[m
+     .reduce((sum, account) => sum + Number(account.balance || 0), 0)[m
+ [m
+[31m-  const plaidAvailableBalance = plaidAccounts.reduce([m
+[32m+[m[32m  const plaidCashAccounts = plaidAccounts.filter([m
+[32m+[m[32m    (account) => account.type === 'depository'[m
+[32m+[m[32m  )[m
+[32m+[m
+[32m+[m[32m  const plaidCreditAccounts = plaidAccounts.filter([m
+[32m+[m[32m    (account) => account.type === 'credit'[m
+[32m+[m[32m  )[m
+[32m+[m
+[32m+[m[32m  const plaidCashAvailableBalance = plaidCashAccounts.reduce([m
+[32m+[m[32m    (sum, account) => sum + Number(account.available_balance || 0),[m
+[32m+[m[32m    0[m
+[32m+[m[32m  )[m
+[32m+[m
+[32m+[m[32m  const plaidCashCurrentBalance = plaidCashAccounts.reduce([m
+[32m+[m[32m    (sum, account) => sum + Number(account.current_balance || 0),[m
+[32m+[m[32m    0[m
+[32m+[m[32m  )[m
+[32m+[m
+[32m+[m[32m  const plaidCreditAvailableBalance = plaidCreditAccounts.reduce([m
+     (sum, account) => sum + Number(account.available_balance || 0),[m
+     0[m
+   )[m
+ [m
+[31m-  const plaidCurrentBalance = plaidAccounts.reduce([m
+[32m+[m[32m  const plaidCreditDebtBalance = plaidCreditAccounts.reduce([m
+     (sum, account) => sum + Number(account.current_balance || 0),[m
+     0[m
+   )[m
+[36m@@ -97,41 +119,52 @@[m [mexport default function AccountsPage() {[m
+ [m
+       <Nav />[m
+ [m
+[31m-      <button[m
+[31m-        className="border rounded p-3"[m
+[31m-        onClick={syncPlaidAccounts}[m
+[31m-      >[m
+[32m+[m[32m      <button className="border rounded p-3" onClick={syncPlaidAccounts}>[m
+         🔄 Actualizar balances Plaid[m
+       </button>[m
+ [m
+       {message && <p>{message}</p>}[m
+ [m
+[31m-      <section className="grid grid-cols-1 md:grid-cols-4 gap-4">[m
+[32m+[m[32m      <section className="grid grid-cols-1 md:grid-cols-3 gap-4">[m
+[32m+[m[32m        <div className="border rounded p-4">[m
+[32m+[m[32m          <h2 className="font-semibold">Cash Disponible Plaid</h2>[m
+[32m+[m[32m          <p className="text-3xl font-bold">[m
+[32m+[m[32m            {money(plaidCashAvailableBalance)}[m
+[32m+[m[32m          </p>[m
+[32m+[m[32m        </div>[m
+[32m+[m
+         <div className="border rounded p-4">[m
+[31m-          <h2 className="font-semibold">Disponible Plaid</h2>[m
+[32m+[m[32m          <h2 className="font-semibold">Cash Actual Plaid</h2>[m
+           <p className="text-3xl font-bold">[m
+[31m-            ${plaidAvailableBalance.toLocaleString()}[m
+[32m+[m[32m            {money(plaidCashCurrentBalance)}[m
+           </p>[m
+         </div>[m
+ [m
+         <div className="border rounded p-4">[m
+[31m-          <h2 className="font-semibold">Balance Actual Plaid</h2>[m
+[32m+[m[32m          <h2 className="font-semibold">Crédito Disponible</h2>[m
+           <p className="text-3xl font-bold">[m
+[31m-            ${plaidCurrentBalance.toLocaleString()}[m
+[32m+[m[32m            {money(plaidCreditAvailableBalance)}[m
+[32m+[m[32m          </p>[m
+[32m+[m[32m        </div>[m
+[32m+[m
+[32m+[m[32m        <div className="border rounded p-4">[m
+[32m+[m[32m          <h2 className="font-semibold">Deuda Tarjetas Plaid</h2>[m
+[32m+[m[32m          <p className="text-3xl font-bold">[m
+[32m+[m[32m            {money(plaidCreditDebtBalance)}[m
+           </p>[m
+         </div>[m
+ [m
+         <div className="border rounded p-4">[m
+           <h2 className="font-semibold">Balance Manual</h2>[m
+           <p className="text-3xl font-bold">[m
+[31m-            ${manualTotalBalance.toLocaleString()}[m
+[32m+[m[32m            {money(manualTotalBalance)}[m
+           </p>[m
+         </div>[m
+ [m
+         <div className="border rounded p-4">[m
+           <h2 className="font-semibold">Manual Disponible</h2>[m
+           <p className="text-3xl font-bold">[m
+[31m-            ${manualSpendableBalance.toLocaleString()}[m
+[32m+[m[32m            {money(manualSpendableBalance)}[m
+           </p>[m
+         </div>[m
+       </section>[m
+[36m@@ -144,14 +177,19 @@[m [mexport default function AccountsPage() {[m
+             <h3 className="text-xl font-semibold">{account.name}</h3>[m
+             <p>Tipo: {account.type}</p>[m
+             <p>Subtipo: {account.subtype}</p>[m
+[31m-            <p>[m
+[31m-              Disponible: $[m
+[31m-              {Number(account.available_balance || 0).toLocaleString()}[m
+[31m-            </p>[m
+[31m-            <p>[m
+[31m-              Balance actual: $[m
+[31m-              {Number(account.current_balance || 0).toLocaleString()}[m
+[31m-            </p>[m
+[32m+[m
+[32m+[m[32m            {account.type === 'credit' ? ([m
+[32m+[m[32m              <>[m
+[32m+[m[32m                <p>Crédito disponible: {money(account.available_balance)}</p>[m
+[32m+[m[32m                <p>Balance adeudado: {money(account.current_balance)}</p>[m
+[32m+[m[32m              </>[m
+[32m+[m[32m            ) : ([m
+[32m+[m[32m              <>[m
+[32m+[m[32m                <p>Disponible: {money(account.available_balance)}</p>[m
+[32m+[m[32m                <p>Balance actual: {money(account.current_balance)}</p>[m
+[32m+[m[32m              </>[m
+[32m+[m[32m            )}[m
+[32m+[m
+             <p>Actualizado: {account.updated_at}</p>[m
+           </div>[m
+         ))}[m
+[1mdiff --git a/app/api/plaid/create-link-token/route.ts b/app/api/plaid/create-link-token/route.ts[m
+[1mindex aa6ad4c..b5d9f3e 100644[m
+[1m--- a/app/api/plaid/create-link-token/route.ts[m
+[1m+++ b/app/api/plaid/create-link-token/route.ts[m
+[36m@@ -1,4 +1,5 @@[m
+ import { NextResponse } from 'next/server'[m
+[32m+[m[32mimport { createClient as createServerSupabase } from '@/lib/supabase/server'[m
+ import {[m
+   Configuration,[m
+   PlaidApi,[m
+[36m@@ -22,10 +23,24 @@[m [mconst configuration = new Configuration({[m
+ const client = new PlaidApi(configuration)[m
+ [m
+ export async function POST() {[m
+[32m+[m[32m  const supabase = await createServerSupabase()[m
+[32m+[m
+[32m+[m[32m  const {[m
+[32m+[m[32m    data: { user },[m
+[32m+[m[32m    error: userError,[m
+[32m+[m[32m  } = await supabase.auth.getUser()[m
+[32m+[m
+[32m+[m[32m  if (userError || !user) {[m
+[32m+[m[32m    return NextResponse.json([m
+[32m+[m[32m      { error: 'Not authenticated' },[m
+[32m+[m[32m      { status: 401 }[m
+[32m+[m[32m    )[m
+[32m+[m[32m  }[m
+[32m+[m
+   try {[m
+     const response = await client.linkTokenCreate({[m
+       user: {[m
+[31m-        client_user_id: crypto.randomUUID(),[m
+[32m+[m[32m        client_user_id: user.id,[m
+       },[m
+       client_name: 'Mansor One',[m
+       products: [Products.Transactions],[m
+[36m@@ -35,15 +50,15 @@[m [mexport async function POST() {[m
+ [m
+     return NextResponse.json(response.data)[m
+   } catch (error) {[m
+[31m-    console.error('Plaid create-link-token error:', error)[m
+[32m+[m[32m    const errorMessage =[m
+[32m+[m[32m      error instanceof Error ? error.message : String(error)[m
+[32m+[m[32m    console.error('Plaid create-link-token error:', {[m
+[32m+[m[32m      message: errorMessage,[m
+[32m+[m[32m    })[m
+ [m
+     return NextResponse.json([m
+[31m-      {[m
+[31m-        error: 'Unable to create Plaid link token',[m
+[31m-      },[m
+[31m-      {[m
+[31m-        status: 500,[m
+[31m-      }[m
+[32m+[m[32m      { error: 'Unable to create Plaid link token' },[m
+[32m+[m[32m      { status: 500 }[m
+     )[m
+   }[m
+ }[m
+\ No newline at end of file[m
+[1mdiff --git a/app/api/plaid/exchange-public-token/route.ts b/app/api/plaid/exchange-public-token/route.ts[m
+[1mindex 8d14a0f..b32aa16 100644[m
+[1m--- a/app/api/plaid/exchange-public-token/route.ts[m
+[1m+++ b/app/api/plaid/exchange-public-token/route.ts[m
+[36m@@ -1,5 +1,6 @@[m
+ import { encrypt } from '@/lib/security/encryption'[m
+ import { NextResponse } from 'next/server'[m
+[32m+[m[32mimport { createClient as createServerSupabase } from '@/lib/supabase/server'[m
+ import { createClient } from '@supabase/supabase-js'[m
+ import { Configuration, PlaidApi, PlaidEnvironments } from 'plaid'[m
+ [m
+[36m@@ -33,18 +34,30 @@[m [mexport async function POST(request: Request) {[m
+         { status: 400 }[m
+       )[m
+     }[m
+[32m+[m[32mconst userSupabase = await createServerSupabase()[m
+ [m
+[32m+[m[32mconst {[m
+[32m+[m[32m  data: { user },[m
+[32m+[m[32m  error: userError,[m
+[32m+[m[32m} = await userSupabase.auth.getUser()[m
+[32m+[m
+[32m+[m[32mif (userError || !user) {[m
+[32m+[m[32m  return NextResponse.json([m
+[32m+[m[32m    { error: 'Not authenticated' },[m
+[32m+[m[32m    { status: 401 }[m
+[32m+[m[32m  )[m
+[32m+[m[32m}[m
+     const response = await client.itemPublicTokenExchange({[m
+       public_token: body.public_token,[m
+     })[m
+ [m
+[31m-    const accessToken = response.data.access_token[m
+[31m-    const encryptedToken = encrypt(accessToken)[m
+[32m+[m[32m    const encryptedToken = encrypt(response.data.access_token)[m
+     const itemId = response.data.item_id[m
+ [m
+     const { error } = await supabaseAdmin[m
+       .from('plaid_connections')[m
+       .insert({[m
+[32m+[m[32m       user_id: user.id,[m
+         item_id: itemId,[m
+         access_token: null,[m
+         encrypted_access_token: encryptedToken.encrypted,[m
+[36m@@ -57,7 +70,11 @@[m [mexport async function POST(request: Request) {[m
+       })[m
+ [m
+     if (error) {[m
+[31m-      console.error('Plaid connection insert error:', error)[m
+[32m+[m[32m      const errorMessage =[m
+[32m+[m[32m        error instanceof Error ? error.message : String(error)[m
+[32m+[m[32m      console.error('Plaid connection insert error:', {[m
+[32m+[m[32m        message: errorMessage,[m
+[32m+[m[32m      })[m
+ [m
+       return NextResponse.json([m
+         {[m
+[36m@@ -73,7 +90,11 @@[m [mexport async function POST(request: Request) {[m
+       access_token_received: true,[m
+     })[m
+   } catch (error) {[m
+[31m-    console.error('Plaid exchange-public-token error:', error)[m
+[32m+[m[32m    const errorMessage =[m
+[32m+[m[32m      error instanceof Error ? error.message : String(error)[m
+[32m+[m[32m    console.error('Plaid exchange-public-token error:', {[m
+[32m+[m[32m      message: errorMessage,[m
+[32m+[m[32m    })[m
+ [m
+     return NextResponse.json([m
+       {[m
+[1mdiff --git a/app/api/plaid/sync-accounts/route.ts b/app/api/plaid/sync-accounts/route.ts[m
+[1mindex 8faaa84..8c5a8ab 100644[m
+[1m--- a/app/api/plaid/sync-accounts/route.ts[m
+[1m+++ b/app/api/plaid/sync-accounts/route.ts[m
+[36m@@ -1,5 +1,6 @@[m
+ import { NextResponse } from 'next/server'[m
+ import { createClient } from '@supabase/supabase-js'[m
+[32m+[m[32mimport { createClient as createServerSupabase } from '@/lib/supabase/server'[m
+ import { Configuration, PlaidApi, PlaidEnvironments } from 'plaid'[m
+ import { decrypt } from '@/lib/security/encryption'[m
+ [m
+[36m@@ -25,61 +26,107 @@[m [mconst plaidClient = new PlaidApi(configuration)[m
+ [m
+ export async function POST() {[m
+   try {[m
+[31m-    const { data: connection, error: connectionError } = await supabaseAdmin[m
+[32m+[m[32m    const userSupabase = await createServerSupabase()[m
+[32m+[m
+[32m+[m[32m    const {[m
+[32m+[m[32m      data: { user },[m
+[32m+[m[32m      error: userError,[m
+[32m+[m[32m    } = await userSupabase.auth.getUser()[m
+[32m+[m
+[32m+[m[32m    if (userError || !user) {[m
+[32m+[m[32m      return NextResponse.json([m
+[32m+[m[32m        { error: 'Not authenticated' },[m
+[32m+[m[32m        { status: 401 }[m
+[32m+[m[32m      )[m
+[32m+[m[32m    }[m
+[32m+[m
+[32m+[m[32m    const { data: connections, error: connectionError } = await supabaseAdmin[m
+       .from('plaid_connections')[m
+       .select('*')[m
+[32m+[m[32m      .eq('user_id', user.id)[m
+[32m+[m[32m      .not('encrypted_access_token', 'is', null)[m
+       .order('created_at', { ascending: false })[m
+[31m-      .limit(1)[m
+[31m-      .single()[m
+ [m
+[31m-    if (connectionError || !connection) {[m
+[32m+[m[32m    if (connectionError) {[m
+[32m+[m[32m      const errorMessage =[m
+[32m+[m[32m        connectionError instanceof Error[m
+[32m+[m[32m          ? connectionError.message[m
+[32m+[m[32m          : String(connectionError)[m
+[32m+[m[32m      console.error('Plaid connection lookup error:', {[m
+[32m+[m[32m        message: errorMessage,[m
+[32m+[m[32m      })[m
+[32m+[m
+[32m+[m[32m      return NextResponse.json([m
+[32m+[m[32m        { error: 'Could not load Plaid connections' },[m
+[32m+[m[32m        { status: 500 }[m
+[32m+[m[32m      )[m
+[32m+[m[32m    }[m
+[32m+[m
+[32m+[m[32m    if (!connections || connections.length === 0) {[m
+       return NextResponse.json([m
+         { error: 'No Plaid connection found' },[m
+         { status: 404 }[m
+       )[m
+     }[m
+ [m
+[31m-    const accessToken = decrypt([m
+[31m-      connection.encrypted_access_token,[m
+[31m-      connection.token_iv,[m
+[31m-      connection.token_auth_tag[m
+[31m-    )[m
+[32m+[m[32m    let syncedAccounts = 0[m
+[32m+[m[32m    const failedConnections: any[] = [][m
+ [m
+[31m-    const response = await plaidClient.accountsBalanceGet({[m
+[31m-      access_token: accessToken,[m
+[31m-    })[m
+[32m+[m[32m    for (const connection of connections) {[m
+[32m+[m[32m      try {[m
+[32m+[m[32m        const accessToken = decrypt([m
+[32m+[m[32m          connection.encrypted_access_token,[m
+[32m+[m[32m          connection.token_iv,[m
+[32m+[m[32m          connection.token_auth_tag[m
+[32m+[m[32m        )[m
+ [m
+[31m-    const accounts = response.data.accounts || [][m
+[31m-[m
+[31m-    const rows = accounts.map((account) => ({[m
+[31m-      user_id: connection.user_id,[m
+[31m-      plaid_account_id: account.account_id,[m
+[31m-      name: account.name,[m
+[31m-      type: account.type,[m
+[31m-      subtype: account.subtype,[m
+[31m-      available_balance: account.balances.available,[m
+[31m-      current_balance: account.balances.current,[m
+[31m-      currency: account.balances.iso_currency_code,[m
+[31m-      updated_at: new Date().toISOString(),[m
+[31m-    }))[m
+[31m-[m
+[31m-    const { error: upsertError } = await supabaseAdmin[m
+[31m-      .from('plaid_accounts')[m
+[31m-      .upsert(rows, {[m
+[31m-        onConflict: 'plaid_account_id',[m
+[31m-      })[m
+[32m+[m[32m        const response = await plaidClient.accountsBalanceGet({[m
+[32m+[m[32m          access_token: accessToken,[m
+[32m+[m[32m        })[m
+ [m
+[31m-    if (upsertError) {[m
+[31m-      console.error('Plaid accounts upsert error:', upsertError)[m
+[32m+[m[32m        const accounts = response.data.accounts || [][m
+ [m
+[31m-      return NextResponse.json([m
+[31m-        { error: 'Could not sync Plaid accounts' },[m
+[31m-        { status: 500 }[m
+[31m-      )[m
+[32m+[m[32m        const rows = accounts.map((account) => ({[m
+[32m+[m[32m          user_id: user.id,[m
+[32m+[m[32m          plaid_account_id: account.account_id,[m
+[32m+[m[32m          name: account.name,[m
+[32m+[m[32m          type: account.type,[m
+[32m+[m[32m          subtype: account.subtype,[m
+[32m+[m[32m          available_balance: account.balances.available,[m
+[32m+[m[32m          current_balance: account.balances.current,[m
+[32m+[m[32m          currency: account.balances.iso_currency_code,[m
+[32m+[m[32m          updated_at: new Date().toISOString(),[m
+[32m+[m[32m        }))[m
+[32m+[m
+[32m+[m[32m        if (rows.length > 0) {[m
+[32m+[m[32m          const { error: upsertError } = await supabaseAdmin[m
+[32m+[m[32m            .from('plaid_accounts')[m
+[32m+[m[32m            .upsert(rows, {[m
+[32m+[m[32m              onConflict: ['user_id', 'plaid_account_id'],[m
+[32m+[m[32m            })[m
+[32m+[m
+[32m+[m[32m          if (upsertError) {[m
+[32m+[m[32m            throw upsertError[m
+[32m+[m[32m          }[m
+[32m+[m[32m        }[m
+[32m+[m
+[32m+[m[32m        syncedAccounts += accounts.length[m
+[32m+[m[32m      } catch (error: any) {[m
+[32m+[m[32m        failedConnections.push({[m
+[32m+[m[32m          id: connection.id,[m
+[32m+[m[32m          institution_name: connection.institution_name,[m
+[32m+[m[32m          error_code: error?.response?.data?.error_code || 'UNKNOWN_ERROR',[m
+[32m+[m[32m          error_message:[m
+[32m+[m[32m            error?.response?.data?.error_message ||[m
+[32m+[m[32m            error?.message ||[m
+[32m+[m[32m            'Unknown Plaid sync error',[m
+[32m+[m[32m        })[m
+[32m+[m[32m      }[m
+     }[m
+ [m
+     return NextResponse.json({[m
+[31m-      synced_accounts: accounts.length,[m
+[32m+[m[32m      synced_accounts: syncedAccounts,[m
+[32m+[m[32m      failed_connections: failedConnections,[m
+     })[m
+   } catch (error) {[m
+     console.error('Plaid sync-accounts error:', error)[m
+[36m@@ -89,4 +136,4 @@[m [mexport async function POST() {[m
+       { status: 500 }[m
+     )[m
+   }[m
+[31m-}[m
+\ No newline at end of file[m
+[32m+[m[32m}[m
+[1mdiff --git a/app/future-obligations/page.tsx b/app/future-obligations/page.tsx[m
+[1mindex c352e10..02ffdbd 100644[m
+[1m--- a/app/future-obligations/page.tsx[m
+[1m+++ b/app/future-obligations/page.tsx[m
+[36m@@ -1,4 +1,4 @@[m
+[31m-import { supabase } from '@/lib/supabase'[m
+[32m+[m[32mimport { requireUser } from '@/lib/auth/requireUser'[m
+ import Nav from '../components/Nav'[m
+ [m
+ function formatDate(dateString: string | null) {[m
+[36m@@ -27,6 +27,7 @@[m [mfunction weeklyReserve(amount: number, dateString: string | null) {[m
+ }[m
+ [m
+ export default async function FutureObligationsPage() {[m
+[32m+[m[32m  const { supabase } = await requireUser()[m
+   const { data: obligations, error } = await supabase[m
+     .from('future_obligations')[m
+     .select('*')[m
+[1mdiff --git a/app/health-score/page.tsx b/app/health-score/page.tsx[m
+[1mindex 2879ecd..1e54b59 100644[m
+[1m--- a/app/health-score/page.tsx[m
+[1m+++ b/app/health-score/page.tsx[m
+[36m@@ -1,7 +1,8 @@[m
+[31m-import { supabase } from '@/lib/supabase'[m
+[32m+[m[32mimport { requireUser } from '@/lib/auth/requireUser'[m
+ import Nav from '../components/Nav'[m
+ [m
+ export default async function HealthScorePage() {[m
+[32m+[m[32m  const { supabase } = await requireUser()[m
+   const { data: accounts } = await supabase[m
+     .from('accounts')[m
+     .select('*')[m
+[1mdiff --git a/app/plaid/page.tsx b/app/plaid/page.tsx[m
+[1mindex 4329f26..5474f13 100644[m
+[1m--- a/app/plaid/page.tsx[m
+[1m+++ b/app/plaid/page.tsx[m
+[36m@@ -1,53 +1,23 @@[m
+[31m-'use client'[m
+[31m-[m
+[31m-import { useEffect, useState } from 'react'[m
+[31m-import { usePlaidLink } from 'react-plaid-link'[m
+[32m+[m[32mimport { requireUser } from '@/lib/auth/requireUser'[m
+ import Nav from '../components/Nav'[m
+[32m+[m[32mimport ConnectPlaidButton from './ConnectPlaidButton'[m
+ [m
+[31m-export default function PlaidPage() {[m
+[31m-  const [linkToken, setLinkToken] = useState<string | null>(null)[m
+[31m-  const [mounted, setMounted] = useState(false)[m
+[31m-  const [message, setMessage] = useState('')[m
+[31m-[m
+[31m-  useEffect(() => {[m
+[31m-    setMounted(true)[m
+[31m-[m
+[31m-    async function createLinkToken() {[m
+[31m-      const response = await fetch('/api/plaid/create-link-token', {[m
+[31m-        method: 'POST',[m
+[31m-      })[m
+[31m-[m
+[31m-      const data = await response.json()[m
+[31m-[m
+[31m-      if (data.error) {[m
+[31m-        setMessage(data.error)[m
+[31m-        return[m
+[31m-      }[m
+[32m+[m[32mfunction formatDate(dateString: string | null) {[m
+[32m+[m[32m  if (!dateString) return 'Sin fecha'[m
+ [m
+[31m-      setLinkToken(data.link_token)[m
+[31m-    }[m
+[31m-[m
+[31m-    createLinkToken()[m
+[31m-  }, [])[m
+[32m+[m[32m  return new Date(dateString).toLocaleString('es-PR', {[m
+[32m+[m[32m    dateStyle: 'short',[m
+[32m+[m[32m    timeStyle: 'short',[m
+[32m+[m[32m  })[m
+[32m+[m[32m}[m
+ [m
+[31m-  const { open, ready } = usePlaidLink({[m
+[31m-    token: linkToken,[m
+[31m-    onSuccess: async (public_token) => {[m
+[31m-      const response = await fetch('/api/plaid/exchange-public-token', {[m
+[31m-        method: 'POST',[m
+[31m-        headers: { 'Content-Type': 'application/json' },[m
+[31m-        body: JSON.stringify({ public_token }),[m
+[31m-      })[m
+[32m+[m[32mexport default async function PlaidPage() {[m
+[32m+[m[32m  const { supabase } = await requireUser()[m
+ [m
+[31m-      const data = await response.json()[m
+[31m-[m
+[31m-      if (data.access_token_received) {[m
+[31m-        setMessage('Banco conectado correctamente ✅')[m
+[31m-      } else {[m
+[31m-        setMessage(data.error || 'No se pudo conectar Plaid.')[m
+[31m-      }[m
+[31m-    },[m
+[31m-  })[m
+[32m+[m[32m  const { data: connections, error } = await supabase[m
+[32m+[m[32m    .from('plaid_connections')[m
+[32m+[m[32m    .select('id, institution_name, created_at, user_id, encrypted_access_token')[m
+[32m+[m[32m    .order('created_at', { ascending: false })[m
+ [m
+   return ([m
+     <main className="p-8 space-y-6">[m
+[36m@@ -59,19 +29,56 @@[m [mexport default function PlaidPage() {[m
+         Conecta una cuenta bancaria con Plaid. La conexión se guardará de forma segura en el servidor.[m
+       </p>[m
+ [m
+[31m-      <button[m
+[31m-        className="border rounded p-3"[m
+[31m-        onClick={() => open()}[m
+[31m-        disabled={!mounted || !ready || !linkToken}[m
+[31m-      >[m
+[31m-        {linkToken ? 'Conectar con Plaid' : 'Cargando Plaid...'}[m
+[31m-      </button>[m
+[32m+[m[32m      <ConnectPlaidButton />[m
+ [m
+[31m-      {message && ([m
+[31m-        <div className="border rounded p-4">[m
+[31m-          {message}[m
+[32m+[m[32m      <section className="space-y-4">[m
+[32m+[m[32m        <div className="flex items-center justify-between gap-4">[m
+[32m+[m[32m          <h2 className="text-2xl font-bold">Conexiones Plaid</h2>[m
+[32m+[m[32m          <span className="text-sm opacity-70">[m
+[32m+[m[32m            {connections?.length ?? 0} conexión(es)[m
+[32m+[m[32m          </span>[m
+         </div>[m
+[31m-      )}[m
+[32m+[m
+[32m+[m[32m        {error && ([m
+[32m+[m[32m          <pre className="border rounded p-4 text-red-600">[m
+[32m+[m[32m            {JSON.stringify(error, null, 2)}[m
+[32m+[m[32m          </pre>[m
+[32m+[m[32m        )}[m
+[32m+[m
+[32m+[m[32m        {!connections || connections.length === 0 ? ([m
+[32m+[m[32m          <div className="border rounded p-4">No hay conexiones Plaid registradas.</div>[m
+[32m+[m[32m        ) : ([m
+[32m+[m[32m          <div className="space-y-4">[m
+[32m+[m[32m            {connections.map((connection) => {[m
+[32m+[m[32m              const status = connection.encrypted_access_token ? 'Activo' : 'Pendiente'[m
+[32m+[m[32m              const needsAttention =[m
+[32m+[m[32m                !connection.user_id || connection.institution_name === 'Unknown'[m
+[32m+[m
+[32m+[m[32m              return ([m
+[32m+[m[32m                <div key={connection.id} className="border rounded p-4 space-y-2">[m
+[32m+[m[32m                  <div className="flex items-center justify-between gap-4">[m
+[32m+[m[32m                    <h3 className="text-xl font-semibold">[m
+[32m+[m[32m                      {connection.institution_name || 'Unknown'}[m
+[32m+[m[32m                    </h3>[m
+[32m+[m[32m                    <span className="rounded-full bg-slate-100 px-3 py-1 text-sm">[m
+[32m+[m[32m                      {status}[m
+[32m+[m[32m                    </span>[m
+[32m+[m[32m                  </div>[m
+[32m+[m
+[32m+[m[32m                  <p>Usuario asociado: {connection.user_id || 'No registrado'}</p>[m
+[32m+[m[32m                  <p>Creado: {formatDate(connection.created_at)}</p>[m
+[32m+[m
+[32m+[m[32m                  {needsAttention && ([m
+[32m+[m[32m                    <p className="rounded border border-orange-300 bg-orange-50 p-3 text-orange-700">[m
+[32m+[m[32m                      Alerta: esta conexión requiere revisión porque tiene datos incompletos.[m
+[32m+[m[32m                    </p>[m
+[32m+[m[32m                  )}[m
+[32m+[m[32m                </div>[m
+[32m+[m[32m              )[m
+[32m+[m[32m            })}[m
+[32m+[m[32m          </div>[m
+[32m+[m[32m        )}[m
+[32m+[m[32m      </section>[m
+     </main>[m
+   )[m
+ }[m
+\ No newline at end of file[m

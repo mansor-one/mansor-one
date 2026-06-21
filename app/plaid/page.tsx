@@ -1,53 +1,24 @@
-'use client'
-
-import { useEffect, useState } from 'react'
-import { usePlaidLink } from 'react-plaid-link'
+import { requireUser } from '@/lib/auth/requireUser'
 import Nav from '../components/Nav'
+import ConnectPlaidButton from './ConnectPlaidButton'
 
-export default function PlaidPage() {
-  const [linkToken, setLinkToken] = useState<string | null>(null)
-  const [mounted, setMounted] = useState(false)
-  const [message, setMessage] = useState('')
+function formatDate(dateString: string | null) {
+  if (!dateString) return 'Sin fecha'
 
-  useEffect(() => {
-    setMounted(true)
-
-    async function createLinkToken() {
-      const response = await fetch('/api/plaid/create-link-token', {
-        method: 'POST',
-      })
-
-      const data = await response.json()
-
-      if (data.error) {
-        setMessage(data.error)
-        return
-      }
-
-      setLinkToken(data.link_token)
-    }
-
-    createLinkToken()
-  }, [])
-
-  const { open, ready } = usePlaidLink({
-    token: linkToken,
-    onSuccess: async (public_token) => {
-      const response = await fetch('/api/plaid/exchange-public-token', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ public_token }),
-      })
-
-      const data = await response.json()
-
-      if (data.access_token_received) {
-        setMessage('Banco conectado correctamente ✅')
-      } else {
-        setMessage(data.error || 'No se pudo conectar Plaid.')
-      }
-    },
+  return new Date(dateString).toLocaleString('es-PR', {
+    dateStyle: 'short',
+    timeStyle: 'short',
   })
+}
+
+export default async function PlaidPage() {
+  const { supabase } = await requireUser()
+  const { data: connections, error } = await supabase
+    .from('plaid_connections')
+    .select('id, institution_name, created_at, user_id, encrypted_access_token')
+    .order('created_at', { ascending: false })
+
+  const safeConnections = connections || []
 
   return (
     <main className="p-8 space-y-6">
@@ -59,19 +30,56 @@ export default function PlaidPage() {
         Conecta una cuenta bancaria con Plaid. La conexión se guardará de forma segura en el servidor.
       </p>
 
-      <button
-        className="border rounded p-3"
-        onClick={() => open()}
-        disabled={!mounted || !ready || !linkToken}
-      >
-        {linkToken ? 'Conectar con Plaid' : 'Cargando Plaid...'}
-      </button>
+      <ConnectPlaidButton />
 
-      {message && (
-        <div className="border rounded p-4">
-          {message}
+      <section className="space-y-4">
+        <div className="flex items-center justify-between gap-4">
+          <h2 className="text-2xl font-bold">Conexiones Plaid</h2>
+          <span className="text-sm opacity-70">
+            {connections?.length ?? 0} conexión(es)
+          </span>
         </div>
-      )}
+
+        {error && (
+          <pre className="border rounded p-4 text-red-600">
+            {JSON.stringify(error, null, 2)}
+          </pre>
+        )}
+
+        {!safeConnections || safeConnections.length === 0 ? (
+          <div className="border rounded p-4">No hay conexiones Plaid registradas.</div>
+        ) : (
+          <div className="space-y-4">
+            {safeConnections.map((connection: any) => {
+              const status = connection.encrypted_access_token ? 'Activo' : 'Pendiente'
+              const needsAttention =
+                !connection.user_id || connection.institution_name === 'Unknown'
+
+              return (
+                <div key={connection.id} className="border rounded p-4 space-y-2">
+                  <div className="flex items-center justify-between gap-4">
+                    <h3 className="text-xl font-semibold">
+                      {connection.institution_name || 'Unknown'}
+                    </h3>
+                    <span className="rounded-full bg-slate-100 px-3 py-1 text-sm">
+                      {status}
+                    </span>
+                  </div>
+
+                  <p>Usuario asociado: {connection.user_id || 'No registrado'}</p>
+                  <p>Creado: {formatDate(connection.created_at)}</p>
+
+                  {needsAttention && (
+                    <p className="rounded border border-orange-300 bg-orange-50 p-3 text-orange-700">
+                      Alerta: esta conexión requiere revisión porque tiene datos incompletos.
+                    </p>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </section>
     </main>
   )
 }
