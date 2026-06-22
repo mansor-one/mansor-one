@@ -2,10 +2,19 @@
 
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
+import { getFinancialDecisionContext, FinancialDecisionContext } from '@/lib/pablo/getFinancialDecisionContext'
 import Nav from '../components/Nav'
 
 function formatMoney(value: number) {
   return `$${Number(value || 0).toLocaleString()}`
+}
+
+function statusLabel(status: string) {
+  if (status === 'in_grace') return 'En gracia'
+  if (status === 'due_today') return 'Vence hoy'
+  if (status === 'due_soon') return 'Próximo'
+  if (status === 'overdue') return 'Vencido'
+  return status.replace('_', ' ')
 }
 
 export default function AdvisorPage() {
@@ -17,6 +26,7 @@ export default function AdvisorPage() {
   const [maintenance, setMaintenance] = useState<any[]>([])
   const [liabilities, setLiabilities] = useState<any[]>([])
   const [assets, setAssets] = useState<any[]>([])
+  const [financialContext, setFinancialContext] = useState<FinancialDecisionContext | null>(null)
   const [question, setQuestion] = useState('')
   const [answer, setAnswer] = useState('')
 
@@ -41,26 +51,20 @@ export default function AdvisorPage() {
     setGoals(goalsData || [])
     setMaintenance(maintenanceData || [])
     setLiabilities(liabilitiesData || [])
+
+    const context = await getFinancialDecisionContext(supabase)
+    setFinancialContext(context)
   }
 
   useEffect(() => {
     loadData()
   }, [])
 
-  const spendableCash = accounts
-    .filter((a) => a.type === 'depository')
-    .reduce(
-      (sum, account) => sum + Number(account.available_balance ?? account.current_balance ?? 0),
-      0
-    )
+  const spendableCash = financialContext?.cashAvailable ?? 0
 
-  const creditAvailable = accounts
-    .filter((a) => a.type === 'credit')
-    .reduce((sum, account) => sum + Number(account.available_balance ?? 0), 0)
+  const creditAvailable = financialContext?.creditAvailable ?? 0
 
-  const creditDebt = accounts
-    .filter((a) => a.type === 'credit')
-    .reduce((sum, account) => sum + Number(account.current_balance ?? 0), 0)
+  const creditDebt = financialContext?.connectedCreditDebt ?? 0
 
   const bankTotals = accounts
     .filter((a) => a.type === 'depository')
@@ -81,16 +85,11 @@ export default function AdvisorPage() {
   const bankTotalsEntries = Object.entries(bankTotals) as [string, number][]
   const creditTotalsEntries = Object.entries(creditTotals) as [string, number][]
 
-  const pendingPayments = payments.filter((payment) => payment.status !== 'paid')
+  const pendingPayments = financialContext?.pendingPaymentInstances ?? []
 
-  const totalPendingPayments = pendingPayments.reduce(
-    (sum, payment) => sum + Number(payment.amount || 0),
-    0
-  )
+  const totalPendingPayments = financialContext?.totalPendingPayments ?? 0
 
-  const totalUpcomingIncome = income
-    .filter((item) => item.amount && item.next_expected_date)
-    .reduce((sum, item) => sum + Number(item.amount || 0), 0)
+  const totalUpcomingIncome = financialContext?.upcomingIncome ?? 0
 
   const projectedCash = spendableCash + totalUpcomingIncome - totalPendingPayments
 
@@ -153,55 +152,17 @@ export default function AdvisorPage() {
     .sort((a, b) => Number(a.priority || 99) - Number(b.priority || 99))
     .slice(0, 3)
 
-  // compute critical liabilities similar to dashboard
-  const now = new Date()
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
-  const msPerDay = 1000 * 60 * 60 * 24
+  // attention items include unpaid critical liabilities and pending payment instances
+  const criticalLiabilities = financialContext?.attentionItems ?? []
 
-  const criticalLiabilities = liabilities
-    .map((l: any) => {
-      const dueDay = l.due_day ? Number(l.due_day) : null
-      const graceDay = l.grace_day ? Number(l.grace_day) : null
-      let status = 'normal'
-      let daysUntil = null as number | null
+  const alertLiabilities = criticalLiabilities.filter((liability: any) =>
+    ['due_today', 'in_grace', 'overdue', 'due_soon'].includes(liability.status)
+  )
 
-      if (dueDay) {
-        const dueDate = new Date(now.getFullYear(), now.getMonth(), dueDay)
-        daysUntil = Math.ceil((dueDate.getTime() - today.getTime()) / msPerDay)
-
-        if (daysUntil === 0) status = 'due_today'
-        else if (daysUntil < 0) {
-          if (graceDay) {
-            const graceDate = new Date(now.getFullYear(), now.getMonth(), graceDay)
-            if (today.getTime() <= graceDate.getTime()) status = 'in_grace'
-            else status = 'overdue'
-          } else {
-            status = 'overdue'
-          }
-        } else if (daysUntil > 0 && daysUntil <= 7) status = 'due_soon'
-      }
-
-      return { ...l, status, daysUntil }
-    })
-    .filter((l: any) => l.status !== 'normal')
-
-  // helper to check if liability name matches any paid payment_instance flexibly
-  const hasMatchingPaidPayment = (liabilityName: string) => {
-    return payments.some((p: any) => {
-      if (p.status !== 'paid') return false
-      const pName = String(p.name || '').toLowerCase().trim()
-      const lName = String(liabilityName || '').toLowerCase().trim()
-      return pName.includes(lName.split(' ')[0]) || lName.includes(pName.split(' ')[0])
-    })
-  }
-
-  // find critical liability not covered by paid payment_instance, prioritizing overdue > in_grace > due_today > due_soon
-  const criticalNeedsAttention = criticalLiabilities
-    .filter((l: any) => l.name && !hasMatchingPaidPayment(l.name))
-    .sort((a: any, b: any) => {
-      const statusPriority: { [key: string]: number } = { overdue: 0, in_grace: 1, due_today: 2, due_soon: 3 }
-      return (statusPriority[a.status] ?? 99) - (statusPriority[b.status] ?? 99)
-    })[0] || null
+  const showCriticalAlert = alertLiabilities.length > 0
+  const showRecommendationSummary =
+    financialContext?.recommendationLevel === 'warning' ||
+    financialContext?.recommendationLevel === 'critical'
 
   function analyzeQuestion() {
     const amountMatch = question.toLowerCase().match(/(\d+(\.\d+)?)/)
@@ -260,6 +221,8 @@ export default function AdvisorPage() {
         </div>
       </section>
 
+      
+
       <section className="border rounded p-4 space-y-4">
         <h2 className="text-2xl font-bold">Pregúntale a Pablo</h2>
         <textarea className="border rounded p-3 w-full min-h-28" placeholder="Ejemplo: ¿Puedo pagar $500 extra a Popular?" value={question} onChange={(e) => setQuestion(e.target.value)} />
@@ -267,11 +230,22 @@ export default function AdvisorPage() {
         {answer && <div className="border rounded p-4"><h3 className="font-bold mb-2">Respuesta</h3><p>{answer}</p></div>}
       </section>
 
-      {criticalNeedsAttention && (
+      {showCriticalAlert && financialContext && (
         <section className="border rounded p-4">
           <h2 className="text-2xl font-bold mb-2">🚨 Atención crítica</h2>
-          <p className="font-semibold">{criticalNeedsAttention.name} requiere atención inmediata.</p>
-          <p className="text-sm opacity-80">No uses crédito como efectivo. Evalúa promesa de pago o pagar cuando entre el próximo ingreso si aún estás dentro de la gracia.</p>
+          {showRecommendationSummary && (
+            <p className="font-semibold">{financialContext.recommendationSummary}</p>
+          )}
+          <div className="mt-3 space-y-2">
+            {alertLiabilities.map((liability: any) => (
+              <div key={liability.id} className="rounded border p-3">
+                <p className="font-semibold">{liability.name}</p>
+                <p>
+                  {formatMoney(Number(liability.amount || 0))} — {statusLabel(liability.status)}
+                </p>
+              </div>
+            ))}
+          </div>
         </section>
       )}
 
