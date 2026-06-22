@@ -86,8 +86,25 @@ const LIABILITY_MATCH_PATTERNS = [
   ['toyota', 'toyota'],
 ]
 
+const DEFAULT_TIME_ZONE = 'America/Puerto_Rico'
+
 function normalizeName(name: string | null | undefined) {
   return String(name || '').toLowerCase().trim()
+}
+
+function getDateInTimeZone(date: Date, timeZone: string) {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(date)
+
+  const year = Number(parts.find((p) => p.type === 'year')?.value)
+  const month = Number(parts.find((p) => p.type === 'month')?.value)
+  const day = Number(parts.find((p) => p.type === 'day')?.value)
+
+  return new Date(Date.UTC(year, month - 1, day))
 }
 
 function liabilityHasPaidMatch(liabilityName: string, payments: PaymentInstance[]) {
@@ -108,22 +125,23 @@ function computeLiabilityStatus(
 ): { status: LiabilityStatus; daysUntil: number | null } {
   const dueDay = liability.due_day ?? null
   const graceDay = liability.grace_day ?? null
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+  const today = getDateInTimeZone(now, DEFAULT_TIME_ZONE)
 
   if (!dueDay) {
     return { status: 'normal', daysUntil: null }
   }
 
-  const dueDate = new Date(now.getFullYear(), now.getMonth(), dueDay)
+  const dueDate = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), dueDay))
   const daysUntil = Math.ceil((dueDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
+
+  const graceDate = graceDay
+    ? new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), graceDay))
+    : null
 
   if (daysUntil === 0) return { status: 'due_today', daysUntil }
   if (daysUntil < 0) {
-    if (graceDay) {
-      const graceDate = new Date(now.getFullYear(), now.getMonth(), graceDay)
-      if (today.getTime() <= graceDate.getTime()) {
-        return { status: 'in_grace', daysUntil }
-      }
+    if (graceDate && today.getTime() <= graceDate.getTime()) {
+      return { status: 'in_grace', daysUntil }
     }
     return { status: 'overdue', daysUntil }
   }

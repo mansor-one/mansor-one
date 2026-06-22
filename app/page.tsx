@@ -1,30 +1,18 @@
 import { requireUser } from '@/lib/auth/requireUser'
+import { getFinancialDecisionContext } from '@/lib/pablo/getFinancialDecisionContext'
 import Nav from './components/Nav'
 
 export const dynamic = 'force-dynamic'
 
 export default async function Home() {
   const { supabase } = await requireUser()
+
+  // central decision context: avoid duplicating financial calculations
+  const decisionCtx = await getFinancialDecisionContext(supabase)
+
   const { data: plaidAccounts, error: plaidAccountsError } = await supabase
     .from('plaid_accounts')
     .select('name, available_balance, current_balance, type, institution_name, connection_id')
-
-  const { data: cards } = await supabase
-    .from('credit_cards')
-    .select('*')
-    .eq('is_active', true)
-
-  const { data: payments } = await supabase
-    .from('payment_instances')
-    .select('*')
-    .eq('payment_month', 6)
-    .eq('payment_year', 2026)
-    .order('effective_due_date', { ascending: true })
-
-  const { data: liabilities } = await supabase
-    .from('liabilities')
-    .select('id, name, monthly_payment, due_day, grace_day, notes, balance')
-    .eq('is_active', true)
 
   const { data: entries } = await supabase
     .from('quick_entries')
@@ -37,45 +25,15 @@ export default async function Home() {
     .select('*')
     .eq('source', 'plaid')
 
-    const { data: upcomingIncome } = await supabase
-  .from('income_schedule')
-  .select('*')
-  .eq('is_active', true)
-  .not('amount', 'is', null)
-  .not('next_expected_date', 'is', null)
-  .gte('next_expected_date', '2026-06-01')
-  .lte('next_expected_date', '2026-06-30')
-  .order('next_expected_date', { ascending: true })
-
-  const plaidDepository = plaidAccounts?.filter(
-    (a) => a.type === 'depository'
-  ) || []
+  const plaidDepository = plaidAccounts?.filter((a) => a.type === 'depository') || []
 
   const plaidCredit = plaidAccounts?.filter((a) => a.type === 'credit') || []
 
-  const availableTodayBanks =
-    plaidDepository?.reduce(
-      (sum, account) => sum + Number(account.available_balance || 0),
-      0
-    ) || 0
-
-  const realBalanceBanks =
-    plaidDepository?.reduce(
-      (sum, account) => sum + Number(account.current_balance || 0),
-      0
-    ) || 0
-
-  const creditAvailable =
-    plaidCredit?.reduce(
-      (sum, account) => sum + Number(account.available_balance || 0),
-      0
-    ) || 0
-
-  const creditDebt =
-    plaidCredit?.reduce(
-      (sum, account) => sum + Number(account.current_balance || 0),
-      0
-    ) || 0
+  // Values provided by decision context (avoid recalculating)
+  const availableTodayBanks = decisionCtx.cashAvailable
+  const realBalanceBanks = decisionCtx.currentBankBalances
+  const creditAvailable = decisionCtx.creditAvailable
+  const creditDebt = decisionCtx.connectedCreditDebt
 
   const bankTotals = plaidDepository.reduce((acc, account) => {
     const institution = account.institution_name || 'Unknown'
@@ -90,68 +48,17 @@ export default async function Home() {
   }, {} as Record<string, number>)
 
 
-  const totalDebt =
-    cards?.reduce((sum, card) => sum + Number(card.balance || 0), 0) || 0
 
-  const pendingPayments =
-    payments?.filter((payment) => payment.status !== 'paid') || []
+  // Use context-provided pending payments, totals, critical liabilities and projections
+  const totalDebt = decisionCtx.totalCreditCardDebt
+  const pendingPayments = decisionCtx.pendingPaymentInstances
+  const totalPending = decisionCtx.totalPendingPayments
+  const totalUpcomingIncome = decisionCtx.upcomingIncome
 
-  const totalPending = pendingPayments.reduce(
-    (sum, payment) => sum + Number(payment.amount || 0),
-    0
-  )
-const totalUpcomingIncome =
-  upcomingIncome?.reduce(
-    (sum, income) => sum + Number(income.amount || 0),
-    0
-  ) || 0
+  const criticalLiabilities = decisionCtx.unpaidCriticalLiabilities || []
 
-  // compute critical liabilities: overdue, due today, in grace, within 7 days
-  const now = new Date()
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
-  const msPerDay = 1000 * 60 * 60 * 24
-
-  // helper for flexible name matching
-  const hasMatchingPaidPayment = (liabilityName: string) => {
-    return payments?.some((p: any) => {
-      if (p.status !== 'paid') return false
-      const pName = String(p.name || '').toLowerCase().trim()
-      const lName = String(liabilityName || '').toLowerCase().trim()
-      return pName.includes(lName.split(' ')[0]) || lName.includes(pName.split(' ')[0])
-    }) || false
-  }
-
-  const criticalLiabilities = (liabilities || [])
-    .filter((l: any) => !hasMatchingPaidPayment(l.name))
-    .map((l: any) => {
-      const dueDay = l.due_day ? Number(l.due_day) : null
-      const graceDay = l.grace_day ? Number(l.grace_day) : null
-      let status = 'normal'
-      let daysUntil = null as number | null
-
-      if (dueDay) {
-        const dueDate = new Date(now.getFullYear(), now.getMonth(), dueDay)
-        daysUntil = Math.ceil((dueDate.getTime() - today.getTime()) / msPerDay)
-
-        if (daysUntil === 0) status = 'due_today'
-        else if (daysUntil < 0) {
-          if (graceDay) {
-            const graceDate = new Date(now.getFullYear(), now.getMonth(), graceDay)
-            if (today.getTime() <= graceDate.getTime()) status = 'in_grace'
-            else status = 'overdue'
-          } else {
-            status = 'overdue'
-          }
-        } else if (daysUntil > 0 && daysUntil <= 7) status = 'due_soon'
-      }
-
-      return { ...l, status, daysUntil }
-    })
-    .filter((l: any) => l.status !== 'normal')
-
-const projectedAvailableWithIncome =
-  availableTodayBanks + totalUpcomingIncome - totalPending
-  const projectedAvailable = availableTodayBanks - totalPending
+  const projectedAvailableWithIncome = decisionCtx.projectedCashAfterIncome
+  const projectedAvailable = decisionCtx.cashAvailable - decisionCtx.totalPendingPayments
 
   const realMonthlySpending =
     plaidEntries
@@ -319,10 +226,7 @@ const projectedAvailableWithIncome =
 </section>
       <section className="border rounded p-4">
         <h2 className="text-2xl font-bold mb-2">🤖 Recomendación</h2>
-        <p>
-          Prioridad actual: cubrir pagos pendientes/promesas del mes y atacar
-          Popular Visa antes de acelerar US Bank.
-        </p>
+        <p>{decisionCtx.recommendationSummary}</p>
       </section>
 
       {criticalLiabilities.length > 0 && (
@@ -351,7 +255,7 @@ const projectedAvailableWithIncome =
         </h2>
 
         <div className="space-y-3">
-          {pendingPayments.map((payment) => (
+          {pendingPayments.map((payment: any) => (
             <div key={payment.id} className="border rounded p-4">
               <strong>{payment.name}</strong>
               <p>${Number(payment.amount || 0).toLocaleString()}</p>

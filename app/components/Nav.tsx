@@ -16,6 +16,7 @@ export default function Nav() {
       <a href="/plaid-import">📥 Movimientos Bancarios</a>
       <a href="/quick-entry">⚡ Movimiento Manual</a>
       <a href="/merchant-rules">🧠 Reglas</a>
+      <a href="/pablo-chat">🤖 Hablar con Pablo</a>
     </nav>
   )
 }

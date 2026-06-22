@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { getFinancialDecisionContext, FinancialDecisionContext } from '@/lib/pablo/getFinancialDecisionContext'
+import { buildRecommendation } from '@/lib/pablo/buildRecommendation'
 import Nav from '../components/Nav'
 
 function formatMoney(value: number) {
@@ -160,38 +161,72 @@ export default function AdvisorPage() {
   )
 
   const showCriticalAlert = alertLiabilities.length > 0
+  const recommendation = financialContext
+  ? buildRecommendation(financialContext)
+  : null
   const showRecommendationSummary =
     financialContext?.recommendationLevel === 'warning' ||
     financialContext?.recommendationLevel === 'critical'
 
-  function analyzeQuestion() {
-    const amountMatch = question.toLowerCase().match(/(\d+(\.\d+)?)/)
-    const requestedAmount = amountMatch ? Number(amountMatch[0]) : 0
-
-    if (!question.trim()) {
-      setAnswer('Escribe una decisión para analizar.')
-      return
-    }
-
-    if (requestedAmount === 0) {
-      setAnswer('Necesito un monto para evaluar el impacto.')
-      return
-    }
-
-    const projectedAfterDecision = projectedCash - requestedAmount
-
-    if (projectedAfterDecision < 0) {
-      setAnswer(
-        `❌ No lo recomiendo ahora. Si usas ${formatMoney(requestedAmount)}, quedarías corto por ${formatMoney(Math.abs(projectedAfterDecision))}.`
-      )
-      return
-    }
-
-    setAnswer(
-      `✅ Se puede evaluar. Después de usar ${formatMoney(requestedAmount)}, quedarías con aproximadamente ${formatMoney(projectedAfterDecision)}.`
-    )
+ function analyzeQuestion() {
+  if (!question.trim()) {
+    setAnswer('Escribe una decisión para analizar.')
+    return
   }
 
+  if (!financialContext) {
+    setAnswer('Todavía estoy cargando el contexto financiero. Intenta de nuevo en unos segundos.')
+    return
+  }
+
+  const amountMatch = question.toLowerCase().match(/(\d+(\.\d+)?)/)
+  const requestedAmount = amountMatch ? Number(amountMatch[0]) : 0
+
+  const criticalAmount =
+    financialContext.attentionItems?.reduce(
+      (sum, item) =>
+        ['overdue', 'in_grace', 'due_today'].includes(item.status)
+          ? sum + Number(item.amount || 0)
+          : sum,
+      0
+    ) || 0
+
+  if (requestedAmount === 0) {
+    setAnswer(financialContext.recommendationSummary)
+    return
+  }
+
+  if (financialContext.cashAvailable < criticalAmount) {
+    setAnswer(
+      `Hoy no lo recomiendo.
+
+Tienes ${formatMoney(financialContext.cashAvailable)} disponibles.
+
+Tus compromisos críticos suman aproximadamente ${formatMoney(criticalAmount)}.
+
+Aunque los próximos ingresos ayuden, no recomiendo usar ${formatMoney(requestedAmount)} ahora.
+
+Prioriza primero Honda, Toyota, Colegio Gaby, Agua y otros compromisos críticos.`
+    )
+    return
+  }
+
+  if (financialContext.cashAvailable < criticalAmount + requestedAmount) {
+    setAnswer(
+      `No lo recomiendo.
+
+Tienes ${formatMoney(financialContext.cashAvailable)} disponibles, pero después de reservar compromisos críticos no queda suficiente margen para usar ${formatMoney(requestedAmount)}.`
+    )
+    return
+  }
+
+  setAnswer(
+    `Sí, pero con cuidado.
+
+Tienes ${formatMoney(financialContext.cashAvailable)} disponibles y los compromisos críticos parecen cubiertos. Después de usar ${formatMoney(requestedAmount)}, aún debes validar tus pagos próximos.`
+  )
+}
+  
   return (
     <main className="p-8 space-y-6">
       <h1 className="text-4xl font-bold">🤖 Mansor Advisor</h1>
@@ -246,6 +281,38 @@ export default function AdvisorPage() {
               </div>
             ))}
           </div>
+        </section>
+      )}
+
+      {recommendation && (
+        <section className="border rounded p-4">
+          <h2 className="text-2xl font-bold mb-2">🧠 Recomendación de Pablo</h2>
+          <p className="font-semibold text-lg">{recommendation.headline}</p>
+          <p className="mb-3">{recommendation.summary}</p>
+          <div className="mb-3">
+            <h3 className="font-semibold">Prioridad</h3>
+            <div className="space-y-2">
+              {recommendation.priorityOrder.slice(0, 5).map((item) => (
+                <div key={`${item.name}-${item.status}`} className="rounded border p-3">
+                  <p className="font-semibold">{item.name}</p>
+                  <p>{formatMoney(item.amount)} — {statusLabel(item.status)}</p>
+                  <p className="text-sm opacity-70">{item.reason}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+          {recommendation.warnings.length > 0 && (
+            <div className="mb-3 rounded border border-yellow-300 bg-yellow-50 p-3">
+              <h3 className="font-semibold">Warnings</h3>
+              <ul className="list-disc pl-5">
+                {recommendation.warnings.map((warning, index) => (
+                  <li key={index}>{warning}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+          <p className="font-semibold">Próxima mejor acción:</p>
+          <p>{recommendation.nextBestAction}</p>
         </section>
       )}
 

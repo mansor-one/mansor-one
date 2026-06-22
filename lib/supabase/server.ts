@@ -24,3 +24,8 @@ export async function createClient() {
     }
   )
 }
+
+export async function createServerSupabase() {
+  const supabase = await createClient()
+  return { supabase }
+}
