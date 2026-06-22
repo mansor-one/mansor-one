@@ -12,7 +12,7 @@ export default function Nav() {
       <a href="/assets">📦 Activos</a>
       <a href="/cards">💳 Tarjetas</a>
       <a href="/accounts">🏦 Cuentas</a>
-      <a href="/plaid">🔗 Conectar Bancos</a>
+      <a href="/plaid">🔗 🏦 Bancos conectados</a>
       <a href="/plaid-import">📥 Movimientos Bancarios</a>
       <a href="/quick-entry">⚡ Movimiento Manual</a>
       <a href="/merchant-rules">🧠 Reglas</a>

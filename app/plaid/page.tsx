@@ -22,7 +22,7 @@ export default async function PlaidPage() {
 
   return (
     <main className="p-8 space-y-6">
-      <h1 className="text-4xl font-bold">🔗 Plaid</h1>
+      <h1 className="text-4xl font-bold">🔗 Conexiones bancarias</h1>
 
       <Nav />
 
@@ -34,7 +34,7 @@ export default async function PlaidPage() {
 
       <section className="space-y-4">
         <div className="flex items-center justify-between gap-4">
-          <h2 className="text-2xl font-bold">Conexiones Plaid</h2>
+          <h2 className="text-2xl font-bold">Conexiones bancarias</h2>
           <span className="text-sm opacity-70">
             {connections?.length ?? 0} conexión(es)
           </span>
@@ -47,7 +47,7 @@ export default async function PlaidPage() {
         )}
 
         {!safeConnections || safeConnections.length === 0 ? (
-          <div className="border rounded p-4">No hay conexiones Plaid registradas.</div>
+          <div className="border rounded p-4">No hay onexiones bancarias registradas.</div>
         ) : (
           <div className="space-y-4">
             {safeConnections.map((connection: any) => {
