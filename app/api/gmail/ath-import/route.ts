@@ -39,6 +39,16 @@ function categorize(text: string) {
   if (s.includes('walgreens') || s.includes('farmacia')) return 'Farmacia'
   if (s.includes('nintendo') || s.includes('apple')) return 'Suscripciones'
   if (s.includes('excell')) return 'Revisar'
+  if (s.includes('coop_lares') || s.includes('coop lares') || s.includes('lares')) return 'Deuda - Lares'
+if (s.includes('farmacia')) return 'Farmacia'
+if (s.includes('comida')) return 'Comida / Familia'
+if (s.includes('nenas')) return 'Familia / Niñas'
+if (s.includes('cajita')) return 'Ahorro / Caja'
+if (s.includes('junito')) return 'Gasolina'
+if (s.includes('total cayey')) return 'Gasolina'
+if (s.includes('texaco') || s.includes('1exaco')) return 'Gasolina'
+if (s.includes('mcdonald') || s.includes('mc donald')) return 'Fast Food'
+if (s.includes('lab clin')) return 'Laboratorio'
 
   return 'Revisar'
 }
@@ -136,7 +146,10 @@ export async function GET() {
         return {
   user_id: process.env.MANSOR_USER_ID!,
   gmail_message_id: msg.id,
-        }
+  email_date: emailDate ? new Date(emailDate).toISOString() : null,
+  subject,
+  ...parsed,
+}
       })
     )
 

@@ -14,6 +14,7 @@ export default function Nav() {
       <a href="/accounts">🏦 Cuentas</a>
       <a href="/plaid">🔗 🏦 Bancos conectados</a>
       <a href="/plaid-import">📥 Movimientos Bancarios</a>
+      <a href="/ath-movil">📱 ATH Móvil</a>
       <a href="/quick-entry">⚡ Movimiento Manual</a>
       <a href="/merchant-rules">🧠 Reglas</a>
       <a href="/pablo-chat">🤖 Hablar con Pablo</a>
