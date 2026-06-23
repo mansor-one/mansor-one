@@ -1,7 +1,6 @@
 import { requireUser } from '@/lib/auth/requireUser'
 import { getFinancialDecisionContext } from '@/lib/pablo/getFinancialDecisionContext'
 import Nav from './components/Nav'
-
 export const dynamic = 'force-dynamic'
 
 export default async function Home() {
