@@ -9,6 +9,7 @@ export default async function AthMovilPage() {
   const { data: emails, error } = await supabase
     .from('ath_movil_emails')
     .select('*')
+.eq('is_ignored', false)
     .order('email_date', { ascending: false })
     .limit(100)
 
