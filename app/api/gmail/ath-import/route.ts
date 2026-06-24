@@ -27,33 +27,30 @@ function getHeader(headers: any[], name: string) {
   return headers?.find((h) => h.name.toLowerCase() === name.toLowerCase())?.value || ''
 }
 
-function categorize(text: string) {
+function categorize(text: string, rules: any[] = []) {
   const s = text.toLowerCase()
 
-  if (s.includes('escambron') || s.includes('parking')) return 'Parking'
-  if (s.includes('fuel') || s.includes('gas')) return 'Gasolina'
-  if (s.includes('yadrian')) return 'Barbero'
-  if (s.includes('soraya')) return 'Familia'
-  if (s.includes('andres merced')) return 'Familia / Reembolso'
-  if (s.includes('mcdonald') || s.includes('burger')) return 'Fast Food'
-  if (s.includes('walgreens') || s.includes('farmacia')) return 'Farmacia'
-  if (s.includes('nintendo') || s.includes('apple')) return 'Suscripciones'
-  if (s.includes('excell')) return 'Revisar'
+
+ for (const rule of rules || []) {
+    if (s.includes(rule.keyword.toLowerCase())) {
+        
+      return rule.category
+    }
+  }
+
   if (s.includes('coop_lares') || s.includes('coop lares') || s.includes('lares')) return 'Deuda - Lares'
-if (s.includes('farmacia')) return 'Farmacia'
-if (s.includes('comida')) return 'Comida / Familia'
-if (s.includes('nenas')) return 'Familia / Niñas'
-if (s.includes('cajita')) return 'Ahorro / Caja'
-if (s.includes('junito')) return 'Gasolina'
-if (s.includes('total cayey')) return 'Gasolina'
-if (s.includes('texaco') || s.includes('1exaco')) return 'Gasolina'
-if (s.includes('mcdonald') || s.includes('mc donald')) return 'Fast Food'
-if (s.includes('lab clin')) return 'Laboratorio'
+  if (s.includes('farmacia')) return 'Farmacia'
+  if (s.includes('comida')) return 'Comida / Familia'
+  if (s.includes('nenas')) return 'Familia / Niñas'
+  if (s.includes('cajita')) return 'Ahorro / Caja'
+  if (s.includes('mcdonald') || s.includes('mc donald')) return 'Fast Food'
+  if (s.includes('lab clin')) return 'Laboratorio'
+  if (s.includes('texaco') || s.includes('1exaco')) return 'Gasolina'
 
   return 'Revisar'
 }
 
-function parseAthEmail(subject: string, snippet: string) {
+function parseAthEmail(subject: string, snippet: string, rules: any[] = []) {
   const text = `${subject} ${snippet}`
 
   const amountMatch = text.match(/\$([\d,]+(?:\.\d{2})?)/)
@@ -109,7 +106,7 @@ function parseAthEmail(subject: string, snippet: string) {
     transaction_type: transactionType,
     counterparty,
     message,
-    suggested_category: categorize(`${subject} ${counterparty} ${message}`),
+    suggested_category: categorize(`${subject} ${counterparty} ${message}`, rules),
     raw_snippet: snippet,
   }
 }
@@ -129,6 +126,14 @@ export async function GET() {
     if (!listRes.ok) {
       return NextResponse.json({ ok: false, error: listData }, { status: 400 })
     }
+const { data: rules, error: rulesError } = await supabaseAdmin
+  .from('ath_movil_rules')
+  .select('keyword, category')
+  .eq('active', true)
+
+if (rulesError) {
+  return NextResponse.json({ ok: false, error: rulesError }, { status: 400 })
+}
 
     const rows = await Promise.all(
       (listData.messages || []).map(async (msg: any) => {
@@ -141,7 +146,7 @@ export async function GET() {
         const headers = detail.payload?.headers || []
         const subject = getHeader(headers, 'Subject')
         const emailDate = getHeader(headers, 'Date')
-        const parsed = parseAthEmail(subject, detail.snippet || '')
+        const parsed = parseAthEmail(subject, detail.snippet || '', rules || [])
 
         return {
   user_id: process.env.MANSOR_USER_ID!,
@@ -155,7 +160,7 @@ export async function GET() {
 
     const { data, error } = await supabaseAdmin
       .from('ath_movil_emails')
-      .upsert(rows, { onConflict: 'gmail_message_id', ignoreDuplicates: true })
+     .upsert(rows, { onConflict: 'gmail_message_id' })
       .select('id')
 
     if (error) {

@@ -16,11 +16,12 @@ export default async function AthMovilPage() {
   const items = emails || []
 
   const spendingItems = items.filter(
-    (item: any) =>
-      !item.is_internal_transfer &&
-      item.direction !== 'received' &&
-      Number(item.amount || 0) > 0
-  )
+  (item: any) =>
+    !item.is_internal_transfer &&
+    !item.exclude_from_spending &&
+    item.direction !== 'received' &&
+    Number(item.amount || 0) > 0
+)
 
   const totalSpending = spendingItems.reduce(
     (sum: number, item: any) => sum + Number(item.amount || 0),
