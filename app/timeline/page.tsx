@@ -1,4 +1,6 @@
-import { supabase } from '@/lib/supabase'
+import { requireUser } from '@/lib/auth/requireUser'
+import { getPortfolioSummary } from '@/lib/financial-engine'
+import { createServerSupabase } from '@/lib/supabase/server'
 import Nav from '../components/Nav'
 export const dynamic = 'force-dynamic'
 
@@ -8,13 +10,13 @@ function formatDate(dateString: string) {
 }
 
 export default async function TimelinePage() {
+  const { supabase } = await createServerSupabase()
+  const { user } = await requireUser(supabase)
   const now = new Date()
   const month = now.getMonth() + 1
   const year = now.getFullYear()
 
-  const { data: plaidAccounts } = await supabase
-    .from('plaid_accounts')
-    .select('*')
+  const portfolioSummary = await getPortfolioSummary(supabase, user.id)
 
   const { data: incomes } = await supabase
     .from('income_schedule')
@@ -28,14 +30,7 @@ export default async function TimelinePage() {
     .eq('payment_year', year)
     .neq('status', 'paid')
 
- const startingCash =
-  (plaidAccounts
-    ?.filter((a) => a.type === 'depository')
-    .reduce(
-      (sum, account) =>
-        sum + Number(account.available_balance ?? account.current_balance ?? 0),
-      0
-    ) || 0)
+  const startingCash = portfolioSummary.totalLiquidAvailable
 
   const incomeEvents =
     incomes
@@ -66,15 +61,30 @@ export default async function TimelinePage() {
     return a.date.localeCompare(b.date)
   })
 
-  let runningBalance = startingCash
+  const timelineState = events.reduce(
+    (state, event) => {
+      const balanceAfter = state.runningBalance + event.amount
 
-  const timeline = events.map((event) => {
-    runningBalance += event.amount
-    return {
-      ...event,
-      balanceAfter: runningBalance,
+      return {
+        runningBalance: balanceAfter,
+        timeline: [
+          ...state.timeline,
+          {
+            ...event,
+            balanceAfter,
+          },
+        ],
+      }
+    },
+    {
+      runningBalance: startingCash,
+      timeline: [] as Array<
+        (typeof events)[number] & { balanceAfter: number }
+      >,
     }
-  })
+  )
+
+  const { runningBalance, timeline } = timelineState
 
   const minimumBalance = timeline.reduce(
     (min, event) => Math.min(min, event.balanceAfter),

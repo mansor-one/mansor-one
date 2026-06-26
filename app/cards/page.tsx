@@ -1,18 +1,39 @@
-import { supabase } from '@/lib/supabase'
+import { requireUser } from '@/lib/auth/requireUser'
+import { getLiquiditySummary } from '@/lib/financial-engine'
+import { createServerSupabase } from '@/lib/supabase/server'
 import Nav from '../components/Nav'
 
+type CardRow = {
+  id?: string
+  name?: string | null
+  bank?: string | null
+  balance?: number | null
+  minimum_payment?: number | null
+  due_day?: number | null
+  apr?: number | string | null
+}
+
 export default async function CardsPage() {
-  const { data: cards, error } = await supabase
-    .from('credit_cards')
-    .select('*')
-    .eq('is_active', true)
-    .order('balance', { ascending: false })
+  const { supabase } = await createServerSupabase()
+  const { user } = await requireUser(supabase)
+  let cards: CardRow[] = []
+  let totalDebt = 0
+  let totalMinimum = 0
+  let error: { message: string } | null = null
 
-  const totalDebt =
-    cards?.reduce((sum, card) => sum + Number(card.balance || 0), 0) || 0
-
-  const totalMinimum =
-    cards?.reduce((sum, card) => sum + Number(card.minimum_payment || 0), 0) || 0
+  try {
+    const liquidity = await getLiquiditySummary(supabase, user.id)
+    cards = liquidity.creditCards as CardRow[]
+    totalDebt = liquidity.manualCardDebt
+    totalMinimum = liquidity.manualMinimumPayments
+  } catch (caughtError) {
+    error = {
+      message:
+        caughtError instanceof Error
+          ? caughtError.message
+          : 'No se pudieron cargar las tarjetas.',
+    }
+  }
 
   return (
     <main className="p-8 space-y-6">
