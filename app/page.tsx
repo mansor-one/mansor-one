@@ -1,4 +1,8 @@
 import { requireUser } from '@/lib/auth/requireUser'
+import {
+  getDashboardSummary,
+  getPortfolioSummary,
+} from '@/lib/financial-engine'
 import Nav from './components/Nav'
 
 export const dynamic = 'force-dynamic'
@@ -10,52 +14,6 @@ function money(value: unknown) {
   })
 }
 
-type PlaidAccount = {
-  id?: string
-  plaid_account_id?: string
-  institution_name?: string | null
-  available_balance?: number | null
-  current_balance?: number | null
-  type?: string | null
-}
-
-type ManualAccount = {
-  id?: string
-  name?: string | null
-  balance?: number | null
-  is_spendable?: boolean | null
-}
-
-type PaymentInstance = {
-  id: string
-  name?: string | null
-  amount?: number | null
-  status?: string | null
-  effective_due_date?: string | null
-}
-
-type IncomeSchedule = {
-  id?: string
-  name?: string | null
-  amount?: number | null
-  next_expected_date?: string | null
-}
-
-type CreditCard = {
-  id: string
-  name?: string | null
-  balance?: number | null
-  minimum_payment?: number | null
-  due_day?: number | null
-}
-
-type PlanningItem = {
-  id: string
-  name?: string | null
-  target_amount?: number | null
-  due_date?: string | null
-}
-
 type QuickEntry = {
   id: string
   description?: string | null
@@ -63,185 +21,45 @@ type QuickEntry = {
   owner?: string | null
 }
 
-function institutionBalances(
-  accounts: PlaidAccount[],
-  getBalance: (account: PlaidAccount) => number
-) {
-  const totals = accounts.reduce((acc, account) => {
-    const institution = account.institution_name || 'Institución desconocida'
-    acc[institution] = (acc[institution] || 0) + getBalance(account)
-    return acc
-  }, {} as Record<string, number>)
-
-  return Object.entries(totals).map(([institution, balance]) => ({
-    institution,
-    balance,
-  }))
-}
-
-function cashBalance(account: PlaidAccount) {
-  return Number(account.available_balance ?? account.current_balance ?? 0)
-}
-
 export default async function Home() {
   const { supabase, user } = await requireUser()
 
-  const now = new Date()
-  const month = now.getMonth() + 1
-  const year = now.getFullYear()
+  const [
+    dashboardSummary,
+    portfolioSummary,
+    { data: entries },
+  ] = await Promise.all([
+    getDashboardSummary(supabase, user.id),
+    getPortfolioSummary(supabase, user.id),
+    supabase
+      .from('quick_entries')
+      .select('*')
+      .eq('user_id', user.id)
+      .order('created_at', { ascending: false })
+      .limit(5),
+  ])
 
-  const { data: plaidAccounts } = await supabase
-    .from('plaid_accounts')
-    .select('*')
-    .eq('user_id', user.id)
-
-  const { data: manualAccounts } = await supabase
-    .from('accounts')
-    .select('*')
-    .eq('user_id', user.id)
-    .eq('is_active', true)
-
-  const { data: incomeSchedule } = await supabase
-    .from('income_schedule')
-    .select('*')
-    .eq('is_active', true)
-
-  const { data: payments } = await supabase
-    .from('payment_instances')
-    .select('*')
-    .eq('payment_month', month)
-    .eq('payment_year', year)
-
-  const { data: cards } = await supabase
-    .from('credit_cards')
-    .select('*')
-    .eq('user_id', user.id)
-    .eq('is_active', true)
-    .order('balance', { ascending: false })
-
-  const { data: planningItems } = await supabase
-    .from('planning_items')
-    .select('*')
-    .eq('user_id', user.id)
-    .eq('is_archived', false)
-    .eq('is_completed', false)
-    .order('due_date', { ascending: true })
-    .limit(5)
-
-  const { data: entries } = await supabase
-    .from('quick_entries')
-    .select('*')
-    .eq('user_id', user.id)
-    .order('created_at', { ascending: false })
-    .limit(5)
-
-  const plaidAccountRows = (plaidAccounts || []) as PlaidAccount[]
-  const manualAccountRows = (manualAccounts || []) as ManualAccount[]
-  const paymentRows = (payments || []) as PaymentInstance[]
-  const incomeRows = (incomeSchedule || []) as IncomeSchedule[]
-  const cardRows = (cards || []) as CreditCard[]
-  const planningRows = (planningItems || []) as PlanningItem[]
+  const { liquidity, planning } = dashboardSummary
   const entryRows = (entries || []) as QuickEntry[]
-
-  const plaidCash = plaidAccountRows.filter((account) =>
-    ['depository', 'cash'].includes(account.type || '')
-  )
-
-  const plaidCredit = plaidAccountRows.filter(
-    (account) => account.type === 'credit'
-  )
-
-  const plaidCashByInstitution = institutionBalances(plaidCash, cashBalance)
-
-  const plaidCreditAvailableByInstitution = institutionBalances(
-    plaidCredit,
-    (account) => Number(account.available_balance ?? 0)
-  )
-
-  const plaidCreditDebtByInstitution = institutionBalances(
-    plaidCredit,
-    (account) => Number(account.current_balance ?? 0)
-  )
-
-  const manualCash = manualAccountRows.filter(
-    (account) =>
-      account.is_spendable &&
-      !['FirstBank', 'Popular'].includes(account.name || '')
-  )
-
-  const cashAvailablePlaid = plaidCash.reduce(
-    (sum: number, a: PlaidAccount) => sum + cashBalance(a),
-    0
-  )
-
-  const cashAvailableManual = manualCash.reduce(
-    (sum: number, account) => sum + Number(account.balance || 0),
-    0
-  )
-
-  const cashAvailableTotal = cashAvailablePlaid + cashAvailableManual
-
-  const pendingPayments = paymentRows.filter(
-    (payment) => payment.status !== 'paid'
-  )
-
-  const totalPendingPayments = pendingPayments.reduce(
-    (sum: number, payment) => sum + Number(payment.amount || 0),
-    0
-  )
-
-  const today = new Date()
-  today.setHours(0, 0, 0, 0)
-
-  const confirmedIncome = incomeRows
-    .filter((income) => {
-      if (!income.amount || !income.next_expected_date) return false
-
-      const incomeDate = new Date(`${income.next_expected_date}T00:00:00`)
-      return incomeDate >= today
-    })
-    .sort(
-      (a, b) =>
-        new Date(`${a.next_expected_date}T00:00:00`).getTime() -
-        new Date(`${b.next_expected_date}T00:00:00`).getTime()
-    )
-
-  const totalConfirmedIncome = confirmedIncome.reduce(
-    (sum: number, income) => sum + Number(income.amount || 0),
-    0
-  )
-
-  const resultToday = cashAvailableTotal - totalPendingPayments
-  const resultAfterIncome =
-    cashAvailableTotal + totalConfirmedIncome - totalPendingPayments
-
-  const connectedCreditDebt = plaidCredit.reduce(
-    (sum: number, c: PlaidAccount) => sum + Number(c.current_balance || 0),
-    0
-  )
-
-  const connectedCreditAvailable = plaidCredit.reduce(
-    (sum: number, c: PlaidAccount) => sum + Number(c.available_balance || 0),
-    0
-  )
-
-  const manualCardDebt =
-    cardRows.reduce(
-      (sum: number, card) => sum + Number(card.balance || 0),
-      0
-    ) || 0
-
-  const manualMinimumPayments =
-    cardRows.reduce(
-      (sum: number, card) => sum + Number(card.minimum_payment || 0),
-      0
-    ) || 0
-
-  const totalFutureObligations =
-    planningRows.reduce(
-      (sum: number, item) => sum + Number(item.target_amount || 0),
-      0
-    ) || 0
+  const cardRows = liquidity.creditCards
+  const planningRows = planning.planningItems
+  const plaidCashByInstitution = liquidity.plaidCashByInstitution
+  const plaidCreditAvailableByInstitution =
+    liquidity.plaidCreditAvailableByInstitution
+  const plaidCreditDebtByInstitution = liquidity.plaidCreditDebtByInstitution
+  const manualCash = liquidity.manualCash
+  const cashAvailableTotal = portfolioSummary.totalLiquidAvailable
+  const pendingPayments = liquidity.pendingPayments
+  const totalPendingPayments = liquidity.totalPendingPayments
+  const confirmedIncome = liquidity.confirmedIncome
+  const totalConfirmedIncome = liquidity.totalConfirmedIncome
+  const resultToday = liquidity.resultToday
+  const resultAfterIncome = liquidity.resultAfterIncome
+  const connectedCreditDebt = portfolioSummary.totalCreditDebt
+  const connectedCreditAvailable = portfolioSummary.totalCreditAvailable
+  const manualCardDebt = liquidity.manualCardDebt
+  const manualMinimumPayments = liquidity.manualMinimumPayments
+  const totalFutureObligations = planning.totalFutureObligations
 
   return (
     <main className="p-8 space-y-8">
