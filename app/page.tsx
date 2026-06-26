@@ -104,13 +104,11 @@ export default async function Home() {
   const { data: incomeSchedule } = await supabase
     .from('income_schedule')
     .select('*')
-    .eq('user_id', user.id)
     .eq('is_active', true)
 
   const { data: payments } = await supabase
     .from('payment_instances')
     .select('*')
-    .eq('user_id', user.id)
     .eq('payment_month', month)
     .eq('payment_year', year)
 

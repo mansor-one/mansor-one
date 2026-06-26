@@ -1,6 +1,5 @@
 import { NextResponse } from 'next/server'
 import { createServerSupabase } from '@/lib/supabase/server'
-import { requireUser } from '@/lib/auth/requireUser'
 import { Configuration, PlaidApi, PlaidEnvironments } from 'plaid'
 import { decrypt } from '@/lib/security/encryption'
 
@@ -50,7 +49,15 @@ function plaidErrorDetails(error: unknown) {
 export async function POST() {
   try {
     const { supabase } = await createServerSupabase()
-    const { user } = await requireUser(supabase)
+
+    const {
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser()
+
+    if (authError || !user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
 
     const { data: connections, error: connectionError } = await supabase
       .from('plaid_connections')
