@@ -1,17 +1,9 @@
 import { requireUser } from '@/lib/auth/requireUser'
+import { getPortfolioSummary } from '@/lib/financial-engine'
 import Nav from '../components/Nav'
 
 export default async function HealthScorePage() {
-  const { supabase } = await requireUser()
-  const { data: accounts } = await supabase
-    .from('accounts')
-    .select('*')
-    .eq('is_active', true)
-
-  const { data: cards } = await supabase
-    .from('credit_cards')
-    .select('*')
-    .eq('is_active', true)
+  const { supabase, user } = await requireUser()
 
   const { data: priorities } = await supabase
     .from('priorities')
@@ -21,16 +13,9 @@ export default async function HealthScorePage() {
     .from('future_obligations')
     .select('*')
 
-  const cash =
-    accounts
-      ?.filter((a) => a.is_spendable)
-      .reduce((sum, a) => sum + Number(a.balance || 0), 0) || 0
-
-  const debt =
-    cards?.reduce(
-      (sum, c) => sum + Number(c.balance || 0),
-      0
-    ) || 0
+  const portfolioSummary = await getPortfolioSummary(supabase, user.id)
+  const cash = portfolioSummary.totalLiquidAvailable
+  const debt = portfolioSummary.totalCreditDebt
 
   const openPriorities =
     priorities?.filter((p) => p.status !== 'done').length || 0
