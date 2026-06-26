@@ -1,3 +1,4 @@
+import { reconcileMovement } from '@/lib/finance/reconcileMovement'
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 
@@ -39,9 +40,9 @@ export async function POST(request: Request) {
           : 'Transferencia Recibida'
     }
 
-    const { error: entryError } = await supabaseAdmin
-      .from('quick_entries')
-      .insert({
+   const { data: insertedEntry, error: entryError } = await supabaseAdmin
+  .from('quick_entries')
+  .insert({
         entry_date: item.transaction_date,
         description: item.merchant,
         amount: Number(item.amount || 0),
@@ -52,6 +53,8 @@ export async function POST(request: Request) {
         plaid_transaction_id: item.plaid_transaction_id,
         user_id: item.user_id,
       })
+.select('*')
+.single()
 
     if (entryError) {
       return NextResponse.json(
@@ -59,7 +62,7 @@ export async function POST(request: Request) {
         { status: 500 }
       )
     }
-
+await reconcileMovement(supabaseAdmin, insertedEntry)
     const { error: updateError } = await supabaseAdmin
       .from('plaid_imports')
       .update({ imported: true })

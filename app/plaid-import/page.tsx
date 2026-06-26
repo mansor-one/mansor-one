@@ -142,6 +142,21 @@ export default function PlaidImportPage() {
         {pending.map((item) => (
           <div key={item.id} className="border rounded p-4 space-y-1">
             <h3 className="font-bold">{item.merchant}</h3>
+            <div className="text-sm text-gray-500 space-y-1">
+  <p>
+    🏦 <strong>{item.institution_name || 'Banco desconocido'}</strong>
+  </p>
+
+  <p>
+    💳 {item.account_name || 'Cuenta desconocida'}
+    {item.account_subtype ? ` (${item.account_subtype})` : ''}
+  </p>
+</div>
+            <p className="text-sm opacity-70">
+  {item.institution_name || 'Banco desconocido'} ·{' '}
+  {item.account_name || 'Cuenta desconocida'}
+  {item.account_type ? ` · ${item.account_type}` : ''}
+</p>
 
             <p>Fecha: {item.transaction_date}</p>
 

@@ -1,18 +1,18 @@
 import { NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
-
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-)
+import { createServerSupabase } from '@/lib/supabase/server'
+import { requireUser } from '@/lib/auth/requireUser'
 
 export async function GET() {
   try {
-    const { data, error } = await supabaseAdmin
+    const { supabase } = await createServerSupabase()
+    const { user } = await requireUser(supabase)
+
+    const { data, error } = await supabase
       .from('plaid_accounts')
       .select(
         'id, name, type, subtype, available_balance, current_balance, currency, updated_at'
       )
+      .eq('user_id', user.id)
       .order('name', { ascending: true })
 
     if (error) {

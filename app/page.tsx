@@ -1,72 +1,249 @@
 import { requireUser } from '@/lib/auth/requireUser'
-import { getFinancialDecisionContext } from '@/lib/pablo/getFinancialDecisionContext'
 import Nav from './components/Nav'
+
 export const dynamic = 'force-dynamic'
 
+function money(value: unknown) {
+  return Number(value || 0).toLocaleString(undefined, {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })
+}
+
+type PlaidAccount = {
+  id?: string
+  plaid_account_id?: string
+  institution_name?: string | null
+  available_balance?: number | null
+  current_balance?: number | null
+  type?: string | null
+}
+
+type ManualAccount = {
+  id?: string
+  name?: string | null
+  balance?: number | null
+  is_spendable?: boolean | null
+}
+
+type PaymentInstance = {
+  id: string
+  name?: string | null
+  amount?: number | null
+  status?: string | null
+  effective_due_date?: string | null
+}
+
+type IncomeSchedule = {
+  id?: string
+  name?: string | null
+  amount?: number | null
+  next_expected_date?: string | null
+}
+
+type CreditCard = {
+  id: string
+  name?: string | null
+  balance?: number | null
+  minimum_payment?: number | null
+  due_day?: number | null
+}
+
+type PlanningItem = {
+  id: string
+  name?: string | null
+  target_amount?: number | null
+  due_date?: string | null
+}
+
+type QuickEntry = {
+  id: string
+  description?: string | null
+  amount?: number | null
+  owner?: string | null
+}
+
+function institutionBalances(
+  accounts: PlaidAccount[],
+  getBalance: (account: PlaidAccount) => number
+) {
+  const totals = accounts.reduce((acc, account) => {
+    const institution = account.institution_name || 'Institución desconocida'
+    acc[institution] = (acc[institution] || 0) + getBalance(account)
+    return acc
+  }, {} as Record<string, number>)
+
+  return Object.entries(totals).map(([institution, balance]) => ({
+    institution,
+    balance,
+  }))
+}
+
+function cashBalance(account: PlaidAccount) {
+  return Number(account.available_balance ?? account.current_balance ?? 0)
+}
+
 export default async function Home() {
-  const { supabase } = await requireUser()
+  const { supabase, user } = await requireUser()
 
-  // central decision context: avoid duplicating financial calculations
-  const decisionCtx = await getFinancialDecisionContext(supabase)
+  const now = new Date()
+  const month = now.getMonth() + 1
+  const year = now.getFullYear()
 
-  const { data: plaidAccounts, error: plaidAccountsError } = await supabase
+  const { data: plaidAccounts } = await supabase
     .from('plaid_accounts')
-    .select('name, available_balance, current_balance, type, institution_name, connection_id')
+    .select('*')
+    .eq('user_id', user.id)
+
+  const { data: manualAccounts } = await supabase
+    .from('accounts')
+    .select('*')
+    .eq('user_id', user.id)
+    .eq('is_active', true)
+
+  const { data: incomeSchedule } = await supabase
+    .from('income_schedule')
+    .select('*')
+    .eq('user_id', user.id)
+    .eq('is_active', true)
+
+  const { data: payments } = await supabase
+    .from('payment_instances')
+    .select('*')
+    .eq('user_id', user.id)
+    .eq('payment_month', month)
+    .eq('payment_year', year)
+
+  const { data: cards } = await supabase
+    .from('credit_cards')
+    .select('*')
+    .eq('user_id', user.id)
+    .eq('is_active', true)
+    .order('balance', { ascending: false })
+
+  const { data: planningItems } = await supabase
+    .from('planning_items')
+    .select('*')
+    .eq('user_id', user.id)
+    .eq('is_archived', false)
+    .eq('is_completed', false)
+    .order('due_date', { ascending: true })
+    .limit(5)
 
   const { data: entries } = await supabase
     .from('quick_entries')
     .select('*')
+    .eq('user_id', user.id)
     .order('created_at', { ascending: false })
     .limit(5)
 
-  const { data: plaidEntries } = await supabase
-    .from('quick_entries')
-    .select('*')
-    .eq('source', 'plaid')
+  const plaidAccountRows = (plaidAccounts || []) as PlaidAccount[]
+  const manualAccountRows = (manualAccounts || []) as ManualAccount[]
+  const paymentRows = (payments || []) as PaymentInstance[]
+  const incomeRows = (incomeSchedule || []) as IncomeSchedule[]
+  const cardRows = (cards || []) as CreditCard[]
+  const planningRows = (planningItems || []) as PlanningItem[]
+  const entryRows = (entries || []) as QuickEntry[]
 
-  const plaidDepository = plaidAccounts?.filter((a) => a.type === 'depository') || []
+  const plaidCash = plaidAccountRows.filter((account) =>
+    ['depository', 'cash'].includes(account.type || '')
+  )
 
-  const plaidCredit = plaidAccounts?.filter((a) => a.type === 'credit') || []
+  const plaidCredit = plaidAccountRows.filter(
+    (account) => account.type === 'credit'
+  )
 
-  // Values provided by decision context (avoid recalculating)
-  const availableTodayBanks = decisionCtx.cashAvailable
-  const realBalanceBanks = decisionCtx.currentBankBalances
-  const creditAvailable = decisionCtx.creditAvailable
-  const creditDebt = decisionCtx.connectedCreditDebt
+  const plaidCashByInstitution = institutionBalances(plaidCash, cashBalance)
 
-  const bankTotals = plaidDepository.reduce((acc, account) => {
-    const institution = account.institution_name || 'Unknown'
-    acc[institution] = (acc[institution] || 0) + Number(account.available_balance || 0)
-    return acc
-  }, {} as Record<string, number>)
+  const plaidCreditAvailableByInstitution = institutionBalances(
+    plaidCredit,
+    (account) => Number(account.available_balance ?? 0)
+  )
 
-  const creditTotals = plaidCredit.reduce((acc, account) => {
-    const institution = account.institution_name || 'Unknown'
-    acc[institution] = (acc[institution] || 0) + Number(account.available_balance || 0)
-    return acc
-  }, {} as Record<string, number>)
+  const plaidCreditDebtByInstitution = institutionBalances(
+    plaidCredit,
+    (account) => Number(account.current_balance ?? 0)
+  )
 
+  const manualCash = manualAccountRows.filter(
+    (account) =>
+      account.is_spendable &&
+      !['FirstBank', 'Popular'].includes(account.name || '')
+  )
 
+  const cashAvailablePlaid = plaidCash.reduce(
+    (sum: number, a: PlaidAccount) => sum + cashBalance(a),
+    0
+  )
 
-  // Use context-provided pending payments, totals, critical liabilities and projections
-  const totalDebt = decisionCtx.totalCreditCardDebt
-  const pendingPayments = decisionCtx.pendingPaymentInstances
-  const totalPending = decisionCtx.totalPendingPayments
-  const totalUpcomingIncome = decisionCtx.upcomingIncome
+  const cashAvailableManual = manualCash.reduce(
+    (sum: number, account) => sum + Number(account.balance || 0),
+    0
+  )
 
-  const criticalLiabilities = decisionCtx.unpaidCriticalLiabilities || []
+  const cashAvailableTotal = cashAvailablePlaid + cashAvailableManual
 
-  const projectedAvailableWithIncome = decisionCtx.projectedCashAfterIncome
-  const projectedAvailable = decisionCtx.cashAvailable - decisionCtx.totalPendingPayments
+  const pendingPayments = paymentRows.filter(
+    (payment) => payment.status !== 'paid'
+  )
 
-  const realMonthlySpending =
-    plaidEntries
-      ?.filter(
-        (entry) =>
-          Number(entry.amount) > 0 &&
-          entry.category !== 'Transferencia Recibida'
-      )
-      .reduce((sum, entry) => sum + Number(entry.amount || 0), 0) || 0
+  const totalPendingPayments = pendingPayments.reduce(
+    (sum: number, payment) => sum + Number(payment.amount || 0),
+    0
+  )
+
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+
+  const confirmedIncome = incomeRows
+    .filter((income) => {
+      if (!income.amount || !income.next_expected_date) return false
+
+      const incomeDate = new Date(`${income.next_expected_date}T00:00:00`)
+      return incomeDate >= today
+    })
+    .sort(
+      (a, b) =>
+        new Date(`${a.next_expected_date}T00:00:00`).getTime() -
+        new Date(`${b.next_expected_date}T00:00:00`).getTime()
+    )
+
+  const totalConfirmedIncome = confirmedIncome.reduce(
+    (sum: number, income) => sum + Number(income.amount || 0),
+    0
+  )
+
+  const resultToday = cashAvailableTotal - totalPendingPayments
+  const resultAfterIncome =
+    cashAvailableTotal + totalConfirmedIncome - totalPendingPayments
+
+  const connectedCreditDebt = plaidCredit.reduce(
+    (sum: number, c: PlaidAccount) => sum + Number(c.current_balance || 0),
+    0
+  )
+
+  const connectedCreditAvailable = plaidCredit.reduce(
+    (sum: number, c: PlaidAccount) => sum + Number(c.available_balance || 0),
+    0
+  )
+
+  const manualCardDebt =
+    cardRows.reduce(
+      (sum: number, card) => sum + Number(card.balance || 0),
+      0
+    ) || 0
+
+  const manualMinimumPayments =
+    cardRows.reduce(
+      (sum: number, card) => sum + Number(card.minimum_payment || 0),
+      0
+    ) || 0
+
+  const totalFutureObligations =
+    planningRows.reduce(
+      (sum: number, item) => sum + Number(item.target_amount || 0),
+      0
+    ) || 0
 
   return (
     <main className="p-8 space-y-8">
@@ -74,221 +251,164 @@ export default async function Home() {
 
       <Nav />
 
-      <section className="grid grid-cols-1 md:grid-cols-5 gap-4">
-        <div className="border rounded p-4">
-          <h2 className="font-semibold">💰 Dinero disponible en bancos</h2>
-          <p className="text-3xl font-bold">
-            ${availableTodayBanks.toLocaleString()}
-          </p>
-        </div>
+      <section className="border rounded p-4 space-y-4">
+        <h2 className="text-2xl font-bold">💰 Panorama de liquidez</h2>
 
-        <div className="border rounded p-4">
-          <h2 className="font-semibold">🏦 Balance real en bancos</h2>
-          <p className="text-3xl font-bold">
-            ${realBalanceBanks.toLocaleString()}
-          </p>
-        </div>
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <div className="border rounded p-4">
+            <h3 className="font-semibold">Disponible hoy</h3>
+            <p className="text-3xl font-bold">${money(cashAvailableTotal)}</p>
 
-        <div className="border rounded p-4">
-          <h2 className="font-semibold">💳 Crédito disponible en tarjetas</h2>
-          <p className="text-3xl font-bold">
-            ${creditAvailable.toLocaleString()}
-          </p>
-        </div>
+            <div className="mt-3 text-sm space-y-1">
+              {plaidCashByInstitution.map((item) => (
+                <p key={item.institution}>
+                  {item.institution}: ${money(item.balance)}
+                </p>
+              ))}
 
-        <div className="border rounded p-4">
-          <h2 className="font-semibold">💳 Deuda actual en tarjetas conectadas</h2>
-          <p className="text-3xl font-bold">
-            ${creditDebt.toLocaleString()}
-          </p>
-        </div>
+              {manualCash.map((account) => (
+                <p key={account.id || account.name}>
+                  {account.name}: ${money(account.balance)}
+                </p>
+              ))}
+            </div>
+          </div>
 
-        <div className="border rounded p-4">
-          <h2 className="font-semibold">📅 Pagos pendientes del mes</h2>
-          <p className="text-3xl font-bold">
-            ${totalPending.toLocaleString()}
-          </p>
-        </div>
+          <div className="border rounded p-4">
+            <h3 className="font-semibold">Pagos pendientes</h3>
+            <p className="text-3xl font-bold">${money(totalPendingPayments)}</p>
 
-        <div className="border rounded p-4">
-          <h2 className="font-semibold">⚠️ Proyección sin incluir próximo ingreso</h2>
-          <p className="text-3xl font-bold">
-            ${projectedAvailable.toLocaleString()}
-          </p>
-        </div>
+            <div className="mt-3 text-sm space-y-1">
+              {pendingPayments.map((payment) => (
+                <p key={payment.id}>
+                  {payment.effective_due_date} · {payment.name}: $
+                  {money(payment.amount)}
+                </p>
+              ))}
+            </div>
+          </div>
 
-        <div className="border rounded p-4">
-          <h2 className="font-semibold">💳 Deuda total en tarjetas</h2>
-          <p className="text-3xl font-bold">
-            ${totalDebt.toLocaleString()}
-          </p>
+          <div className="border rounded p-4">
+            <h3 className="font-semibold">Próximos ingresos</h3>
+            <p className="text-3xl font-bold">${money(totalConfirmedIncome)}</p>
+
+            <div className="mt-3 text-sm space-y-1">
+              {confirmedIncome.map((income) => (
+                <p key={income.id || income.name}>
+                  {income.next_expected_date} · {income.name}: $
+                  {money(income.amount)}
+                </p>
+              ))}
+            </div>
+          </div>
+
+          <div className="border rounded p-4">
+            <h3 className="font-semibold">Resultado</h3>
+
+            <p className="text-sm">Antes de ingresos</p>
+            <p className="text-2xl font-bold">${money(resultToday)}</p>
+
+            <p className="text-sm mt-3">Con próximos ingresos</p>
+            <p className="text-2xl font-bold">${money(resultAfterIncome)}</p>
+          </div>
         </div>
       </section>
-      <section className="border rounded p-4">
-        <h2 className="text-2xl font-bold mb-3">Instituciones conectadas</h2>
+
+      <section className="border rounded p-4 space-y-4">
+        <h2 className="text-2xl font-bold">💳 Deuda y crédito</h2>
+
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <div className="border rounded p-4">
+            <h3 className="font-semibold">Crédito disponible conectado</h3>
+            <p className="text-3xl font-bold">
+              ${money(connectedCreditAvailable)}
+            </p>
+
+            <div className="mt-3 text-sm space-y-1">
+              {plaidCreditAvailableByInstitution.map((item) => (
+                <p key={item.institution}>
+                  {item.institution}: ${money(item.balance)}
+                </p>
+              ))}
+            </div>
+          </div>
+
+          <div className="border rounded p-4">
+            <h3 className="font-semibold">Deuda tarjetas conectadas</h3>
+            <p className="text-3xl font-bold">${money(connectedCreditDebt)}</p>
+
+            <div className="mt-3 text-sm space-y-1">
+              {plaidCreditDebtByInstitution.map((item) => (
+                <p key={item.institution}>
+                  {item.institution}: ${money(item.balance)}
+                </p>
+              ))}
+            </div>
+          </div>
+
+          <div className="border rounded p-4">
+            <h3 className="font-semibold">Tarjetas manuales</h3>
+            <p className="text-3xl font-bold">${money(manualCardDebt)}</p>
+
+            <div className="mt-3 text-sm space-y-1">
+              {cardRows.map((card) => (
+                <p key={card.id}>
+                  {card.name}: ${money(card.balance)}
+                </p>
+              ))}
+            </div>
+          </div>
+
+          <div className="border rounded p-4">
+            <h3 className="font-semibold">Pagos mínimos tarjetas</h3>
+            <p className="text-3xl font-bold">${money(manualMinimumPayments)}</p>
+
+            <div className="mt-3 text-sm space-y-1">
+              {cardRows.map((card) => (
+                <p key={card.id}>
+                  Día {card.due_day || 'N/A'} · {card.name}: $
+                  {money(card.minimum_payment)}
+                </p>
+              ))}
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section className="border rounded p-4 space-y-4">
+        <h2 className="text-2xl font-bold">🔮 Futuro cercano</h2>
+
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div className="border rounded p-4">
-            <h3 className="font-semibold">Dinero en bancos</h3>
-            <div className="space-y-2">
-              {Object.entries(bankTotals).map(([institution, amount]) => (
-                <p key={institution}>
-                  {institution}: ${amount.toLocaleString()}
+            <h3 className="font-semibold">Planning próximos</h3>
+
+            <p className="text-3xl font-bold">
+              ${money(totalFutureObligations)}
+            </p>
+
+            <div className="mt-3 text-sm space-y-1">
+              {planningRows.map((item) => (
+                <p key={item.id}>
+                  {item.due_date || 'Sin fecha'} · {item.name}: $
+                  {money(item.target_amount)}
                 </p>
               ))}
             </div>
           </div>
+
           <div className="border rounded p-4">
-            <h3 className="font-semibold">Crédito disponible</h3>
-            <div className="space-y-2">
-              {Object.entries(creditTotals).map(([institution, amount]) => (
-                <p key={institution}>
-                  {institution}: ${amount.toLocaleString()}
+            <h3 className="font-semibold">Últimos movimientos</h3>
+
+            <div className="mt-3 text-sm space-y-1">
+              {entryRows.map((entry) => (
+                <p key={entry.id}>
+                  {entry.description}: ${money(entry.amount)} · {entry.owner}
                 </p>
               ))}
             </div>
           </div>
         </div>
       </section>
-      <div className="border rounded p-4">
-        <h2 className="font-semibold">📊 Gasto real del mes</h2>
-        <p className="text-3xl font-bold">
-          ${realMonthlySpending.toLocaleString()}
-        </p>
-      </div>
-<section className="border rounded p-4 space-y-3">
-  <h2 className="text-2xl font-bold">💵 Cash Flow Real</h2>
-  <div>
-  <p className="font-semibold">Próximos ingresos</p>
-  <p className="text-2xl font-bold">
-    ${totalUpcomingIncome.toLocaleString()}
-  </p>
-</div>
-
-      <div>
-      <p className="font-semibold">Disponible proyectado con ingresos</p>
-      <p className="text-2xl font-bold">
-        ${projectedAvailableWithIncome.toLocaleString()}
-      </p>
-</div>
-
-  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-    <div>
-      <p className="font-semibold">Disponible hoy</p>
-      <p className="text-2xl font-bold">
-        ${availableTodayBanks.toLocaleString()}
-      </p>
-    </div>
-
-    <div>
-      <p className="font-semibold">Pagos pendientes</p>
-      <p className="text-2xl font-bold">
-        ${totalPending.toLocaleString()}
-      </p>
-    </div>
-
-    <div>
-      <p className="font-semibold">Disponible proyectado</p>
-      <p className="text-2xl font-bold">
-        ${projectedAvailable.toLocaleString()}
-      </p>
-    </div>
-  </div>
-
- {(() => {
-    const criticalWithoutPayment = criticalLiabilities.filter((l: any) => l.status === 'due_today' || l.status === 'in_grace' || l.status === 'overdue')
-    const totalCriticalMonthly = criticalWithoutPayment.reduce((sum, l: any) => sum + Number(l.monthly_payment || 0), 0)
-    const hasCriticalUncovered = criticalWithoutPayment.length > 0 && availableTodayBanks < totalCriticalMonthly
-
-    if (hasCriticalUncovered) {
-      const criticalName = criticalWithoutPayment[0]?.name || 'Compromiso crítico'
-      return (
-        <p className="text-orange-600 font-semibold">
-          ⚠️ Atención: el efectivo disponible hoy no cubre compromisos críticos como {criticalName}. Evita pagos extra y no uses crédito como efectivo. Prioriza promesa de pago o espera próximo ingreso si aún estás dentro de gracia.
-        </p>
-      )
-    }
-
-    if (projectedAvailableWithIncome < 0) {
-      return (
-        <p className="text-red-600 font-semibold">
-          ⚠️ Alerta: aun incluyendo los próximos ingresos, faltaría dinero para cubrir los pagos pendientes.
-        </p>
-      )
-    }
-
-    return (
-      <p className="text-green-600 font-semibold">
-        ✅ Vas bien: incluyendo los próximos ingresos, los pagos pendientes quedan cubiertos.
-      </p>
-    )
-  })()}
-</section>
-      <section className="border rounded p-4">
-        <h2 className="text-2xl font-bold mb-2">🤖 Recomendación</h2>
-        <p>{decisionCtx.recommendationSummary}</p>
-      </section>
-
-      {criticalLiabilities.length > 0 && (
-        <section className="border rounded p-4">
-          <h2 className="text-2xl font-bold mb-2">🚨 Compromisos críticos</h2>
-          <div className="space-y-3">
-            {criticalLiabilities.map((l: any) => (
-              <div key={l.id} className="border rounded p-3">
-                <div className="flex items-center justify-between">
-                  <strong>{l.name}</strong>
-                  <span className="text-sm opacity-70">{l.status === 'due_today' ? 'Vence hoy' : l.status === 'in_grace' ? 'En gracia' : l.status === 'overdue' ? 'Vencida' : 'Próxima'}</span>
-                </div>
-                <p>Monto mensual: ${Number(l.monthly_payment || 0).toLocaleString()}</p>
-                <p>Vence día: {l.due_day || 'N/A'}</p>
-                {l.grace_day && <p>Fecha límite / gracia: día {l.grace_day}</p>}
-                {l.notes && <p className="text-sm opacity-70">{l.notes}</p>}
-              </div>
-            ))}
-          </div>
-        </section>
-      )}
-
-      <section>
-        <h2 className="text-2xl font-bold mb-4">
-          📌 Pagos pendientes / promesas
-        </h2>
-
-        <div className="space-y-3">
-          {pendingPayments.map((payment: any) => (
-            <div key={payment.id} className="border rounded p-4">
-              <strong>{payment.name}</strong>
-              <p>${Number(payment.amount || 0).toLocaleString()}</p>
-              <p>Fecha efectiva: {payment.effective_due_date}</p>
-              <p>Estado: {payment.status}</p>
-              {payment.notes && (
-                <p className="text-sm opacity-70">{payment.notes}</p>
-              )}
-            </div>
-          ))}
-        </div>
-      </section>
-
-      <section>
-        <h2 className="text-2xl font-bold mb-4">📜 Últimos movimientos</h2>
-
-        <div className="space-y-3">
-          {entries?.map((entry) => (
-            <div key={entry.id} className="border rounded p-4">
-              <strong>{entry.description}</strong>
-              <p>
-                {entry.entry_type} - ${Number(entry.amount).toLocaleString()} -{' '}
-                {entry.owner}
-              </p>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      {plaidAccountsError && (
-        <pre className="text-red-500">
-          Error Plaid Accounts: {plaidAccountsError.message}
-        </pre>
-      )}
     </main>
   )
 }

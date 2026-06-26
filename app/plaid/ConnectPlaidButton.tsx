@@ -7,6 +7,11 @@ export default function ConnectPlaidButton() {
   const [linkToken, setLinkToken] = useState<string | null>(null)
   const [message, setMessage] = useState('')
   const [loading, setLoading] = useState(false)
+  const [mounted, setMounted] = useState(false)
+
+  useEffect(() => {
+    setMounted(true)
+  }, [])
 
   useEffect(() => {
     async function createLinkToken() {
@@ -31,10 +36,13 @@ export default function ConnectPlaidButton() {
     token: linkToken || '',
     onSuccess: async (public_token, metadata) => {
       setLoading(true)
+
       try {
         const response = await fetch('/api/plaid/exchange-public-token', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+          },
           body: JSON.stringify({
             public_token,
             institution_name: metadata.institution?.name || 'Unknown',
@@ -49,6 +57,7 @@ export default function ConnectPlaidButton() {
           setMessage(data.error || 'No se pudo conectar Plaid.')
         }
       } catch (error) {
+        console.error(error)
         setMessage('Error al conectar Plaid.')
       } finally {
         setLoading(false)
@@ -61,7 +70,7 @@ export default function ConnectPlaidButton() {
       <button
         className="border rounded p-3"
         onClick={() => open()}
-        disabled={!ready || !linkToken || loading}
+        disabled={!mounted || !ready || !linkToken || loading}
       >
         {loading
           ? 'Conectando...'
@@ -69,6 +78,7 @@ export default function ConnectPlaidButton() {
           ? 'Conectar con Plaid'
           : 'Cargando Plaid...'}
       </button>
+
       {message && <p>{message}</p>}
     </div>
   )

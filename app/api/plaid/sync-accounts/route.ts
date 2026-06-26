@@ -1,13 +1,8 @@
 import { NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
-import { createClient as createServerSupabase } from '@/lib/supabase/server'
+import { createServerSupabase } from '@/lib/supabase/server'
+import { requireUser } from '@/lib/auth/requireUser'
 import { Configuration, PlaidApi, PlaidEnvironments } from 'plaid'
 import { decrypt } from '@/lib/security/encryption'
-
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-)
 
 const configuration = new Configuration({
   basePath:
@@ -24,25 +19,44 @@ const configuration = new Configuration({
 
 const plaidClient = new PlaidApi(configuration)
 
+type PlaidSyncFailure = {
+  id: string
+  institution_name: string | null
+  error_code: string
+  error_message: string
+}
+
+function plaidErrorDetails(error: unknown) {
+  const plaidError = error as {
+    response?: {
+      data?: {
+        error_code?: string
+        error_message?: string
+      }
+    }
+    message?: string
+  }
+
+  return {
+    error_code:
+      plaidError.response?.data?.error_code || 'UNKNOWN_ERROR',
+    error_message:
+      plaidError.response?.data?.error_message ||
+      plaidError.message ||
+      'Unknown Plaid sync error',
+  }
+}
+
 export async function POST() {
   try {
-    const userSupabase = await createServerSupabase()
+    const { supabase } = await createServerSupabase()
+    const { user } = await requireUser(supabase)
 
-    const {
-      data: { user },
-      error: userError,
-    } = await userSupabase.auth.getUser()
-
-    if (userError || !user) {
-      return NextResponse.json(
-        { error: 'Not authenticated' },
-        { status: 401 }
-      )
-    }
-
-    const { data: connections, error: connectionError } = await supabaseAdmin
+    const { data: connections, error: connectionError } = await supabase
       .from('plaid_connections')
-      .select('*')
+      .select(
+        'id, user_id, institution_name, encrypted_access_token, token_iv, token_auth_tag, created_at'
+      )
       .eq('user_id', user.id)
       .not('encrypted_access_token', 'is', null)
       .order('created_at', { ascending: false })
@@ -70,7 +84,7 @@ export async function POST() {
     }
 
     let syncedAccounts = 0
-    const failedConnections: any[] = []
+    const failedConnections: PlaidSyncFailure[] = []
 
     for (const connection of connections) {
       try {
@@ -86,45 +100,26 @@ export async function POST() {
 
         const accounts = response.data.accounts || []
 
-        const rows = accounts.map((account) => {
-          console.log('Syncing Plaid account', {
-            name: account.name,
-            institution_name: connection.institution_name,
-            connection_id: connection.id,
-          })
-
-          return {
-            user_id: user.id,
-            connection_id: connection.id,
-            institution_name: connection.institution_name || 'Unknown',
-            plaid_account_id: account.account_id,
-            name: account.name,
-            type: account.type,
-            subtype: account.subtype,
-            available_balance: account.balances.available,
-            current_balance: account.balances.current,
-            currency: account.balances.iso_currency_code,
-            updated_at: new Date().toISOString(),
-          }
-        })
-
-        console.log('Connection', {
-          id: connection.id,
-          institution_name: connection.institution_name,
-        })
-        console.log('Rows sample', rows[0])
+        const rows = accounts.map((account) => ({
+          user_id: user.id,
+          connection_id: connection.id,
+          institution_name: connection.institution_name || 'Unknown',
+          plaid_account_id: account.account_id,
+          name: account.name,
+          type: account.type,
+          subtype: account.subtype,
+          available_balance: account.balances.available,
+          current_balance: account.balances.current,
+          currency: account.balances.iso_currency_code,
+          updated_at: new Date().toISOString(),
+        }))
 
         if (rows.length > 0) {
-          const { error: upsertError } = await supabaseAdmin
+          const { error: upsertError } = await supabase
             .from('plaid_accounts')
             .upsert(rows, {
               onConflict: 'plaid_account_id',
             })
-
-          console.log('Upsert result', {
-            error: upsertError,
-            rows: rows.length,
-          })
 
           if (upsertError) {
             throw upsertError
@@ -132,15 +127,13 @@ export async function POST() {
         }
 
         syncedAccounts += accounts.length
-      } catch (error: any) {
+      } catch (error: unknown) {
+        const details = plaidErrorDetails(error)
+
         failedConnections.push({
           id: connection.id,
           institution_name: connection.institution_name,
-          error_code: error?.response?.data?.error_code || 'UNKNOWN_ERROR',
-          error_message:
-            error?.response?.data?.error_message ||
-            error?.message ||
-            'Unknown Plaid sync error',
+          ...details,
         })
       }
     }
