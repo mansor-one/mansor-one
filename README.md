@@ -1,36 +1,37 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Mansor One
 
-## Getting Started
+Last updated: 2026-06-26
 
-First, run the development server:
+Mansor One es un sistema financiero personal para convertir cuentas, pagos, ingresos, tarjetas y transacciones en una vista clara de liquidez, deuda, obligaciones y decisiones.
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
+El producto esta evolucionando hacia una arquitectura donde la UI presenta resultados y el Financial Engine concentra los calculos financieros.
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## Vision
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+- Mostrar dinero disponible real.
+- Separar liquidez, deuda, credito y planificacion.
+- Integrar bancos conectados por Plaid sin duplicar cuentas.
+- Mantener cuentas manuales cuando aportan contexto operativo.
+- Preparar a Robototina, el asistente financiero, para explicar decisiones con datos confiables.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Estado Actual
 
-## Learn More
+- Dashboard migrado a `getDashboardSummary()` y `getPortfolioSummary()`.
+- Health Score usa Portfolio Summary para liquidez y deuda.
+- Timeline usa Portfolio Summary para dinero inicial disponible.
+- Cards usa Liquidity Summary para tarjetas manuales.
+- Cashflow fue revisado, pero no migrado porque usa reglas legacy de `scheduled_payments`.
+- Accounts fue revisado, pero no migrado porque combina lectura, edicion manual y sync de Plaid.
+- Plaid fue clasificado como pagina de integracion, no como pagina financiera.
 
-To learn more about Next.js, take a look at the following resources:
+## Documentacion
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+- [Indice de documentacion](docs/README.md)
+- [Lenguaje de dominio](docs/architecture/domain-language.md)
+- [Financial Engine](docs/architecture/financial-engine.md)
+- [Sprint Log](docs/architecture/sprint-log.md)
+- [Architecture Decisions](docs/architecture/architecture-decisions.md)
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Desarrollo
 
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Este proyecto usa Next.js App Router y Supabase. Para cambios de producto financiero, primero revisar si el calculo pertenece al Financial Engine antes de duplicarlo en una pagina.

@@ -1,0 +1,43 @@
+# Sprint Log
+
+Last updated: 2026-06-26
+
+## Sprint Review
+
+Sprint 1 creo la base operativa. Sprint 2 esta separando calculos financieros de la UI.
+
+## Sprint 1
+
+Progreso definido:
+
+- Integracion inicial de Plaid.
+- Manejo de conexiones en `plaid_connections`.
+- Importacion de transacciones.
+- Correcciones de permisos para que RLS funcione sin service role.
+- Dashboard inicial con liquidez, deuda, ingresos y pagos.
+- Reglas de seguridad: usar usuario autenticado, evitar anon bypass, evitar `USING (true)` y `WITH CHECK (true)`.
+
+## Sprint 2
+
+Progreso definido:
+
+- Creacion del Financial Engine.
+- Creacion del Account Resolver para duplicados Plaid.
+- Creacion del Assets Engine.
+- Creacion de Portfolio Summary.
+- Consolidacion de Liquidity Summary y Planning Summary.
+- Dashboard migrado a Financial Engine.
+- Health Score migrado a Portfolio Summary.
+- Timeline starting cash migrado a Portfolio Summary.
+- Cards manual data migrado a Liquidity Summary.
+- Cashflow revisado, no migrado.
+- Accounts revisado, no migrado.
+- Plaid clasificado como Integration Page.
+
+## Pendiente
+
+- Rediseñar Accounts como superficie unificada de assets con mutaciones separadas.
+- Definir si Cashflow debe seguir usando `scheduled_payments` o migrar a `payment_instances`.
+- Renombrar Pablo a Robototina en UI y dominio cuando se planifique el cambio.
+- Diseñar confirmacion de categorias de transacciones con modelo tipo Google Photos.
+- Definir ATH Movil como enriquecimiento de transacciones, no fuente primaria de dinero.
