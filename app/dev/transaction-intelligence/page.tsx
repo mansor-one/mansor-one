@@ -1,5 +1,6 @@
 import { requireUser } from '@/lib/auth/requireUser'
 import { createServerSupabase } from '@/lib/supabase/server'
+import GeneratePlaidSuggestionsButton from './GeneratePlaidSuggestionsButton'
 
 export const dynamic = 'force-dynamic'
 
@@ -146,6 +147,8 @@ export default async function DevTransactionIntelligencePage() {
           </pre>
         </section>
       )}
+
+      <GeneratePlaidSuggestionsButton />
 
       <section className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div className="border rounded p-4">
