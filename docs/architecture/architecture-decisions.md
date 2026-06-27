@@ -61,3 +61,19 @@ Estado: aceptado.
 La primera implementacion de Transaction Intelligence debe crear una capa separada de sugerencias, review items, reglas y enriquecimientos antes de cambiar el ledger confirmado.
 
 Consecuencia: `quick_entries` y Plaid import mantienen su comportamiento actual. La nueva capa puede observarse y validarse desde tooling dev antes de incorporarse al flujo principal de movimientos.
+
+## ADR-008: Transaction Categories Must Be Canonical, Not Free-Text
+
+Estado: aceptado.
+
+Las categorias de transacciones deben migrar hacia identificadores canonicos (`category_id` o `category_code`). Los labels deben ser solo display y no la identidad del dato.
+
+Consecuencia: Robototina y la cola de revision deben usar un picker controlado de categorias. `Revisar` debe tratarse como estado de revision, no como categoria. `Sin categoria` debe ser fallback visual, no un valor almacenado. `quick_entries` no se modifica todavia; la migracion debe ser gradual.
+
+## ADR-009: Category System V1 Keeps Legacy Text During Migration
+
+Estado: aceptado.
+
+Category System v1 introduce `transaction_categories` como tabla canonica para categorias del sistema y categorias del usuario.
+
+Consecuencia: la tabla canonica existe para tooling, validacion y migracion futura, pero `quick_entries`, `plaid_imports`, `transaction_suggestions`, Spending, History y Robototina mantienen sus campos de texto legacy hasta una migracion posterior.

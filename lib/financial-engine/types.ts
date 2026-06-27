@@ -67,16 +67,56 @@ export type FinancialAsset = {
   metadata: Record<string, unknown>
 }
 
+export type LiabilitySource = 'plaid' | 'manual'
+
+export type PortfolioLiability = {
+  id: string
+  source: LiabilitySource
+  sourceId: string | null
+  name: string | null
+  institution: string | null
+  liabilityType: 'credit_card'
+  balance: number
+  minimumPayment: number | null
+  dueDay: number | null
+  apr: number | string | null
+  currency: string | null
+  isManual: boolean
+  isConnected: boolean
+  metadata: Record<string, unknown>
+}
+
+export type PortfolioInstitutionBreakdown = {
+  institution: string
+  totalBalance: number
+  totalAvailable: number
+  count: number
+}
+
+export type PortfolioAllocationItem = {
+  label: string
+  value: number
+  percent: number
+}
+
 export type PortfolioSummary = {
   assets: FinancialAsset[]
   liquidAssets: FinancialAsset[]
   creditAssets: FinancialAsset[]
   connectedAssets: FinancialAsset[]
   manualAssets: FinancialAsset[]
+  liabilities: PortfolioLiability[]
+  manualLiabilities: PortfolioLiability[]
+  connectedLiabilities: PortfolioLiability[]
   totalAssetBalance: number
   totalLiquidAvailable: number
   totalConnectedLiquidAvailable: number
   totalManualLiquidAvailable: number
+  totalLiabilities: number
+  totalManualLiabilities: number
+  totalConnectedLiabilities: number
+  manualCreditDebt: number
+  connectedCreditDebt: number
   totalCreditDebt: number
   totalCreditAvailable: number
   totalConnectedAssets: number
@@ -86,14 +126,22 @@ export type PortfolioSummary = {
   totalLiquidAssets: number
   netWorth: number
   creditUtilizationPercent: number
+  cashByInstitution: PortfolioInstitutionBreakdown[]
+  creditDebtByInstitution: PortfolioInstitutionBreakdown[]
+  creditAvailableByInstitution: PortfolioInstitutionBreakdown[]
+  assetAllocation: PortfolioAllocationItem[]
+  debtAllocation: PortfolioAllocationItem[]
 }
 
 export type CreditCard = {
   id?: string
   name?: string | null
+  bank?: string | null
   balance?: number | null
   minimum_payment?: number | null
   due_day?: number | null
+  apr?: number | string | null
+  currency?: string | null
   is_active?: boolean | null
 }
 

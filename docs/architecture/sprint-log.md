@@ -35,6 +35,10 @@ Progreso definido:
 - Plaid clasificado como Integration Page.
 - Transaction Intelligence documentado y schema v1 preparado sin integrarlo aun al flujo principal.
 - Transaction Review Queue v1 agregado como schema aislado y pagina dev read-only.
+- Category System documentado como modelo canonico futuro para reemplazar categorias free-text.
+- ADR-008 agregado: las categorias de transacciones deben ser canonicas, no texto libre.
+- Category System v1 creado con `transaction_categories`, seed inicial y pagina dev read-only.
+- ADR-009 agregado: las categorias canonicas existen, pero los campos legacy de texto se mantienen durante migracion.
 
 ## Pendiente
 
@@ -45,3 +49,5 @@ Progreso definido:
 - Definir ATH Movil como enriquecimiento de transacciones, no fuente primaria de dinero.
 - Definir migracion futura para `transaction_suggestions`, `transaction_review_items`, `transaction_rules` y `transaction_enrichments`.
 - Conectar Transaction Intelligence a Plaid import y a confirmaciones de usuario en una fase posterior.
+- Conectar Robototina y review queue al picker canonico de categorias.
+- Migrar textos existentes de categorias a `category_id` o `category_code` sin tocar `quick_entries` todavia.

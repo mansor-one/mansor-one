@@ -3,14 +3,33 @@ export function categorizeTransaction(
   plaidPrimary: string | null
 ) {
   const upperMerchant = merchant.toUpperCase()
+  const includesAny = (patterns: string[]) =>
+    patterns.some((pattern) => upperMerchant.includes(pattern))
 
   if (
-    upperMerchant.includes('MC DONALDS') ||
-    upperMerchant.includes('MCDONALDS') ||
-    upperMerchant.includes('BURGER KING') ||
-    upperMerchant.includes('FIREHOUSE')
+    includesAny([
+      'CHURCH',
+      "CHURCH'S",
+      'CHURCHS',
+      'STARBUCKS',
+      'MC DONALDS',
+      'MCDONALD',
+      'BURGER KING',
+      'WENDY',
+      'KFC',
+      'TACO BELL',
+      'PIZZA',
+      'DOMINO',
+      'PAPA JOHN',
+      'SUBWAY',
+      'CHICK-FIL-A',
+      'RESTAURANT',
+      'CAFETERIA',
+      'FIREHOUSE',
+      'EXCELL',
+    ])
   ) {
-    return 'Fast Food'
+    return 'Comida fuera'
   }
 
   if (upperMerchant.includes('ECONO')) return 'Supermercado'
@@ -53,6 +72,31 @@ export function categorizeTransaction(
   }
 
   if (plaidPrimary === 'ENTERTAINMENT') return 'Entretenimiento'
+
+  if (
+    includesAny([
+      'CREDIT CARD PAYMENT',
+      'CR CARD PAYMENT',
+      'POPULAR CR CARD PAYMENT',
+      'U.S. BANK RETRY PYMT',
+      'EFT PMT',
+      'PAYMENT',
+    ])
+  ) {
+    return 'Pago de tarjeta'
+  }
+
+  if (
+    includesAny([
+      'TRANF ATHM',
+      'ATHM',
+      'ATH MOVIL',
+      'ATH MÓVIL',
+      'TRANSFER',
+    ])
+  ) {
+    return 'Transferencia'
+  }
 
   return 'Revisar'
 }
