@@ -33,6 +33,8 @@ Progreso definido:
 - Cashflow revisado, no migrado.
 - Accounts revisado, no migrado.
 - Plaid clasificado como Integration Page.
+- Transaction Intelligence documentado y schema v1 preparado sin integrarlo aun al flujo principal.
+- Transaction Review Queue v1 agregado como schema aislado y pagina dev read-only.
 
 ## Pendiente
 
@@ -41,3 +43,5 @@ Progreso definido:
 - Renombrar Pablo a Robototina en UI y dominio cuando se planifique el cambio.
 - Diseñar confirmacion de categorias de transacciones con modelo tipo Google Photos.
 - Definir ATH Movil como enriquecimiento de transacciones, no fuente primaria de dinero.
+- Definir migracion futura para `transaction_suggestions`, `transaction_review_items`, `transaction_rules` y `transaction_enrichments`.
+- Conectar Transaction Intelligence a Plaid import y a confirmaciones de usuario en una fase posterior.
