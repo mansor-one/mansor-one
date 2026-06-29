@@ -30,13 +30,16 @@ export default async function DevPortfolioPage() {
     { label: 'netWorth', value: summary.netWorth },
     { label: 'manualCreditDebt', value: summary.manualCreditDebt },
     { label: 'connectedCreditDebt', value: summary.connectedCreditDebt },
-    { label: 'totalLiquidAvailable', value: summary.totalLiquidAvailable },
     {
-      label: 'totalConnectedLiquidAvailable',
+      label: 'totalLiquidAvailable (usable)',
+      value: summary.totalLiquidAvailable,
+    },
+    {
+      label: 'totalConnectedLiquidAvailable (usable)',
       value: summary.totalConnectedLiquidAvailable,
     },
     {
-      label: 'totalManualLiquidAvailable',
+      label: 'totalManualLiquidAvailable (usable)',
       value: summary.totalManualLiquidAvailable,
     },
     { label: 'totalCreditDebt', value: summary.totalCreditDebt },
@@ -116,12 +119,17 @@ export default async function DevPortfolioPage() {
       <section className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         <div className="border rounded p-4 space-y-3">
           <h2 className="text-xl font-bold">cashByInstitution</h2>
+          <p className="text-sm opacity-70">
+            Liquid cash now keeps raw balance and available values, and uses
+            totalUsable for spendable cash.
+          </p>
           <div className="space-y-2">
             {summary.cashByInstitution.map((item) => (
               <div key={item.institution} className="border rounded p-3">
                 <h3 className="font-semibold">{item.institution}</h3>
                 <p>Balance: {numberValue(item.totalBalance)}</p>
                 <p>Available: {numberValue(item.totalAvailable)}</p>
+                <p>Usable: {numberValue(item.totalUsable)}</p>
                 <p>Count: {item.count}</p>
               </div>
             ))}

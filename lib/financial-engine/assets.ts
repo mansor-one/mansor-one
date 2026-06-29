@@ -11,6 +11,34 @@ function numberValue(value: number | null | undefined) {
   return Number(value || 0)
 }
 
+function nullableNumberValue(value: number | string | null | undefined) {
+  if (value === null || value === undefined) return null
+
+  const number = Number(value)
+  return Number.isFinite(number) ? number : null
+}
+
+function plaidUsableBalance(account: ResolvedConnectedAccount) {
+  if (account.type === 'credit') return null
+
+  const isDepositoryLike =
+    account.type === 'depository' ||
+    account.type === 'cash' ||
+    account.subtype === 'checking' ||
+    account.subtype === 'savings'
+
+  if (!isDepositoryLike) return null
+
+  const balance = nullableNumberValue(account.current_balance)
+  const availableBalance = nullableNumberValue(account.available_balance)
+
+  if (balance !== null && availableBalance !== null) {
+    return Math.min(balance, availableBalance)
+  }
+
+  return balance ?? availableBalance ?? null
+}
+
 function plaidAsset(account: ResolvedConnectedAccount): FinancialAsset {
   return {
     id: `plaid:${account.plaid_account_id || account.id || 'unknown'}`,
@@ -22,6 +50,7 @@ function plaidAsset(account: ResolvedConnectedAccount): FinancialAsset {
     subtype: account.subtype || null,
     balance: numberValue(account.current_balance),
     availableBalance: numberValue(account.available_balance),
+    usableBalance: plaidUsableBalance(account),
     currency: account.currency || null,
     isLiquid: ['depository', 'cash'].includes(account.type || ''),
     isCredit: account.type === 'credit',
@@ -49,6 +78,7 @@ function manualAsset(account: ManualAccount): FinancialAsset {
     subtype: null,
     balance: numberValue(account.balance),
     availableBalance: numberValue(account.balance),
+    usableBalance: numberValue(account.balance),
     currency: account.currency || null,
     isLiquid: account.is_spendable === true,
     isCredit: false,

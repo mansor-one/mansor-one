@@ -54,6 +54,23 @@ Debe unificar ideas hoy repartidas entre `merchant_rules`, `ath_movil_rules` y r
 
 Schema v1: `transaction_rules`.
 
+### Merchant Knowledge
+
+Merchant Knowledge es una capa de memoria e interpretacion para merchants normalizados.
+
+No es lo mismo que `merchant_rules`. Merchant Knowledge puede recordar que `STARBUCKS #034`, `STARBUCKS PR` y `STARBUCKS STORE` representan `STARBUCKS`, calcular estadisticas y estimar confianza. Merchant Rules son reglas accionables que pueden sugerir o aplicar categorias cuando el flujo lo permita.
+
+Merchant Knowledge alimenta Transaction Intelligence con:
+
+- merchant normalizado
+- categoria canonica probable
+- cantidad de veces visto
+- estadisticas de monto
+- confianza
+- si debe preguntarse otra vez
+
+No debe modificar `quick_entries`, `plaid_imports`, `transaction_suggestions` ni reglas legacy en v1.
+
 ### `transaction_enrichments`
 
 Tabla conceptual para enlazar datos externos, como ATH Movil, a una transaccion Plaid o un `quick_entry` confirmado.

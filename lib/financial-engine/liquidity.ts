@@ -1,5 +1,6 @@
 import { getConnectedAssets } from './assets'
 import { getCreditCards, getManualAccounts } from './accounts'
+import { getPortfolioSummary } from './portfolio'
 import type {
   ConnectedAccount,
   FinancialAsset,
@@ -82,12 +83,14 @@ export async function getLiquiditySummary(
   const now = new Date()
 
   const [
+    portfolio,
     connectedAssets,
     manualAccounts,
     creditCards,
     payments,
     incomeSchedule,
   ] = await Promise.all([
+    getPortfolioSummary(supabase, userId),
     getConnectedAssets(supabase, userId),
     getManualAccounts(supabase, userId),
     getCreditCards(supabase, userId),
@@ -109,6 +112,8 @@ export async function getLiquiditySummary(
     (account) => account.is_spendable === true
   )
 
+  // Legacy connected-only breakdown kept for existing Dashboard consumers.
+  // Portfolio owns authoritative cash/asset/debt facts, including usable cash.
   const plaidCashByInstitution = institutionBalances(
     plaidCash,
     accountBalance
@@ -124,23 +129,39 @@ export async function getLiquiditySummary(
     (account) => Number(account.current_balance ?? 0)
   )
 
-  const cashAvailablePlaid = plaidCash.reduce(
-    (sum, account) => sum + accountBalance(account),
+  // Liquidity owns payment and income timing. Cash projections use Portfolio's
+  // usableBalance policy so available cash is not overstated.
+  const cashAvailablePlaid = portfolio.totalConnectedLiquidAvailable
+  const cashAvailableManual = portfolio.totalManualLiquidAvailable
+  const cashAvailableTotal = portfolio.totalLiquidAvailable
+
+  const pendingActionPayments = payments.filter(
+    (payment) => payment.status === 'pending'
+  )
+
+  const initiatedPayments = payments.filter(
+    (payment) => payment.status === 'initiated'
+  )
+
+  // Backward compatibility: pendingPayments/totalPendingPayments remain the
+  // committed unpaid cash view for existing Dashboard consumers. New fields
+  // separate pending action from initiated payments waiting confirmation.
+  const committedPayments = payments.filter(
+    (payment) =>
+      payment.status === 'pending' || payment.status === 'initiated'
+  )
+
+  const pendingActionPaymentTotal = pendingActionPayments.reduce(
+    (sum, payment) => sum + Number(payment.amount || 0),
     0
   )
 
-  const cashAvailableManual = manualCash.reduce(
-    (sum, account) => sum + Number(account.balance || 0),
+  const initiatedPaymentsTotal = initiatedPayments.reduce(
+    (sum, payment) => sum + Number(payment.amount || 0),
     0
   )
 
-  const cashAvailableTotal = cashAvailablePlaid + cashAvailableManual
-
-  const pendingPayments = payments.filter(
-    (payment) => payment.status !== 'paid'
-  )
-
-  const totalPendingPayments = pendingPayments.reduce(
+  const committedPaymentsTotal = committedPayments.reduce(
     (sum, payment) => sum + Number(payment.amount || 0),
     0
   )
@@ -203,12 +224,18 @@ export async function getLiquiditySummary(
     connectedCreditAvailable,
     manualCardDebt,
     manualMinimumPayments,
-    pendingPayments,
+    pendingActionPayments,
+    initiatedPayments,
+    committedPayments,
+    pendingPayments: committedPayments,
     confirmedIncome,
-    totalPendingPayments,
+    pendingActionPaymentTotal,
+    initiatedPaymentsTotal,
+    committedPaymentsTotal,
+    totalPendingPayments: committedPaymentsTotal,
     totalConfirmedIncome,
-    resultToday: cashAvailableTotal - totalPendingPayments,
+    resultToday: cashAvailableTotal - committedPaymentsTotal,
     resultAfterIncome:
-      cashAvailableTotal + totalConfirmedIncome - totalPendingPayments,
+      cashAvailableTotal + totalConfirmedIncome - committedPaymentsTotal,
   }
 }

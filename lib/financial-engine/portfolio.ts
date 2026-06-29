@@ -23,6 +23,10 @@ function sumAssets(
   return assets.reduce((sum, asset) => sum + getValue(asset), 0)
 }
 
+function assetUsableBalance(asset: FinancialAsset) {
+  return Number(asset.usableBalance || 0)
+}
+
 function numberValue(value: number | null | undefined) {
   return Number(value || 0)
 }
@@ -103,6 +107,7 @@ function institutionBreakdownsFromAssets(
       institution,
       totalBalance: 0,
       totalAvailable: 0,
+      totalUsable: 0,
       count: 0,
     }
 
@@ -110,6 +115,7 @@ function institutionBreakdownsFromAssets(
       institution,
       totalBalance: current.totalBalance + asset.balance,
       totalAvailable: current.totalAvailable + asset.availableBalance,
+      totalUsable: current.totalUsable + assetUsableBalance(asset),
       count: current.count + 1,
     })
   })
@@ -133,6 +139,7 @@ function institutionBreakdownsFromLiabilities(
       institution,
       totalBalance: 0,
       totalAvailable: 0,
+      totalUsable: 0,
       count: 0,
     }
 
@@ -140,6 +147,7 @@ function institutionBreakdownsFromLiabilities(
       institution,
       totalBalance: current.totalBalance + liability.balance,
       totalAvailable: current.totalAvailable,
+      totalUsable: current.totalUsable,
       count: current.count + 1,
     })
   })
@@ -197,17 +205,17 @@ export async function getPortfolioSummary(
 
   const totalLiquidAvailable = sumAssets(
     liquidAssets,
-    (asset) => asset.availableBalance
+    assetUsableBalance
   )
 
   const totalConnectedLiquidAvailable = sumAssets(
     liquidAssets.filter((asset) => asset.isConnected),
-    (asset) => asset.availableBalance
+    assetUsableBalance
   )
 
   const totalManualLiquidAvailable = sumAssets(
     liquidAssets.filter((asset) => asset.isManual),
-    (asset) => asset.availableBalance
+    assetUsableBalance
   )
 
   const connectedLiabilities = creditAssets.map(connectedCreditLiability)

@@ -48,6 +48,45 @@ Los labels pueden cambiar sin romper reportes. Los codigos no deben cambiar una 
 
 V1 no conecta esta tabla a `quick_entries`, `plaid_imports` ni `transaction_suggestions` todavia.
 
+## Canonical Category Engine
+
+`lib/financial-engine/categories.ts` define el registro canonico en codigo que los motores financieros pueden consumir sin depender todavia de migraciones de datos.
+
+Cada categoria canonica tiene:
+
+- `id`
+- `parentId`
+- `code`
+- `displayName`
+- `kind`
+- `isSystem`
+- `sortOrder`
+
+El registro incluye categorias de sistema agrupadas bajo Food, Transportation, Housing, Finance, Health, Family, Shopping, Software, Subscriptions, Travel, Income, Taxes, Insurance, Education, Entertainment, Savings, Investments, Transfers, Utilities y Miscellaneous.
+
+La pagina temporal `/dev/categories` muestra el arbol, busqueda, padre, hijos y JSON crudo del registro canonico.
+
+## Merchant, Plaid y Categoria Canonica
+
+Merchant no es categoria.
+
+Ejemplo: `Starbucks`, `LUMA`, `Amazon` o `Synchrony` son comerciantes o contrapartes. Pueden sugerir una categoria, pero no son la categoria financiera.
+
+Plaid category no es categoria canonica.
+
+Plaid puede enviar categorias utiles como senales de importacion, pero no debe ser la identidad final de categoria. Sus categorias pueden cambiar, venir en ingles, ser demasiado genericas o no ajustarse al modelo financiero de Mansor One.
+
+Categoria canonica significa significado financiero.
+
+Ejemplos:
+
+- `food_restaurants` representa gasto de comida fuera.
+- `utilities_electricity` representa electricidad.
+- `transfers_card_payment` representa pago de tarjeta.
+- `income_bonus` representa ingreso extraordinario tipo bono.
+
+Robototina, Spending, History, reglas y futuros motores deben migrar hacia `category.code` o `category.id` cuando el flujo este listo.
+
 ## Categorias Del Sistema Y Del Usuario
 
 El sistema debe soportar ambas:
@@ -128,13 +167,14 @@ No se deben crear categorias automaticamente desde merchants, notas o payloads d
 La migracion de texto libre debe ser gradual:
 
 1. Mantener `transaction_categories` como tabla canonica.
-2. Agregar columnas nullable `category_id` o `category_code` a tablas relevantes.
-3. Crear mapping de textos actuales a categorias canonicas.
-4. Backfill de valores obvios.
-5. Actualizar Robototina y review queue para escribir categorias canonicas.
-6. Actualizar Spending e History para agrupar por categoria canonica.
-7. Mantener columnas de texto durante transicion.
-8. Deprecar escritura free-text cuando el flujo nuevo este validado.
+2. Usar Canonical Category Engine como registro compartido para motores.
+3. Agregar columnas nullable `category_id` o `category_code` a tablas relevantes.
+4. Crear mapping de textos actuales, merchants y Plaid categories a categorias canonicas.
+5. Backfill de valores obvios.
+6. Actualizar Robototina y review queue para escribir categorias canonicas.
+7. Actualizar Spending e History para agrupar por categoria canonica.
+8. Mantener columnas de texto durante transicion.
+9. Deprecar escritura free-text cuando el flujo nuevo este validado.
 
 ## Fuera De Alcance Por Ahora
 

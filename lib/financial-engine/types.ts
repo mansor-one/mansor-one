@@ -59,6 +59,7 @@ export type FinancialAsset = {
   subtype: string | null
   balance: number
   availableBalance: number
+  usableBalance: number | null
   currency: string | null
   isLiquid: boolean
   isCredit: boolean
@@ -90,6 +91,7 @@ export type PortfolioInstitutionBreakdown = {
   institution: string
   totalBalance: number
   totalAvailable: number
+  totalUsable: number
   count: number
 }
 
@@ -197,8 +199,14 @@ export type AccountsSummary = {
 }
 
 export type LiquiditySummary = AccountsSummary & {
+  pendingActionPayments: PaymentInstance[]
+  initiatedPayments: PaymentInstance[]
+  committedPayments: PaymentInstance[]
   pendingPayments: PaymentInstance[]
   confirmedIncome: IncomeSchedule[]
+  pendingActionPaymentTotal: number
+  initiatedPaymentsTotal: number
+  committedPaymentsTotal: number
   totalPendingPayments: number
   totalConfirmedIncome: number
   resultToday: number
@@ -213,4 +221,160 @@ export type PlanningSummary = {
 export type DashboardSummary = {
   liquidity: LiquiditySummary
   planning: PlanningSummary
+}
+
+export type FinancialSummarySeverity = 'info' | 'warning' | 'critical'
+
+export type FinancialSummaryStatus =
+  | 'good'
+  | 'stable'
+  | 'watch'
+  | 'risk'
+  | 'critical'
+
+export type FinancialSummaryAlert = {
+  id: string
+  severity: FinancialSummarySeverity
+  title: string
+  message: string
+  metric: string
+  value: number
+}
+
+export type FinancialSummaryRecommendationAction =
+  | 'review_transactions'
+  | 'preserve_cash'
+  | 'pay_debt'
+  | 'review_planning'
+  | 'check_income'
+
+export type FinancialSummaryRecommendation = {
+  id: string
+  actionType: FinancialSummaryRecommendationAction
+  priority: number
+  title: string
+  message: string
+  reason: string
+}
+
+export type FinancialSummaryBriefing = {
+  availableToday: number
+  pendingActionPaymentTotal: number
+  initiatedPaymentsTotal: number
+  committedPaymentsTotal: number
+  pendingPaymentsTotal: number
+  upcomingIncomeTotal: number
+  resultToday: number
+  resultAfterIncome: number
+  netWorth: number
+  totalLiabilities: number
+  totalCreditDebt: number
+  totalCreditAvailable: number
+  pendingReviewCount: number
+  liquidityStatus: FinancialSummaryStatus
+  debtStatus: FinancialSummaryStatus
+  lines: string[]
+}
+
+export type FinancialSummaryDashboard = {
+  liquidity: {
+    availableToday: number
+    cashByInstitution: PortfolioInstitutionBreakdown[]
+    pendingActionPaymentTotal: number
+    pendingActionPayments: PaymentInstance[]
+    initiatedPaymentsTotal: number
+    initiatedPayments: PaymentInstance[]
+    committedPaymentsTotal: number
+    committedPayments: PaymentInstance[]
+    pendingPaymentsTotal: number
+    pendingPayments: PaymentInstance[]
+    upcomingIncomeTotal: number
+    confirmedIncome: IncomeSchedule[]
+    resultToday: number
+    resultAfterIncome: number
+  }
+  debt: {
+    totalCreditDebt: number
+    manualCreditDebt: number
+    connectedCreditDebt: number
+    totalCreditAvailable: number
+    minimumPaymentsTotal: number
+    creditDebtByInstitution: PortfolioInstitutionBreakdown[]
+    creditAvailableByInstitution: PortfolioInstitutionBreakdown[]
+  }
+  portfolio: {
+    totalAssetBalance: number
+    totalLiabilities: number
+    netWorth: number
+    assetAllocation: PortfolioAllocationItem[]
+    debtAllocation: PortfolioAllocationItem[]
+  }
+  planning: {
+    totalFutureObligations: number
+    planningItems: PlanningItem[]
+  }
+}
+
+export type FinancialSummaryHealth = {
+  cashAvailable: number
+  totalCreditDebt: number
+  totalLiabilities: number
+  netWorth: number
+  creditUtilizationPercent: number
+  pendingActionPaymentTotal: number
+  initiatedPaymentsTotal: number
+  committedPaymentsTotal: number
+  pendingPaymentsTotal: number
+  planningObligationsTotal: number
+  liquidityStatus: FinancialSummaryStatus
+  debtStatus: FinancialSummaryStatus
+  strengths: string[]
+  risks: string[]
+}
+
+export type FinancialSummary = {
+  generatedAt: string
+  userId: string
+  briefing: FinancialSummaryBriefing
+  dashboard: FinancialSummaryDashboard
+  health: FinancialSummaryHealth
+  alerts: FinancialSummaryAlert[]
+  recommendations: FinancialSummaryRecommendation[]
+  source: {
+    portfolio: PortfolioSummary
+    liquidity: LiquiditySummary
+    planning: PlanningSummary
+    dashboard: DashboardSummary
+  }
+}
+
+export type OverallFinancialState = 'calm' | 'watch' | 'pressure' | 'critical'
+
+export type FinancialDecisionSeverity = 'info' | 'warning' | 'critical'
+
+export type FinancialDecisionType =
+  | 'upcoming_payment'
+  | 'initiated_payment_followup'
+  | 'transaction_review'
+  | 'negative_cashflow'
+  | 'planning_pressure'
+
+export type FinancialDecision = {
+  id: string
+  priority: number
+  impactScore: number
+  severity: FinancialDecisionSeverity
+  type: FinancialDecisionType
+  title: string
+  explanation: string
+  recommendation: string
+  confidence: number
+  actionUrl: string
+  generatedAt: string
+}
+
+export type DecisionEngineResult = {
+  overallFinancialState: OverallFinancialState
+  decisions: FinancialDecision[]
+  source: FinancialSummary
 }

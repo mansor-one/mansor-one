@@ -13,11 +13,22 @@ No debe contener UI, React, Tailwind, componentes cliente ni mutaciones de datos
 - `accounts.ts`: lee cuentas conectadas, cuentas manuales y tarjetas manuales.
 - `account-resolver.ts`: resuelve duplicados de Plaid sin modificar registros.
 - `assets.ts`: construye assets conectados y manuales.
+- `categories.ts`: define el registro canonico de categorias de sistema.
+- `merchant-knowledge.ts`: normaliza merchants y calcula confianza de significado financiero aprendido.
+- `goals.ts`: modela metas financieras read-only con balances derivados de funding ledger.
 - `portfolio.ts`: calcula Portfolio Summary.
 - `liquidity.ts`: calcula Liquidity Summary.
 - `planning.ts`: calcula Planning Summary.
 - `dashboard.ts`: compone Dashboard Summary.
 - `categorizeTransaction.ts`: base para categorizacion futura.
+
+## Capas Futuras
+
+- Financial Summary: interpreta Portfolio, Liquidity y Planning.
+- Decision Engine: convierte interpretaciones en decisiones priorizadas.
+- Merchant Knowledge Engine: alimentara Transaction Intelligence con memoria de merchants, estabilidad y confianza.
+- Financial Events / Windfall Planner: modelara ingresos extraordinarios esperados para escenarios, sin contarlos como cash actual.
+- Debt Engine: comparara estrategias de deuda como pagos grandes, balance transfers, consolidacion, cancelacion de tarjetas y preservacion de cash.
 
 ## Account Resolver
 
@@ -61,6 +72,14 @@ Calcula:
 ## Planning Summary
 
 Lee `planning_items` activos y calcula obligaciones futuras visibles para el Dashboard.
+
+## Goal Engine
+
+Modela metas como objetivos financieros, no como obligaciones. El balance de
+cada meta se deriva de un funding ledger; no se debe almacenar ni editar
+`currentBalance` como verdad. En v1 provee tipos, progreso, health, confianza,
+estimacion de completion y orden por prioridad sin leer ni escribir base de
+datos.
 
 ## Paginas Migradas
 
