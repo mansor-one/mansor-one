@@ -15,28 +15,40 @@ export type LedgerSummaryTransaction = {
   metadata: Record<string, unknown>
 }
 
-export type LedgerDuplicateCandidate = {
-  importedTransaction: LedgerSummaryTransaction
-  manualTransaction: LedgerSummaryTransaction
+export type LedgerDuplicateMatchType = 'plaid_transaction_id' | 'heuristic'
+
+export type LedgerDuplicateMatch = {
+  confirmedLedgerEntry: LedgerSummaryTransaction
+  matchType: LedgerDuplicateMatchType
+  confidence: number
   amountDifference: number
-  dateDifferenceDays: number
-  normalizedImportedDescription: string
-  normalizedManualDescription: string
+  dateDifferenceDays: number | null
+  normalizedImportDescription: string
+  normalizedLedgerDescription: string
   reasons: string[]
 }
 
+export type LedgerDuplicateCandidate = {
+  importCandidate: LedgerSummaryTransaction
+  bestDuplicateMatch: LedgerDuplicateMatch
+  alternativeMatches: LedgerDuplicateMatch[]
+}
+
 export type LedgerSummary = {
-  importedTransactions: LedgerSummaryTransaction[]
-  manualTransactions: LedgerSummaryTransaction[]
-  totalImported: number
-  totalManual: number
-  totalTransactions: number
-  importedAmount: number
-  manualAmount: number
-  totalAmount: number
+  confirmedLedgerEntries: LedgerSummaryTransaction[]
+  manualLedgerEntries: LedgerSummaryTransaction[]
+  plaidLedgerEntries: LedgerSummaryTransaction[]
+  importCandidates: LedgerSummaryTransaction[]
+  importedSourceRows: LedgerSummaryTransaction[]
+  confirmedLedgerAmount: number
+  manualLedgerAmount: number
+  plaidLedgerAmount: number
+  importCandidateAmount: number
+  reviewCandidateAmount: number
   duplicateCandidates: LedgerDuplicateCandidate[]
-  uncategorizedTransactions: LedgerSummaryTransaction[]
-  reviewCandidates: LedgerSummaryTransaction[]
+  ledgerReviewCandidates: LedgerSummaryTransaction[]
+  importReviewCandidates: LedgerSummaryTransaction[]
+  athReviewCandidates: LedgerSummaryTransaction[]
 }
 
 type PlaidImportRow = {
@@ -117,7 +129,17 @@ function descriptionsMatch(left: string, right: string) {
   const shorter = left.length <= right.length ? left : right
   const longer = left.length > right.length ? left : right
 
-  return shorter.length >= 4 && longer.includes(shorter)
+  return shorter.length >= 6 && longer.includes(shorter)
+}
+
+function isGenericAthTransaction(transaction: LedgerSummaryTransaction) {
+  const normalized = normalizeDescription(transaction.description)
+
+  return (
+    /\bATH\b/.test(normalized) ||
+    /\bATHM\b/.test(normalized) ||
+    normalized.includes('ATH MOVIL')
+  )
 }
 
 function isUncategorized(transaction: LedgerSummaryTransaction) {
@@ -133,12 +155,11 @@ function isUncategorized(transaction: LedgerSummaryTransaction) {
 
 function needsReview(transaction: LedgerSummaryTransaction) {
   const category = transaction.category?.trim().toLowerCase()
-
-  if (transaction.sourceTable === 'plaid_imports' && transaction.imported) {
-    return false
-  }
-
   return isUncategorized(transaction) || category === 'revisar'
+}
+
+function isPlaidLedgerEntry(transaction: LedgerSummaryTransaction) {
+  return transaction.source === 'plaid' || Boolean(transaction.plaidTransactionId)
 }
 
 function plaidImportTransaction(row: PlaidImportRow): LedgerSummaryTransaction {
@@ -149,12 +170,13 @@ function plaidImportTransaction(row: PlaidImportRow): LedgerSummaryTransaction {
     description: row.merchant || row.plaid_category || null,
     amount: numberValue(row.amount),
     category: row.suggested_category || row.plaid_category || null,
-    imported: row.imported ?? null,
+    imported: row.imported ?? false,
     source: 'plaid',
     plaidTransactionId: row.plaid_transaction_id || null,
     metadata: {
       institutionName: row.institution_name || null,
       accountName: row.account_name || null,
+      suggestedCategory: row.suggested_category || null,
       plaidCategory: row.plaid_category || null,
     },
   }
@@ -186,46 +208,69 @@ function sumAmounts(transactions: LedgerSummaryTransaction[]) {
   )
 }
 
-function duplicateCandidate(
-  importedTransaction: LedgerSummaryTransaction,
-  manualTransaction: LedgerSummaryTransaction
-): LedgerDuplicateCandidate | null {
-  if (amountCents(importedTransaction.amount) !== amountCents(manualTransaction.amount)) {
+function directPlaidTransactionMatch(
+  importCandidate: LedgerSummaryTransaction,
+  ledgerEntry: LedgerSummaryTransaction
+): LedgerDuplicateMatch | null {
+  if (
+    !importCandidate.plaidTransactionId ||
+    importCandidate.plaidTransactionId !== ledgerEntry.plaidTransactionId
+  ) {
     return null
   }
 
-  const days = dateDifferenceDays(
-    importedTransaction.date,
-    manualTransaction.date
-  )
+  return {
+    confirmedLedgerEntry: ledgerEntry,
+    matchType: 'plaid_transaction_id',
+    confidence: 100,
+    amountDifference: Math.abs(
+      Math.abs(importCandidate.amount) - Math.abs(ledgerEntry.amount)
+    ),
+    dateDifferenceDays: dateDifferenceDays(importCandidate.date, ledgerEntry.date),
+    normalizedImportDescription: normalizeDescription(importCandidate.description),
+    normalizedLedgerDescription: normalizeDescription(ledgerEntry.description),
+    reasons: ['Plaid transaction id already exists in confirmed ledger.'],
+  }
+}
+
+function heuristicDuplicateMatch(
+  importCandidate: LedgerSummaryTransaction,
+  ledgerEntry: LedgerSummaryTransaction
+): LedgerDuplicateMatch | null {
+  if (amountCents(importCandidate.amount) !== amountCents(ledgerEntry.amount)) {
+    return null
+  }
+
+  const days = dateDifferenceDays(importCandidate.date, ledgerEntry.date)
 
   if (days === null || days > 1) return null
 
-  const normalizedImportedDescription = normalizeDescription(
-    importedTransaction.description
+  const normalizedImportDescription = normalizeDescription(
+    importCandidate.description
   )
-  const normalizedManualDescription = normalizeDescription(
-    manualTransaction.description
+  const normalizedLedgerDescription = normalizeDescription(
+    ledgerEntry.description
   )
 
   if (
     !descriptionsMatch(
-      normalizedImportedDescription,
-      normalizedManualDescription
+      normalizedImportDescription,
+      normalizedLedgerDescription
     )
   ) {
     return null
   }
 
   return {
-    importedTransaction,
-    manualTransaction,
+    confirmedLedgerEntry: ledgerEntry,
+    matchType: 'heuristic',
+    confidence: days === 0 ? 85 : 75,
     amountDifference: Math.abs(
-      Math.abs(importedTransaction.amount) - Math.abs(manualTransaction.amount)
+      Math.abs(importCandidate.amount) - Math.abs(ledgerEntry.amount)
     ),
     dateDifferenceDays: days,
-    normalizedImportedDescription,
-    normalizedManualDescription,
+    normalizedImportDescription,
+    normalizedLedgerDescription,
     reasons: [
       'Amounts match.',
       'Dates are within one day.',
@@ -234,20 +279,66 @@ function duplicateCandidate(
   }
 }
 
-function duplicateCandidates(
-  importedTransactions: LedgerSummaryTransaction[],
-  manualTransactions: LedgerSummaryTransaction[]
+function duplicateMatchesForImportCandidate(
+  importCandidate: LedgerSummaryTransaction,
+  confirmedLedgerEntries: LedgerSummaryTransaction[]
 ) {
-  return importedTransactions.flatMap((importedTransaction) =>
-    manualTransactions
-      .map((manualTransaction) =>
-        duplicateCandidate(importedTransaction, manualTransaction)
-      )
-      .filter(
-        (candidate): candidate is LedgerDuplicateCandidate =>
-          candidate !== null
-      )
-  )
+  const directMatches = confirmedLedgerEntries
+    .map((ledgerEntry) =>
+      directPlaidTransactionMatch(importCandidate, ledgerEntry)
+    )
+    .filter((match): match is LedgerDuplicateMatch => match !== null)
+
+  if (directMatches.length > 0) return directMatches
+
+  if (isGenericAthTransaction(importCandidate)) return []
+
+  return confirmedLedgerEntries
+    .map((ledgerEntry) =>
+      heuristicDuplicateMatch(importCandidate, ledgerEntry)
+    )
+    .filter((match): match is LedgerDuplicateMatch => match !== null)
+}
+
+function duplicateCandidates(
+  importCandidates: LedgerSummaryTransaction[],
+  confirmedLedgerEntries: LedgerSummaryTransaction[]
+) {
+  return importCandidates.flatMap((importCandidate) => {
+    const matches = duplicateMatchesForImportCandidate(
+      importCandidate,
+      confirmedLedgerEntries
+    ).sort((a, b) => {
+      if (b.confidence !== a.confidence) return b.confidence - a.confidence
+      if (a.dateDifferenceDays !== b.dateDifferenceDays) {
+        return (
+          Number(a.dateDifferenceDays ?? 999) -
+          Number(b.dateDifferenceDays ?? 999)
+        )
+      }
+      return a.amountDifference - b.amountDifference
+    })
+
+    const bestDuplicateMatch = matches[0]
+    if (!bestDuplicateMatch) return []
+
+    return [{
+      importCandidate,
+      bestDuplicateMatch,
+      alternativeMatches: matches.slice(1),
+    }]
+  })
+}
+
+function uniqueTransactions(transactions: LedgerSummaryTransaction[]) {
+  const seen = new Set<string>()
+
+  return transactions.filter((transaction) => {
+    const key = `${transaction.sourceTable}:${transaction.id}`
+    if (seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
 }
 
 export async function getLedgerSummary(
@@ -274,28 +365,49 @@ export async function getLedgerSummary(
   if (plaidImportsResult.error) throw plaidImportsResult.error
   if (quickEntriesResult.error) throw quickEntriesResult.error
 
-  const importedTransactions = ((plaidImportsResult.data || []) as PlaidImportRow[])
+  const plaidSourceRows = ((plaidImportsResult.data || []) as PlaidImportRow[])
     .map(plaidImportTransaction)
-  const manualTransactions = ((quickEntriesResult.data || []) as QuickEntryRow[])
-    .map(quickEntryTransaction)
-  const transactions = [...importedTransactions, ...manualTransactions]
-  const importedAmount = sumAmounts(importedTransactions)
-  const manualAmount = sumAmounts(manualTransactions)
+  const confirmedLedgerEntries =
+    ((quickEntriesResult.data || []) as QuickEntryRow[])
+      .map(quickEntryTransaction)
+  const plaidLedgerEntries = confirmedLedgerEntries.filter(isPlaidLedgerEntry)
+  const manualLedgerEntries = confirmedLedgerEntries.filter(
+    (transaction) => !isPlaidLedgerEntry(transaction)
+  )
+  const importCandidates = plaidSourceRows.filter(
+    (transaction) => transaction.imported !== true
+  )
+  const importedSourceRows = plaidSourceRows.filter(
+    (transaction) => transaction.imported === true
+  )
+  const ledgerReviewCandidates = confirmedLedgerEntries.filter(needsReview)
+  const athReviewCandidates = importCandidates.filter(isGenericAthTransaction)
+  const importReviewCandidates = importCandidates.filter(
+    (transaction) =>
+      needsReview(transaction) || isGenericAthTransaction(transaction)
+  )
+  const allReviewCandidates = uniqueTransactions([
+    ...ledgerReviewCandidates,
+    ...importReviewCandidates,
+  ])
 
   return {
-    importedTransactions,
-    manualTransactions,
-    totalImported: importedTransactions.length,
-    totalManual: manualTransactions.length,
-    totalTransactions: transactions.length,
-    importedAmount,
-    manualAmount,
-    totalAmount: importedAmount + manualAmount,
+    confirmedLedgerEntries,
+    manualLedgerEntries,
+    plaidLedgerEntries,
+    importCandidates,
+    importedSourceRows,
+    confirmedLedgerAmount: sumAmounts(confirmedLedgerEntries),
+    manualLedgerAmount: sumAmounts(manualLedgerEntries),
+    plaidLedgerAmount: sumAmounts(plaidLedgerEntries),
+    importCandidateAmount: sumAmounts(importCandidates),
+    reviewCandidateAmount: sumAmounts(allReviewCandidates),
     duplicateCandidates: duplicateCandidates(
-      importedTransactions,
-      manualTransactions
+      importCandidates,
+      confirmedLedgerEntries
     ),
-    uncategorizedTransactions: transactions.filter(isUncategorized),
-    reviewCandidates: transactions.filter(needsReview),
+    ledgerReviewCandidates,
+    importReviewCandidates,
+    athReviewCandidates,
   }
 }

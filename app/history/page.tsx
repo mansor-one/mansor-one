@@ -1,7 +1,24 @@
 import { requireUser } from '@/lib/auth/requireUser'
+import {
+  type LedgerSummaryTransaction,
+  getLedgerSummary,
+} from '@/lib/financial-engine'
 import Nav from '../components/Nav'
 
 export const dynamic = 'force-dynamic'
+
+type HistoryEntry = {
+  id: string
+  description: string
+  type: string
+  category: string
+  account: string
+  amount: number
+  owner: string
+  date: string
+  displayDate: string
+  source: string
+}
 
 function formatMoney(value: number) {
   return `$${Number(value || 0).toLocaleString()}`
@@ -17,27 +34,41 @@ function formatDatePR(dateString: string) {
   })
 }
 
+function metadataString(
+  transaction: LedgerSummaryTransaction,
+  key: string,
+  fallback: string
+) {
+  const value = transaction.metadata[key]
+  return typeof value === 'string' && value.trim() ? value : fallback
+}
+
+function historyEntry(transaction: LedgerSummaryTransaction): HistoryEntry {
+  const date = transaction.date || new Date().toISOString().slice(0, 10)
+
+  return {
+    id: transaction.id,
+    description: transaction.description || 'Movimiento registrado',
+    type: metadataString(transaction, 'entryType', 'expense'),
+    category: transaction.category || 'Sin categoría',
+    account: metadataString(transaction, 'accountName', 'N/A'),
+    amount: Number(transaction.amount || 0),
+    owner: metadataString(transaction, 'owner', 'N/A'),
+    date,
+    displayDate: formatDatePR(date),
+    source: transaction.source || 'Registrado',
+  }
+}
+
 export default async function HistoryPage() {
-  const { supabase } = await requireUser()
+  const { supabase, user } = await requireUser()
+  const ledgerSummary = await getLedgerSummary(supabase, user.id)
 
-  const { data: rawEntries, error } = await supabase
-    .from('quick_entries')
-    .select('*')
-    .order('created_at', { ascending: false })
-
-  const entries =
-    rawEntries?.map((entry) => ({
-      id: entry.id,
-      description: entry.description,
-      type: entry.entry_type,
-      category: entry.category || 'Sin categoría',
-      account: entry.account_name || 'N/A',
-      amount: Number(entry.amount || 0),
-      owner: entry.owner || 'N/A',
-      date: entry.created_at,
-      displayDate: formatDatePR(entry.created_at),
-      source: entry.source || 'Registrado',
-    })) || []
+  // History uses confirmed ledger only. Import candidates are excluded until
+  // promoted.
+  const entries = ledgerSummary.confirmedLedgerEntries
+    .map(historyEntry)
+    .sort((a, b) => b.date.localeCompare(a.date))
 
   const totalExpenses = entries
     .filter((entry) => entry.type !== 'income')
@@ -47,6 +78,8 @@ export default async function HistoryPage() {
   const totalIncome = entries
     .filter((entry) => entry.type === 'income' || entry.amount < 0)
     .reduce((sum, entry) => sum + Math.abs(Number(entry.amount || 0)), 0)
+
+  const netTotal = totalIncome - totalExpenses
 
   const categoryTotals = entries
     .filter((entry) => entry.type !== 'income')
@@ -61,19 +94,24 @@ export default async function HistoryPage() {
     (a, b) => b[1] - a[1]
   )
 
+  const hasPendingImportReview =
+    ledgerSummary.importReviewCandidates.length > 0 ||
+    ledgerSummary.athReviewCandidates.length > 0
+
   return (
     <main className="p-8 space-y-6">
       <h1 className="text-3xl font-bold">📜 Historial</h1>
 
       <Nav />
 
-  {error && (
-  <pre className="border rounded p-4">
-    {JSON.stringify(error, null, 2)}
-  </pre>
-)}
+      {hasPendingImportReview && (
+        <section className="border rounded p-4">
+          Hay transacciones pendientes de revisión que todavía no aparecen en
+          este historial.
+        </section>
+      )}
 
-      <section className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <section className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <div className="border rounded p-4">
           <h2 className="font-semibold">💸 Gastos registrados</h2>
           <p className="text-3xl font-bold">{formatMoney(totalExpenses)}</p>
@@ -82,6 +120,11 @@ export default async function HistoryPage() {
         <div className="border rounded p-4">
           <h2 className="font-semibold">💰 Ingresos registrados</h2>
           <p className="text-3xl font-bold">{formatMoney(totalIncome)}</p>
+        </div>
+
+        <div className="border rounded p-4">
+          <h2 className="font-semibold">📊 Neto registrado</h2>
+          <p className="text-3xl font-bold">{formatMoney(netTotal)}</p>
         </div>
 
         <div className="border rounded p-4">
@@ -95,7 +138,10 @@ export default async function HistoryPage() {
 
         <div className="space-y-2">
           {categoryRows.map(([category, total]) => (
-            <div key={category} className="flex justify-between border rounded p-3">
+            <div
+              key={category}
+              className="flex justify-between border rounded p-3"
+            >
               <span>{category}</span>
               <strong>{formatMoney(total)}</strong>
             </div>

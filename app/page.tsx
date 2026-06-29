@@ -1,6 +1,7 @@
 import { requireUser } from '@/lib/auth/requireUser'
 import {
   getDashboardSummary,
+  getLedgerSummary,
   getPortfolioSummary,
 } from '@/lib/financial-engine'
 import Nav from './components/Nav'
@@ -14,11 +15,11 @@ function money(value: unknown) {
   })
 }
 
-type QuickEntry = {
+type RecentMovement = {
   id: string
-  description?: string | null
-  amount?: number | null
-  owner?: string | null
+  description: string
+  amount: number
+  owner: string
 }
 
 export default async function Home() {
@@ -27,20 +28,30 @@ export default async function Home() {
   const [
     dashboardSummary,
     portfolioSummary,
-    { data: entries },
+    ledgerSummary,
   ] = await Promise.all([
     getDashboardSummary(supabase, user.id),
     getPortfolioSummary(supabase, user.id),
-    supabase
-      .from('quick_entries')
-      .select('*')
-      .eq('user_id', user.id)
-      .order('created_at', { ascending: false })
-      .limit(5),
+    getLedgerSummary(supabase, user.id),
   ])
 
   const { liquidity, planning } = dashboardSummary
-  const entryRows = (entries || []) as QuickEntry[]
+  // Dashboard recent movements use confirmed ledger only. Import candidates are
+  // excluded until promoted.
+  const entryRows: RecentMovement[] = ledgerSummary.confirmedLedgerEntries
+    .slice(0, 5)
+    .map((entry) => ({
+      id: entry.id,
+      description: entry.description || 'Movimiento registrado',
+      amount: Number(entry.amount || 0),
+      owner:
+        typeof entry.metadata.owner === 'string' && entry.metadata.owner
+          ? entry.metadata.owner
+          : 'N/A',
+    }))
+  const hasPendingImportReview =
+    ledgerSummary.importReviewCandidates.length > 0 ||
+    ledgerSummary.athReviewCandidates.length > 0
   const cardRows = liquidity.creditCards
   const planningRows = planning.planningItems
   const plaidCashByInstitution = liquidity.plaidCashByInstitution
@@ -66,6 +77,13 @@ export default async function Home() {
       <h1 className="text-4xl font-bold">Mansor One</h1>
 
       <Nav />
+
+      {hasPendingImportReview && (
+        <section className="border rounded p-4">
+          Hay transacciones pendientes de revisión que todavía no aparecen en
+          los movimientos recientes.
+        </section>
+      )}
 
       <section className="border rounded p-4 space-y-4">
         <h2 className="text-2xl font-bold">💰 Panorama de liquidez</h2>

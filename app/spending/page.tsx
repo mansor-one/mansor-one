@@ -1,15 +1,50 @@
 import { requireUser } from '@/lib/auth/requireUser'
+import {
+  type LedgerSummaryTransaction,
+  getLedgerSummary,
+} from '@/lib/financial-engine'
 import Nav from '../components/Nav'
 
 export const dynamic = 'force-dynamic'
+
+type SpendingEntry = {
+  id: string
+  date: string
+  description: string
+  category: string
+  amount: number
+  source: string
+}
 
 function formatMoney(value: number) {
   return `$${Number(value || 0).toLocaleString()}`
 }
 
+function transactionSource(transaction: LedgerSummaryTransaction) {
+  if (transaction.plaidTransactionId || transaction.source === 'plaid') {
+    return 'Banco'
+  }
+
+  return 'Manual'
+}
+
+function spendingEntry(
+  transaction: LedgerSummaryTransaction
+): SpendingEntry | null {
+  if (!transaction.date) return null
+
+  return {
+    id: `${transaction.sourceTable}-${transaction.id}`,
+    date: transaction.date,
+    description: transaction.description || 'Movimiento registrado',
+    category: transaction.category || 'Sin categoría',
+    amount: Number(transaction.amount || 0),
+    source: transactionSource(transaction),
+  }
+}
+
 export default async function SpendingPage() {
-  
-  const { supabase } = await requireUser()
+  const { supabase, user } = await requireUser()
   const now = new Date()
   const year = now.getFullYear()
   const month = now.getMonth()
@@ -23,73 +58,30 @@ export default async function SpendingPage() {
       ? new Date(year, month, 1).toISOString().slice(0, 10)
       : new Date(year, month, 16).toISOString().slice(0, 10)
 
-  const { data: quickEntries, error: quickError } = await supabase
-    .from('quick_entries')
-    .select('*')
-    .gte('entry_date', startOfMonth)
-    .lte('entry_date', today)
+  const ledgerSummary = await getLedgerSummary(supabase, user.id)
 
-  const { data: plaidImports, error: plaidError } = await supabase
-    .from('plaid_imports')
-    .select('*')
-    .gte('transaction_date', startOfMonth)
-    .lte('transaction_date', today)
-    .order('transaction_date', { ascending: false })
+  const excludedCategories = [
+    'Transferencia Recibida',
+    'Transferencia',
+    'Ingreso',
+    'Income',
+    'Efectivo',
+  ]
 
-  const manualRows =
-    quickEntries?.map((entry) => ({
-      id: `manual-${entry.id}`,
-      date: entry.entry_date,
-      description: entry.description,
-      category: entry.category || 'Sin categoría',
-      amount: Number(entry.amount || 0),
-      source: 'Manual',
-    })) || []
-
-  const manualKeys = new Set(
-  manualRows.map((entry) =>
-    `${entry.date}|${entry.amount.toFixed(2)}|${entry.description.toLowerCase().trim()}`
-  )
-)
-
-const plaidRows =
-  plaidImports
-    ?.filter((entry) => {
-      const key = `${entry.transaction_date}|${Number(entry.amount || 0).toFixed(2)}|${String(
-        entry.merchant || ''
-      )
-        .toLowerCase()
-        .trim()}`
-
-      return !manualKeys.has(key)
-    })
-    .map((entry) => ({
-      id: `plaid-${entry.id}`,
-      date: entry.transaction_date,
-      description: entry.merchant || 'Transacción Plaid',
-      category:
-        entry.suggested_category ||
-        entry.plaid_category ||
-        'Sin categoría',
-      amount: Number(entry.amount || 0),
-      source: 'Banco',
-    })) || []
-
-const excludedCategories = [
-  'Transferencia Recibida',
-  'Transferencia',
-  'Ingreso',
-  'Income',
-  'Efectivo',
-]
-
-const entries = [...manualRows, ...plaidRows]
-  .filter((entry) => entry.amount > 0)
-  .filter(
-    (entry) =>
-      !excludedCategories.includes(entry.category || '')
-  )
-  .sort((a, b) => b.date.localeCompare(a.date))
+  // Spending uses confirmed ledger only. Plaid import candidates are excluded
+  // until promoted into quick_entries.
+  const entries = ledgerSummary.confirmedLedgerEntries
+    .filter(
+      (transaction) =>
+        transaction.date &&
+        transaction.date >= startOfMonth &&
+        transaction.date <= today
+    )
+    .map(spendingEntry)
+    .filter((entry): entry is SpendingEntry => entry !== null)
+    .filter((entry) => entry.amount > 0)
+    .filter((entry) => !excludedCategories.includes(entry.category || ''))
+    .sort((a, b) => b.date.localeCompare(a.date))
 
   const monthlyTotals: Record<string, { total: number; count: number }> = {}
   const quincenaTotals: Record<string, { total: number; count: number }> = {}
@@ -132,16 +124,21 @@ const entries = [...manualRows, ...plaidRows]
     0
   )
 
+  const hasPendingImportReview =
+    ledgerSummary.importReviewCandidates.length > 0 ||
+    ledgerSummary.athReviewCandidates.length > 0
+
   return (
     <main className="p-8 space-y-6">
       <h1 className="text-4xl font-bold">📊 Spending</h1>
 
       <Nav />
 
-      {(quickError || plaidError) && (
-        <div className="border rounded p-4">
-          {quickError?.message || plaidError?.message}
-        </div>
+      {hasPendingImportReview && (
+        <section className="border rounded p-4">
+          Hay transacciones pendientes de revisión que todavía no están
+          incluidas en este resumen.
+        </section>
       )}
 
       <section className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -173,7 +170,7 @@ const entries = [...manualRows, ...plaidRows]
 
             <div className="mt-3 space-y-1">
               {entries
-                .filter((entry) => (entry.category || 'Sin categoría') === category)
+                .filter((entry) => entry.category === category)
                 .slice(0, 10)
                 .map((entry) => (
                   <div key={entry.id} className="text-sm border-t pt-1">
