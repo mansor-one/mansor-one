@@ -4,6 +4,8 @@ import {
   type LedgerSummaryTransaction,
 } from './ledger-summary'
 import {
+  canonicalCategoryCodeForText,
+  commonMerchantDefaultCategoryCode,
   getCategoryByCode,
   type CanonicalCategory,
 } from './categories'
@@ -13,7 +15,10 @@ import {
   type MerchantKnowledge,
   type MerchantObservation,
 } from './merchant-knowledge'
-import type { FinancialIdentityType } from './financial-identity'
+import type {
+  FinancialIdentityAnalysis,
+  FinancialIdentityType,
+} from './financial-identity'
 import type { FinancialSupabaseClient } from './types'
 import {
   buildReconciliationMatches,
@@ -21,7 +26,8 @@ import {
   type ReconciliationPaymentInstance,
   type ReconciliationTransaction,
 } from './reconciliation'
-import { classifyFinancialIdentity } from './financial-identity'
+import { analyzeFinancialIdentity } from './financial-identity'
+import { normalizeMerchantText } from './merchant-normalization'
 
 export type ReviewQueueClassification =
   | 'readyToConfirm'
@@ -46,6 +52,8 @@ export type ReviewQueueCandidate = {
     identityType: FinancialIdentityType
     confidence: number
     shouldReview: boolean
+    canonicalCategoryCode: string | null
+    reasons: string[]
   }
   confidence: number
   paymentLifecycleContext: {
@@ -97,31 +105,6 @@ type PaymentInstanceRow = {
   scheduled_payment_id: string | null
 }
 
-function normalizeLegacyCategory(value: string | null | undefined) {
-  return String(value || '')
-    .trim()
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-}
-
-function canonicalCategoryCode(legacyCategory: string | null) {
-  const category = normalizeLegacyCategory(legacyCategory)
-
-  if (!category || category === 'revisar') return null
-  if (category === 'comida fuera' || category === 'fast food') {
-    return 'food_restaurants'
-  }
-  if (category === 'cafeteria') return 'food_work_cafeteria'
-  if (category === 'gasolina') return 'transportation_gas'
-  if (category === 'farmacia') return 'health_pharmacy'
-  if (category === 'pago de tarjeta') return 'transfers_card_payment'
-  if (category === 'transferencia') return 'transfers_internal'
-  if (category === 'ingreso') return 'income'
-
-  return null
-}
-
 function transactionMerchant(transaction: LedgerSummaryTransaction) {
   return transaction.description || 'Unknown merchant'
 }
@@ -137,7 +120,9 @@ function merchantObservation(
     merchantName: transactionMerchant(transaction),
     amount: transaction.amount,
     date: transactionDate(transaction),
-    canonicalCategoryCode: canonicalCategoryCode(transaction.category),
+    canonicalCategoryCode: canonicalCategoryCodeForText(transaction.category),
+    source: transaction.sourceTable,
+    isConfirmed: transaction.sourceTable === 'quick_entries',
   }
 }
 
@@ -188,7 +173,20 @@ function reconciliationTransaction(
     name,
     amount: transaction.amount,
     date: transaction.date,
+    institutionName: metadataString(transaction, 'institutionName'),
+    accountName: metadataString(transaction, 'accountName'),
+    accountType: metadataString(transaction, 'accountType'),
+    accountSubtype: metadataString(transaction, 'accountSubtype'),
+    category: transaction.category,
   }
+}
+
+function metadataString(
+  transaction: LedgerSummaryTransaction,
+  key: string
+) {
+  const value = transaction.metadata[key]
+  return typeof value === 'string' ? value : null
 }
 
 async function getOpenPayments(supabase: FinancialSupabaseClient) {
@@ -217,27 +215,50 @@ function classifyCandidate({
   reconciliationContext,
   canonicalCategory,
   merchantKnowledge,
+  financialIdentity,
 }: {
   transaction: LedgerSummaryTransaction
   duplicateContext: LedgerDuplicateCandidate | null
   reconciliationContext: ReconciliationMatch | null
   canonicalCategory: CanonicalCategory | null
   merchantKnowledge: MerchantKnowledge | null
+  financialIdentity: FinancialIdentityAnalysis
 }): ReviewQueueClassification {
-  const category = normalizeLegacyCategory(transaction.category)
   const isAth = Boolean(
-    normalizeMerchantName(transaction.description).match(/\bATH\b|\bATHM\b|ATH MOVIL/)
+    normalizeMerchantText(transaction.description).match(/\bATH\b|\bATHM\b|ATH MOVIL/)
+  )
+  const hasLearnedMerchantCategory = Boolean(
+    merchantKnowledge?.canonicalCategoryCode &&
+      merchantKnowledge.isAutoConfirmable &&
+      canonicalCategory
+  )
+  const hasIdentityCategory = Boolean(
+    financialIdentity.canonicalCategoryCode && canonicalCategory
   )
 
   if (duplicateContext) return 'possibleDuplicate'
-  if (isAth) return 'athReview'
   if (
     reconciliationContext &&
     ['high', 'likely'].includes(reconciliationContext.confidenceLevel)
   ) {
     return 'paymentConfirmation'
   }
-  if (!category || category === 'revisar' || !canonicalCategory) {
+  if (
+    hasIdentityCategory &&
+    [
+      'credit_card_payment',
+      'bank_fee',
+      'government',
+      'person_transfer',
+    ].includes(financialIdentity.identityType)
+  ) {
+    return 'readyToConfirm'
+  }
+  if (isAth && hasLearnedMerchantCategory) return 'readyToConfirm'
+  if (isAth) return 'athReview'
+  if (hasLearnedMerchantCategory) return 'readyToConfirm'
+  if (merchantKnowledge?.driftDetected) return 'needsCategory'
+  if (!canonicalCategory) {
     return 'needsCategory'
   }
   if (merchantKnowledge?.shouldAskAgain) return 'needsManualReview'
@@ -302,12 +323,14 @@ function reasonsForCandidate({
   merchantKnowledge,
   duplicateContext,
   reconciliationContext,
+  financialIdentity,
 }: {
   classification: ReviewQueueClassification
   canonicalCategory: CanonicalCategory | null
   merchantKnowledge: MerchantKnowledge | null
   duplicateContext: LedgerDuplicateCandidate | null
   reconciliationContext: ReconciliationMatch | null
+  financialIdentity: FinancialIdentityAnalysis
 }) {
   const reasons: string[] = [`Classified as ${classification}.`]
 
@@ -319,7 +342,23 @@ function reasonsForCandidate({
 
   if (merchantKnowledge) {
     reasons.push(
-      `Merchant confidence is ${Math.round(merchantKnowledge.confidence * 100)}%.`
+      `Merchant learning status is ${merchantKnowledge.learningStatus} at ${Math.round(
+        merchantKnowledge.confidence * 100
+      )}% confidence.`
+    )
+
+    if (merchantKnowledge.isAutoConfirmable) {
+      reasons.push('Merchant is auto-confirmable from confirmed history.')
+    }
+
+    if (merchantKnowledge.driftDetected) {
+      reasons.push('Merchant drift detected; ask for category again.')
+    }
+  }
+
+  if (financialIdentity.canonicalCategoryCode) {
+    reasons.push(
+      `Identity suggested category ${financialIdentity.canonicalCategoryCode}.`
     )
   }
 
@@ -421,15 +460,26 @@ export async function getReviewQueue(
       const normalizedMerchant = normalizeMerchantName(merchant)
       const merchantKnowledge =
         knowledgeByMerchant.get(normalizedMerchant) || null
+      const financialIdentity = analyzeFinancialIdentity({
+        name: merchant,
+        institutionName: metadataString(transaction, 'institutionName'),
+        accountName: metadataString(transaction, 'accountName'),
+        accountType: metadataString(transaction, 'accountType'),
+        accountSubtype: metadataString(transaction, 'accountSubtype'),
+        category: transaction.category,
+        amount: transaction.amount,
+        date: transaction.date,
+      })
       const categoryCode =
-        canonicalCategoryCode(transaction.category) ||
         merchantKnowledge?.canonicalCategoryCode ||
+        financialIdentity.canonicalCategoryCode ||
+        commonMerchantDefaultCategoryCode(merchant) ||
+        canonicalCategoryCodeForText(transaction.category) ||
         null
       const canonicalCategory = categoryCode
         ? getCategoryByCode(categoryCode)
         : null
-      const identityType = classifyFinancialIdentity(merchant)
-      const identityConfidence = identityType === 'unknown' ? 0.2 : 0.7
+      const identityConfidence = financialIdentity.confidence
       const duplicateContext = duplicateByImportId.get(transaction.id) || null
       const reconciliationContext =
         reconciliationByTransactionId.get(transaction.id) || null
@@ -439,6 +489,7 @@ export async function getReviewQueue(
         reconciliationContext,
         canonicalCategory,
         merchantKnowledge,
+        financialIdentity,
       })
       const confidence = confidenceForCandidate({
         classification,
@@ -469,10 +520,13 @@ export async function getReviewQueue(
         suggestedCategory: transaction.category,
         merchantKnowledge,
         financialIdentity: {
-          normalizedIdentity: normalizedMerchant || merchant,
-          identityType,
+          normalizedIdentity:
+            financialIdentity.normalizedIdentity || normalizedMerchant || merchant,
+          identityType: financialIdentity.identityType,
           confidence: identityConfidence,
-          shouldReview: identityType === 'unknown',
+          shouldReview: financialIdentity.shouldReview,
+          canonicalCategoryCode: financialIdentity.canonicalCategoryCode,
+          reasons: financialIdentity.reasons,
         },
         confidence,
         paymentLifecycleContext,
@@ -486,6 +540,7 @@ export async function getReviewQueue(
           merchantKnowledge,
           duplicateContext,
           reconciliationContext,
+          financialIdentity,
         }),
       }
     })

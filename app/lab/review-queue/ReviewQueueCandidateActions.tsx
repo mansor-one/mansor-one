@@ -7,26 +7,42 @@ type ReviewQueueActionMode =
   | 'readyToConfirm'
   | 'needsCategory'
   | 'possibleDuplicate'
+  | 'athReview'
 
 type CategoryOption = {
   value: string
   label: string
+  kind?: string
+}
+
+const categoryKindLabels: Record<string, string> = {
+  expense: 'Expense',
+  income: 'Income',
+  transfer: 'Transfer',
+  payment: 'Debt / Payment',
+  adjustment: 'Adjustment',
 }
 
 export function ReviewQueueCandidateActions({
   plaidImportId,
   mode,
   categories = [],
+  buttonLabel,
+  selectedCategoryOverride,
+  onSkip,
 }: {
   plaidImportId: string
   mode: ReviewQueueActionMode
   categories?: CategoryOption[]
+  buttonLabel?: string
+  selectedCategoryOverride?: string
+  onSkip?: () => void
 }) {
   const router = useRouter()
   const [message, setMessage] = useState('')
   const [isPending, startTransition] = useTransition()
   const [isSubmitting, setIsSubmitting] = useState(false)
-  const [selectedCategory, setSelectedCategory] = useState('')
+  const [selectedCategoryState, setSelectedCategoryState] = useState('')
 
   async function postAction() {
     setIsSubmitting(true)
@@ -34,6 +50,10 @@ export function ReviewQueueCandidateActions({
 
     try {
       const isDuplicateAction = mode === 'possibleDuplicate'
+      const selectedCategory =
+        mode === 'needsCategory' || mode === 'athReview'
+          ? selectedCategoryOverride || selectedCategoryState
+          : selectedCategoryOverride
       const response = await fetch(
         isDuplicateAction
           ? '/api/review-queue/confirm-duplicate'
@@ -46,8 +66,7 @@ export function ReviewQueueCandidateActions({
               ? { plaidImportId }
               : {
                   plaidImportId,
-                  selectedCategory:
-                    mode === 'needsCategory' ? selectedCategory : undefined,
+                  selectedCategory: selectedCategory || undefined,
                   expectedClassification: mode,
                 }
           ),
@@ -60,7 +79,9 @@ export function ReviewQueueCandidateActions({
         return
       }
 
-      setMessage(isDuplicateAction ? 'Marked as already imported' : 'Confirmed')
+      setMessage(
+        isDuplicateAction ? 'Marcado como ya importado' : 'Agregado al historial'
+      )
       startTransition(() => {
         router.refresh()
       })
@@ -72,33 +93,58 @@ export function ReviewQueueCandidateActions({
   }
 
   const disabled = isSubmitting || isPending
+  const groupedCategories = categories.reduce(
+    (groups, category) => {
+      const kind = category.kind || 'expense'
+      return {
+        ...groups,
+        [kind]: [...(groups[kind] || []), category],
+      }
+    },
+    {} as Record<string, CategoryOption[]>
+  )
 
-  if (mode === 'needsCategory') {
+  if (mode === 'needsCategory' || (mode === 'athReview' && !selectedCategoryOverride)) {
     return (
       <div className="space-y-2 pt-1">
         <select
           className="border rounded px-3 py-2 text-sm"
           disabled={disabled}
-          onChange={(event) => setSelectedCategory(event.target.value)}
-          value={selectedCategory}
+          onChange={(event) => setSelectedCategoryState(event.target.value)}
+          value={selectedCategoryState}
         >
           <option value="">Select category</option>
-          {categories.map((category) => (
-            <option key={category.value} value={category.value}>
-              {category.label}
-            </option>
+          {Object.entries(groupedCategories).map(([kind, options]) => (
+            <optgroup key={kind} label={categoryKindLabels[kind] || kind}>
+              {options.map((category) => (
+                <option key={category.value} value={category.value}>
+                  {category.label}
+                </option>
+              ))}
+            </optgroup>
           ))}
         </select>
 
         <div className="flex items-center gap-3">
-          {selectedCategory && (
+          {selectedCategoryState && (
             <button
               className="border rounded px-3 py-2 text-sm font-medium disabled:opacity-60"
               disabled={disabled}
               onClick={postAction}
               type="button"
             >
-              {disabled ? 'Confirming...' : 'Confirm'}
+              {disabled ? 'Agregando...' : buttonLabel || 'Agregar al historial'}
+            </button>
+          )}
+
+          {onSkip && (
+            <button
+              className="border rounded px-3 py-2 text-sm"
+              disabled={disabled}
+              onClick={onSkip}
+              type="button"
+            >
+              Saltar por ahora
             </button>
           )}
 
@@ -119,9 +165,20 @@ export function ReviewQueueCandidateActions({
         {disabled
           ? 'Working...'
           : mode === 'possibleDuplicate'
-            ? 'Mark as already imported'
-            : 'Confirm'}
+            ? buttonLabel || 'Marcar como ya importado'
+            : buttonLabel || 'Agregar al historial'}
       </button>
+
+      {onSkip && (
+        <button
+          className="border rounded px-3 py-2 text-sm"
+          disabled={disabled}
+          onClick={onSkip}
+          type="button"
+        >
+          Saltar por ahora
+        </button>
+      )}
 
       {message && <p className="text-sm opacity-70">{message}</p>}
     </div>

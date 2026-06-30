@@ -4,6 +4,7 @@ import {
   type ReconciliationPaymentInstance,
   type ReconciliationTransaction,
 } from '@/lib/financial-engine'
+import { buildPaymentLifecycleSnapshot } from '@/lib/finance/paymentLifecycle'
 import { createServerSupabase } from '@/lib/supabase/server'
 
 export const dynamic = 'force-dynamic'
@@ -14,6 +15,10 @@ type PlaidImportRow = {
   amount: number | string | null
   plaid_category: string | null
   transaction_date: string | null
+  institution_name?: string | null
+  account_name?: string | null
+  account_type?: string | null
+  account_subtype?: string | null
 }
 
 type QuickEntryRow = {
@@ -21,6 +26,7 @@ type QuickEntryRow = {
   description: string | null
   amount: number | string | null
   entry_date: string | null
+  account_name?: string | null
 }
 
 type PaymentInstanceRow = {
@@ -56,6 +62,11 @@ function transactionFromPlaid(row: PlaidImportRow): ReconciliationTransaction | 
     name,
     amount: Number(row.amount || 0),
     date: row.transaction_date,
+    institutionName: row.institution_name || null,
+    accountName: row.account_name || null,
+    accountType: row.account_type || null,
+    accountSubtype: row.account_subtype || null,
+    category: row.plaid_category,
   }
 }
 
@@ -70,6 +81,7 @@ function transactionFromQuickEntry(
     name: row.description,
     amount: Number(row.amount || 0),
     date: row.entry_date,
+    accountName: row.account_name || null,
   }
 }
 
@@ -119,7 +131,29 @@ function MatchList({
               Transaction: ${money(match.transactionAmount)} ·{' '}
               {match.transactionDate || 'No date'}
             </p>
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-2 text-sm">
+              <p>Institution: {match.transactionInstitution || 'Unknown'}</p>
+              <p>Account: {match.transactionAccountName || 'Unknown'}</p>
+              <p>Timeline: {match.paymentTimeline.label}</p>
+              <p>
+                Delta: ${money(match.amountDifference)} ·{' '}
+                {match.dateDifferenceDays === null
+                  ? 'Unknown date delta'
+                  : `${match.dateDifferenceDays} days`}
+              </p>
+            </div>
             <p>{match.recommendedActionText}</p>
+            <div className="text-sm">
+              <p className="font-medium">Score factors</p>
+              <ul className="list-disc pl-5">
+                {match.scoreFactors.map((factor) => (
+                  <li key={factor.code}>
+                    {factor.label}: {factor.details} ({factor.score > 0 ? '+' : ''}
+                    {factor.score})
+                  </li>
+                ))}
+              </ul>
+            </div>
             <ul className="list-disc pl-5 text-sm">
               {match.reasons.map((reason) => (
                 <li key={reason}>{reason}</li>
@@ -128,6 +162,58 @@ function MatchList({
           </div>
         ))}
         {matches.length === 0 && <p className="opacity-70">No matches.</p>}
+      </div>
+    </section>
+  )
+}
+
+function PaymentLifecycleList({
+  title,
+  payments,
+  detectedPaymentIds,
+}: {
+  title: string
+  payments: ReconciliationPaymentInstance[]
+  detectedPaymentIds: Set<string>
+}) {
+  return (
+    <section className="border rounded p-4 space-y-3">
+      <h2 className="text-xl font-bold">
+        {title} ({payments.length})
+      </h2>
+      <div className="space-y-3">
+        {payments.map((payment) => {
+          const timeline = buildPaymentLifecycleSnapshot({
+            status: payment.status,
+            effectiveDueDate: payment.effective_due_date,
+            updatedAt: payment.updated_at,
+            hasDetectedTransaction: detectedPaymentIds.has(payment.id),
+          })
+
+          return (
+            <div className="border rounded p-3 space-y-1" key={payment.id}>
+              <h3 className="font-semibold">{payment.name || 'Payment'}</h3>
+              <p>
+                ${money(payment.amount)} · {payment.status || 'unknown'} ·{' '}
+                {payment.effective_due_date || 'No due date'}
+              </p>
+              <p>Timeline: {timeline.label}</p>
+              <p>
+                Due delta:{' '}
+                {timeline.daysFromDueDate === null
+                  ? 'Unknown'
+                  : `${timeline.daysFromDueDate} days`}
+              </p>
+              {payment.notes && <p className="text-sm">{payment.notes}</p>}
+              <ul className="list-disc pl-5 text-sm">
+                {timeline.reasons.map((reason) => (
+                  <li key={reason}>{reason}</li>
+                ))}
+              </ul>
+            </div>
+          )
+        })}
+        {payments.length === 0 && <p className="opacity-70">No payments.</p>}
       </div>
     </section>
   )
@@ -143,13 +229,15 @@ export default async function DevReconciliationPage() {
   const [plaidResult, quickEntriesResult, paymentsResult] = await Promise.all([
     supabase
       .from('plaid_imports')
-      .select('id, merchant, amount, plaid_category, transaction_date')
+      .select(
+        'id, merchant, amount, plaid_category, transaction_date, institution_name, account_name, account_type, account_subtype'
+      )
       .eq('user_id', user.id)
       .order('transaction_date', { ascending: false })
       .limit(300),
     supabase
       .from('quick_entries')
-      .select('id, description, amount, entry_date')
+      .select('id, description, amount, entry_date, account_name')
       .eq('user_id', user.id)
       .order('entry_date', { ascending: false })
       .limit(100),
@@ -160,7 +248,6 @@ export default async function DevReconciliationPage() {
       )
       .eq('payment_month', month)
       .eq('payment_year', year)
-      .in('status', ['pending', 'initiated'])
       .order('effective_due_date', { ascending: true }),
   ])
 
@@ -186,6 +273,20 @@ export default async function DevReconciliationPage() {
     transactions,
     payments,
   })
+  const detectedPaymentIds = new Set(
+    result.allMatches
+      .filter((match) => match.confidence >= 50)
+      .map((match) => match.paymentInstanceId)
+  )
+  const openPayments = payments.filter((payment) =>
+    ['pending', 'initiated', 'promise'].includes(String(payment.status || ''))
+  )
+  const waitingReconciliation = openPayments.filter(
+    (payment) => !detectedPaymentIds.has(payment.id)
+  )
+  const recentlyConfirmed = payments.filter((payment) =>
+    ['confirmed', 'paid'].includes(String(payment.status || ''))
+  )
 
   return (
     <main className="p-8 space-y-6">
@@ -242,6 +343,24 @@ export default async function DevReconciliationPage() {
       />
       <MatchList title="Likely matches" matches={result.likelyMatches} />
       <MatchList title="Possible matches" matches={result.possibleMatches} />
+
+      <PaymentLifecycleList
+        detectedPaymentIds={detectedPaymentIds}
+        payments={openPayments}
+        title="Open payments"
+      />
+
+      <PaymentLifecycleList
+        detectedPaymentIds={detectedPaymentIds}
+        payments={waitingReconciliation}
+        title="Waiting reconciliation"
+      />
+
+      <PaymentLifecycleList
+        detectedPaymentIds={detectedPaymentIds}
+        payments={recentlyConfirmed}
+        title="Recently confirmed"
+      />
 
       <section className="border rounded p-4 space-y-3">
         <h2 className="text-xl font-bold">Unmatched initiated payments</h2>

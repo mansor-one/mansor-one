@@ -49,12 +49,13 @@ export async function POST(request: Request) {
         item.sourceTable === 'plaid_imports' &&
         item.transaction.id === body.plaidImportId &&
         item.duplicateContext?.bestDuplicateMatch.matchType ===
-          'plaid_transaction_id'
+          'plaid_transaction_id' &&
+        item.duplicateContext.bestDuplicateMatch.confidence === 100
     )
 
     if (!candidate?.transaction.plaidTransactionId) {
       return NextResponse.json(
-        { error: 'Candidate is not a direct Plaid duplicate' },
+        { error: 'Candidate is not an exact imported transaction match' },
         { status: 409 }
       )
     }

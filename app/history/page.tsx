@@ -2,6 +2,8 @@ import { requireUser } from '@/lib/auth/requireUser'
 import {
   type LedgerSummaryTransaction,
   getLedgerSummary,
+  transactionContext,
+  type TransactionContext,
 } from '@/lib/financial-engine'
 import Nav from '../components/Nav'
 
@@ -18,6 +20,7 @@ type HistoryEntry = {
   date: string
   displayDate: string
   source: string
+  context: TransactionContext
 }
 
 function formatMoney(value: number) {
@@ -57,6 +60,7 @@ function historyEntry(transaction: LedgerSummaryTransaction): HistoryEntry {
     date,
     displayDate: formatDatePR(date),
     source: transaction.source || 'Registrado',
+    context: transactionContext(transaction),
   }
 }
 
@@ -154,9 +158,17 @@ export default async function HistoryPage() {
           <div key={entry.id} className="border rounded p-4">
             <h2 className="font-bold text-lg">{entry.description}</h2>
             <p>Origen: {entry.source}</p>
+            <p>Source: {entry.context.source}</p>
+            <p>Institución: {entry.context.institution}</p>
+            <p>Cuenta: {entry.context.accountLabel}</p>
+            <p>Dueño de cuenta: {entry.context.accountOwner}</p>
+            <p>Método: {entry.context.paymentMethod}</p>
+            <p>Merchant normalizado: {entry.context.normalizedMerchant}</p>
+            <p>Merchant raw: {entry.context.rawMerchant}</p>
+            <p>Identidad: {entry.context.identity}</p>
             <p>Tipo: {entry.type}</p>
             <p>Categoría: {entry.category || 'Sin categoría'}</p>
-            <p>Cuenta: {entry.account}</p>
+            <p>Cuenta legacy: {entry.account}</p>
             <p>Monto: {formatMoney(Math.abs(Number(entry.amount || 0)))}</p>
             <p>Dueño: {entry.owner}</p>
             <p>Fecha: {entry.displayDate}</p>

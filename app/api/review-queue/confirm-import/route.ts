@@ -7,7 +7,7 @@ import { getReviewQueue } from '@/lib/financial-engine/review-queue'
 import { getSystemCategories } from '@/lib/financial-engine/categories'
 import { createServerSupabase } from '@/lib/supabase/server'
 
-type ConfirmImportClassification = 'readyToConfirm' | 'needsCategory'
+type ConfirmImportClassification = 'readyToConfirm' | 'needsCategory' | 'athReview'
 
 function parseExpectedClassification(
   value: unknown,
@@ -17,7 +17,11 @@ function parseExpectedClassification(
     return selectedCategory ? 'needsCategory' : 'readyToConfirm'
   }
 
-  if (value === 'readyToConfirm' || value === 'needsCategory') {
+  if (
+    value === 'readyToConfirm' ||
+    value === 'needsCategory' ||
+    value === 'athReview'
+  ) {
     return value
   }
 
@@ -81,9 +85,13 @@ export async function POST(request: Request) {
       )
     }
 
-    if (expectedClassification === 'needsCategory' && !selectedCategory) {
+    if (
+      (expectedClassification === 'needsCategory' ||
+        expectedClassification === 'athReview') &&
+      !selectedCategory
+    ) {
       return NextResponse.json(
-        { error: 'Select a category before confirming' },
+        { error: 'Select a category before adding to the ledger' },
         { status: 400 }
       )
     }
@@ -104,7 +112,9 @@ export async function POST(request: Request) {
     const candidates =
       expectedClassification === 'needsCategory'
         ? queue.needsCategory
-        : queue.readyToConfirm
+        : expectedClassification === 'athReview'
+          ? queue.athReview
+          : queue.readyToConfirm
     const candidate = candidates.find(
       (item) =>
         item.sourceTable === 'plaid_imports' &&

@@ -3,6 +3,7 @@ import {
   type LedgerDuplicateCandidate,
   type LedgerSummaryTransaction,
   getLedgerSummary,
+  transactionContextRows,
 } from '@/lib/financial-engine'
 import { createServerSupabase } from '@/lib/supabase/server'
 
@@ -19,6 +20,38 @@ function money(value: number) {
   })
 }
 
+function ContextGrid({ transaction }: { transaction: LedgerSummaryTransaction }) {
+  return (
+    <div className="grid grid-cols-1 md:grid-cols-4 gap-2 text-sm">
+      {transactionContextRows(transaction).map((row) => (
+        <div key={row.label}>
+          <p className="font-semibold">{row.label}</p>
+          <p>{row.value}</p>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function TransactionSnapshot({
+  title,
+  transaction,
+}: {
+  title: string
+  transaction: LedgerSummaryTransaction
+}) {
+  return (
+    <div className="border rounded p-3 space-y-2">
+      <h4 className="font-semibold">{title}</h4>
+      <p className="text-sm">
+        ${money(transaction.amount)} · {transaction.date || 'No date'} ·{' '}
+        {transaction.category || 'No category'}
+      </p>
+      <ContextGrid transaction={transaction} />
+    </div>
+  )
+}
+
 function TransactionList({
   title,
   transactions,
@@ -33,7 +66,7 @@ function TransactionList({
       <div className="space-y-2">
         {transactions.slice(0, 25).map((transaction) => (
           <div
-            className="border rounded p-3 text-sm"
+            className="border rounded p-3 space-y-2 text-sm"
             key={`${transaction.sourceTable}:${transaction.id}`}
           >
             <h3 className="font-semibold">
@@ -49,6 +82,7 @@ function TransactionList({
                 ? ` / ${transaction.plaidTransactionId}`
                 : ''}
             </p>
+            <ContextGrid transaction={transaction} />
           </div>
         ))}
 
@@ -84,14 +118,20 @@ function DuplicateList({
               className="border rounded p-3 space-y-2 text-sm"
               key={`${candidate.importCandidate.id}:${match.confirmedLedgerEntry.id}`}
             >
-              <h3 className="font-semibold">
-                {candidate.importCandidate.description || 'Plaid import'} {'->'}{' '}
-                {match.confirmedLedgerEntry.description || 'Confirmed ledger'}
-              </h3>
+              <h3 className="font-semibold">Possible duplicate</h3>
               <p>
                 ${money(candidate.importCandidate.amount)} /{' '}
                 {match.matchType} / {match.confidence}% confidence
               </p>
+              <TransactionSnapshot
+                title="Import Candidate"
+                transaction={candidate.importCandidate}
+              />
+              <p className="text-center opacity-70">↓</p>
+              <TransactionSnapshot
+                title="Matched Ledger Entry"
+                transaction={match.confirmedLedgerEntry}
+              />
               <p>
                 Date difference:{' '}
                 {match.dateDifferenceDays === null

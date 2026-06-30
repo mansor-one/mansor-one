@@ -62,6 +62,9 @@ type PlaidImportRow = {
   imported?: boolean | null
   institution_name?: string | null
   account_name?: string | null
+  account_mask?: string | null
+  account_type?: string | null
+  account_subtype?: string | null
 }
 
 type QuickEntryRow = {
@@ -176,13 +179,23 @@ function plaidImportTransaction(row: PlaidImportRow): LedgerSummaryTransaction {
     metadata: {
       institutionName: row.institution_name || null,
       accountName: row.account_name || null,
+      accountMask: row.account_mask || null,
+      accountType: row.account_type || null,
+      accountSubtype: row.account_subtype || null,
       suggestedCategory: row.suggested_category || null,
       plaidCategory: row.plaid_category || null,
     },
   }
 }
 
-function quickEntryTransaction(row: QuickEntryRow): LedgerSummaryTransaction {
+function quickEntryTransaction(
+  row: QuickEntryRow,
+  plaidImportByTransactionId: Map<string, LedgerSummaryTransaction>
+): LedgerSummaryTransaction {
+  const matchingPlaidImport = row.plaid_transaction_id
+    ? plaidImportByTransactionId.get(row.plaid_transaction_id)
+    : null
+
   return {
     id: row.id,
     sourceTable: 'quick_entries',
@@ -196,7 +209,20 @@ function quickEntryTransaction(row: QuickEntryRow): LedgerSummaryTransaction {
     metadata: {
       entryType: row.entry_type || null,
       owner: row.owner || null,
-      accountName: row.account_name || null,
+      accountName:
+        row.account_name ||
+        (matchingPlaidImport?.metadata.accountName as string | null) ||
+        null,
+      institutionName:
+        (matchingPlaidImport?.metadata.institutionName as string | null) ||
+        null,
+      accountMask:
+        (matchingPlaidImport?.metadata.accountMask as string | null) || null,
+      accountType:
+        (matchingPlaidImport?.metadata.accountType as string | null) || null,
+      accountSubtype:
+        (matchingPlaidImport?.metadata.accountSubtype as string | null) ||
+        null,
     },
   }
 }
@@ -349,7 +375,7 @@ export async function getLedgerSummary(
     supabase
       .from('plaid_imports')
       .select(
-        'id, plaid_transaction_id, transaction_date, merchant, amount, suggested_category, plaid_category, imported, institution_name, account_name'
+        'id, plaid_transaction_id, transaction_date, merchant, amount, suggested_category, plaid_category, imported, institution_name, account_name, account_mask, account_type, account_subtype'
       )
       .eq('user_id', userId)
       .order('transaction_date', { ascending: false }),
@@ -367,9 +393,14 @@ export async function getLedgerSummary(
 
   const plaidSourceRows = ((plaidImportsResult.data || []) as PlaidImportRow[])
     .map(plaidImportTransaction)
+  const plaidImportByTransactionId = new Map(
+    plaidSourceRows
+      .filter((transaction) => transaction.plaidTransactionId)
+      .map((transaction) => [transaction.plaidTransactionId as string, transaction])
+  )
   const confirmedLedgerEntries =
     ((quickEntriesResult.data || []) as QuickEntryRow[])
-      .map(quickEntryTransaction)
+      .map((row) => quickEntryTransaction(row, plaidImportByTransactionId))
   const plaidLedgerEntries = confirmedLedgerEntries.filter(isPlaidLedgerEntry)
   const manualLedgerEntries = confirmedLedgerEntries.filter(
     (transaction) => !isPlaidLedgerEntry(transaction)

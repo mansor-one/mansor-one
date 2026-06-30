@@ -2,6 +2,8 @@ import { requireUser } from '@/lib/auth/requireUser'
 import {
   type LedgerSummaryTransaction,
   getLedgerSummary,
+  transactionContext,
+  type TransactionContext,
 } from '@/lib/financial-engine'
 import Nav from '../components/Nav'
 
@@ -14,6 +16,7 @@ type SpendingEntry = {
   category: string
   amount: number
   source: string
+  context: TransactionContext
 }
 
 function formatMoney(value: number) {
@@ -40,6 +43,7 @@ function spendingEntry(
     category: transaction.category || 'Sin categoría',
     amount: Number(transaction.amount || 0),
     source: transactionSource(transaction),
+    context: transactionContext(transaction),
   }
 }
 
@@ -174,10 +178,19 @@ export default async function SpendingPage() {
                 .slice(0, 10)
                 .map((entry) => (
                   <div key={entry.id} className="text-sm border-t pt-1">
-                    <span>{entry.date}</span>{' '}
-                    <span>{entry.description}</span>{' '}
-                    <strong>{formatMoney(entry.amount)}</strong>{' '}
-                    <span className="opacity-60">({entry.source})</span>
+                    <p>
+                      <span>{entry.date}</span>{' '}
+                      <span>{entry.context.normalizedMerchant}</span>{' '}
+                      <strong>{formatMoney(entry.amount)}</strong>{' '}
+                      <span className="opacity-60">
+                        ({entry.context.source})
+                      </span>
+                    </p>
+                    <p className="opacity-70">
+                      Raw: {entry.context.rawMerchant} ·{' '}
+                      {entry.context.institution} · {entry.context.accountLabel} ·{' '}
+                      {entry.context.accountOwner} · {entry.context.paymentMethod}
+                    </p>
                   </div>
                 ))}
             </div>

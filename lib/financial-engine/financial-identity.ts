@@ -1,3 +1,5 @@
+import { normalizeMerchantAlias } from './merchant-normalization'
+
 export type FinancialIdentityType =
   | 'merchant'
   | 'person'
@@ -6,6 +8,9 @@ export type FinancialIdentityType =
   | 'subscription'
   | 'loan'
   | 'credit_card_payment'
+  | 'bank_fee'
+  | 'government'
+  | 'person_transfer'
   | 'transfer'
   | 'income'
   | 'fee'
@@ -35,7 +40,72 @@ export interface FinancialIdentity {
   observations: FinancialIdentityObservation[]
 }
 
-const PERSON_PATTERNS = ['SORAYA', 'GABRIELA', 'GABY', 'NIKO']
+export interface FinancialIdentitySignalInput {
+  name: string | null | undefined
+  institutionName?: string | null
+  accountName?: string | null
+  accountType?: string | null
+  accountSubtype?: string | null
+  paymentMethod?: string | null
+  category?: string | null
+  amount?: number | null
+  date?: string | null
+}
+
+export interface FinancialIdentityAnalysis {
+  normalizedIdentity: string
+  identityType: FinancialIdentityType
+  confidence: number
+  shouldReview: boolean
+  canonicalCategoryCode: string | null
+  reasons: string[]
+}
+
+const PERSON_PATTERNS = ['SORAYA', 'GABRIELA', 'GABY', 'NIKO', 'MANUEL']
+const CREDIT_ACCOUNT_PATTERNS = [
+  'CREDIT',
+  'CREDIT CARD',
+  'CARD',
+  'VISA',
+  'MASTERCARD',
+  'AMEX',
+  'AMERICAN EXPRESS',
+  'SYNCHRONY',
+]
+const CREDIT_PAYMENT_PATTERNS = [
+  'INTERNET PAYMENT THANK YOU',
+  'CR CARD PAYMENT',
+  'CREDIT CARD PAYMENT',
+  'EFT PMT',
+  'ONLINE PAYMENT',
+  'PAYMENT RECEIVED',
+  'PAYMENT THANK YOU',
+  'CARDMEMBER',
+  'POPULAR CR CARD PAYMENT',
+  'U S BANK RETRY PYMT',
+]
+const CLEAR_CARD_PAYMENT_PATTERNS = [
+  'CR CARD PAYMENT',
+  'CREDIT CARD PAYMENT',
+  'CARDMEMBER',
+  'POPULAR CR CARD PAYMENT',
+]
+const BANK_FEE_PATTERNS = [
+  'RETURNED PAYMENT FEE',
+  'NSF FEE',
+  'OVERDRAFT FEE',
+  'LATE FEE',
+  'INTEREST CHARGE',
+]
+const GOVERNMENT_PATTERNS = [
+  'CESCO',
+  'DMV',
+  'MARBET',
+  'MARBETE',
+  'VEHICLE REGISTRATION',
+]
+const ATH_PATTERNS = ['ATH MOVIL', 'TRANF ATHM', 'ATHM']
+const ATH_MERCHANT_HINTS = ['EXCELL', 'STARBUCKS', 'CAFETERIA', 'CAFE']
 
 function includesAny(value: string, patterns: string[]) {
   return patterns.some((pattern) => value.includes(pattern))
@@ -63,64 +133,232 @@ export function normalizeFinancialIdentityName(
 export function classifyFinancialIdentity(
   name: string | null | undefined
 ): FinancialIdentityType {
-  const normalizedName = normalizeFinancialIdentityName(name)
+  return analyzeFinancialIdentity({ name }).identityType
+}
 
-  if (!normalizedName || normalizedName === 'UNKNOWN') return 'unknown'
+export function analyzeFinancialIdentity(
+  input: FinancialIdentitySignalInput
+): FinancialIdentityAnalysis {
+  const normalizedName = normalizeFinancialIdentityName(input.name)
+  const merchantAlias = normalizeMerchantAlias(input.name)
+  const institutionName = normalizeFinancialIdentityName(input.institutionName)
+  const accountName = normalizeFinancialIdentityName(input.accountName)
+  const accountType = normalizeFinancialIdentityName(input.accountType)
+  const accountSubtype = normalizeFinancialIdentityName(input.accountSubtype)
+  const paymentMethod = normalizeFinancialIdentityName(input.paymentMethod)
+  const category = normalizeFinancialIdentityName(input.category)
+  const accountSignal = [
+    institutionName,
+    accountName,
+    accountType,
+    accountSubtype,
+    paymentMethod,
+  ].filter(Boolean).join(' ')
+  const reasons: string[] = []
 
-  if (includesAny(normalizedName, ['INTEREST CHARGE', 'IOD INTEREST'])) {
-    return 'interest'
+  if (!normalizedName || normalizedName === 'UNKNOWN') {
+    return {
+      normalizedIdentity: normalizedName,
+      identityType: 'unknown',
+      confidence: 0.2,
+      shouldReview: true,
+      canonicalCategoryCode: null,
+      reasons: ['No transaction name was available.'],
+    }
   }
 
-  if (includesAny(normalizedName, ['RETURNED PAYMENT FEE'])) {
-    return 'fee'
+  if (institutionName) reasons.push(`Institution = ${institutionName}.`)
+  if (accountType) reasons.push(`Account Type = ${accountType}.`)
+  if (paymentMethod) reasons.push(`Payment Method = ${paymentMethod}.`)
+
+  if (includesAny(normalizedName, BANK_FEE_PATTERNS)) {
+    reasons.push('Merchant pattern = bank fee.')
+
+    return {
+      normalizedIdentity: normalizedName,
+      identityType: 'bank_fee',
+      confidence: 0.9,
+      shouldReview: false,
+      canonicalCategoryCode: 'finance_bank_fees',
+      reasons,
+    }
   }
+
+  if (includesAny(normalizedName, GOVERNMENT_PATTERNS)) {
+    reasons.push('Merchant pattern = government vehicle service.')
+
+    return {
+      normalizedIdentity: normalizedName,
+      identityType: 'government',
+      confidence: 0.85,
+      shouldReview: false,
+      canonicalCategoryCode: 'transportation_vehicle_registration',
+      reasons,
+    }
+  }
+
+  const hasCreditPaymentPattern = includesAny(
+    normalizedName,
+    CREDIT_PAYMENT_PATTERNS
+  )
+  const hasCreditAccountSignal = includesAny(
+    accountSignal,
+    CREDIT_ACCOUNT_PATTERNS
+  )
+  const hasClearCardPaymentPattern = includesAny(
+    normalizedName,
+    CLEAR_CARD_PAYMENT_PATTERNS
+  )
 
   if (
-    includesAny(normalizedName, [
-      'EFT PMT',
-      'CREDIT CARD PAYMENT',
-      'CR CARD PAYMENT',
-      'CARDMEMBER',
-      'POPULAR CR CARD PAYMENT',
-      'U S BANK RETRY PYMT',
-    ])
+    hasCreditPaymentPattern &&
+    (hasCreditAccountSignal || hasClearCardPaymentPattern)
   ) {
-    return 'credit_card_payment'
+    reasons.push('Merchant pattern = credit card payment.')
+
+    return {
+      normalizedIdentity: normalizedName,
+      identityType: 'credit_card_payment',
+      confidence: hasCreditAccountSignal ? 0.95 : 0.88,
+      shouldReview: false,
+      canonicalCategoryCode: 'transfers_card_payment',
+      reasons,
+    }
   }
 
-  if (
-    includesAny(normalizedName, [
-      'ATH MOVIL',
-      'TRANF ATHM',
-      'ATHM',
-      'TRANSFER',
-      'TRANSFERENCIA',
-    ])
-  ) {
-    if (includesAny(normalizedName, PERSON_PATTERNS)) return 'person'
-    return 'transfer'
+  if (includesAny(normalizedName, ATH_PATTERNS)) {
+    reasons.push('Payment channel = ATH.')
+
+    if (includesAny(normalizedName, PERSON_PATTERNS)) {
+      reasons.push('ATH counterparty matches a known person.')
+
+      return {
+        normalizedIdentity: merchantAlias || normalizedName,
+        identityType: 'person_transfer',
+        confidence: 0.86,
+        shouldReview: false,
+        canonicalCategoryCode: 'transfers_internal',
+        reasons,
+      }
+    }
+
+    if (includesAny(normalizedName, ATH_MERCHANT_HINTS)) {
+      reasons.push('ATH counterparty looks like a merchant.')
+
+      return {
+        normalizedIdentity: merchantAlias || normalizedName,
+        identityType: 'merchant',
+        confidence: 0.66,
+        shouldReview: false,
+        canonicalCategoryCode: null,
+        reasons,
+      }
+    }
+
+    return {
+      normalizedIdentity: merchantAlias || normalizedName,
+      identityType: 'transfer',
+      confidence: 0.62,
+      shouldReview: true,
+      canonicalCategoryCode: null,
+      reasons,
+    }
   }
 
-  if (includesAny(normalizedName, PERSON_PATTERNS)) return 'person'
+  if (includesAny(normalizedName, ['TRANSFER', 'TRANSFERENCIA'])) {
+    return {
+      normalizedIdentity: normalizedName,
+      identityType: includesAny(normalizedName, PERSON_PATTERNS)
+        ? 'person_transfer'
+        : 'transfer',
+      confidence: 0.72,
+      shouldReview: false,
+      canonicalCategoryCode: includesAny(normalizedName, PERSON_PATTERNS)
+        ? 'transfers_internal'
+        : null,
+      reasons: [...reasons, 'Merchant pattern = transfer.'],
+    }
+  }
+
+  if (includesAny(normalizedName, PERSON_PATTERNS)) {
+    return {
+      normalizedIdentity: normalizedName,
+      identityType: 'person',
+      confidence: 0.7,
+      shouldReview: false,
+      canonicalCategoryCode: null,
+      reasons: [...reasons, 'Merchant pattern = known person.'],
+    }
+  }
 
   if (
     includesAny(normalizedName, ['CHECK DEPOSIT', 'PAYROLL', 'NOMINA'])
   ) {
-    return 'income'
+    return {
+      normalizedIdentity: normalizedName,
+      identityType: 'income',
+      confidence: 0.8,
+      shouldReview: false,
+      canonicalCategoryCode: 'income',
+      reasons: [...reasons, 'Merchant pattern = income.'],
+    }
   }
 
   if (includesAny(normalizedName, ['REFUND', 'REVERSAL'])) {
-    return 'refund'
+    return {
+      normalizedIdentity: normalizedName,
+      identityType: 'refund',
+      confidence: 0.76,
+      shouldReview: false,
+      canonicalCategoryCode: null,
+      reasons: [...reasons, 'Merchant pattern = refund.'],
+    }
   }
 
-  if (includesAny(normalizedName, ['LUMA'])) return 'utility'
+  if (includesAny(normalizedName, ['IOD INTEREST'])) {
+    return {
+      normalizedIdentity: normalizedName,
+      identityType: 'interest',
+      confidence: 0.82,
+      shouldReview: false,
+      canonicalCategoryCode: 'finance_interest',
+      reasons: [...reasons, 'Merchant pattern = interest.'],
+    }
+  }
 
-  if (includesAny(normalizedName, ['COOP LARES'])) return 'loan'
+  if (includesAny(normalizedName, ['LUMA'])) {
+    return {
+      normalizedIdentity: normalizedName,
+      identityType: 'utility',
+      confidence: 0.75,
+      shouldReview: false,
+      canonicalCategoryCode: 'utilities_electricity',
+      reasons: [...reasons, 'Merchant pattern = utility.'],
+    }
+  }
+
+  if (includesAny(normalizedName, ['COOP LARES'])) {
+    return {
+      normalizedIdentity: normalizedName,
+      identityType: 'loan',
+      confidence: 0.75,
+      shouldReview: false,
+      canonicalCategoryCode: null,
+      reasons: [...reasons, 'Merchant pattern = loan.'],
+    }
+  }
 
   if (
     includesAny(normalizedName, ['OPENAI', 'APPLE', 'NINTENDO'])
   ) {
-    return 'subscription'
+    return {
+      normalizedIdentity: normalizedName,
+      identityType: 'subscription',
+      confidence: 0.72,
+      shouldReview: false,
+      canonicalCategoryCode: null,
+      reasons: [...reasons, 'Merchant pattern = subscription.'],
+    }
   }
 
   if (
@@ -134,7 +372,14 @@ export function classifyFinancialIdentity(
       'SYNCHRONY',
     ])
   ) {
-    return 'institution'
+    return {
+      normalizedIdentity: normalizedName,
+      identityType: 'institution',
+      confidence: 0.68,
+      shouldReview: false,
+      canonicalCategoryCode: null,
+      reasons: [...reasons, 'Merchant pattern = institution.'],
+    }
   }
 
   if (
@@ -145,15 +390,34 @@ export function classifyFinancialIdentity(
       'COSTCO',
     ])
   ) {
-    return 'merchant'
+    return {
+      normalizedIdentity: normalizedName,
+      identityType: 'merchant',
+      confidence: 0.65,
+      shouldReview: false,
+      canonicalCategoryCode: null,
+      reasons: [...reasons, 'Merchant pattern = merchant.'],
+    }
   }
 
-  return 'unknown'
+  if (category) reasons.push(`Existing Category = ${category}.`)
+
+  return {
+    normalizedIdentity: normalizedName,
+    identityType: 'unknown',
+    confidence: 0.2,
+    shouldReview: true,
+    canonicalCategoryCode: null,
+    reasons: reasons.length > 0 ? reasons : ['No strong identity signal.'],
+  }
 }
 
 export function isFinancialEvent(identityType: FinancialIdentityType) {
   return [
     'credit_card_payment',
+    'bank_fee',
+    'government',
+    'person_transfer',
     'transfer',
     'income',
     'fee',
@@ -187,7 +451,9 @@ export function buildFinancialIdentities(
   const groups = new Map<string, FinancialIdentityObservation[]>()
 
   observations.forEach((observation) => {
-    const normalizedIdentity = normalizeFinancialIdentityName(observation.name)
+    const normalizedIdentity =
+      normalizeMerchantAlias(observation.name) ||
+      normalizeFinancialIdentityName(observation.name)
     if (!normalizedIdentity) return
 
     const group = groups.get(normalizedIdentity) || []
