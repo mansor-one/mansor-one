@@ -12,6 +12,7 @@ export const PAYMENT_TIMELINE_STATES = [
   'detected',
   'confirmed',
   'closed',
+  'overdue',
   'missed',
   'late',
   'duplicate',
@@ -109,12 +110,9 @@ export function buildPaymentLifecycleSnapshot({
   } else if (normalizedStatus === 'initiated') {
     state = 'initiated'
     reasons.push('Payment has been initiated but not confirmed.')
-  } else if (daysFromDueDate !== null && daysFromDueDate > 3) {
-    state = 'missed'
-    reasons.push('Payment due date passed without a detected transaction.')
   } else if (daysFromDueDate !== null && daysFromDueDate > 0) {
-    state = 'late'
-    reasons.push('Payment is past due and still open.')
+    state = 'overdue'
+    reasons.push('Payment due date passed without a confirmed payment.')
   } else {
     reasons.push('Payment is expected and still open.')
   }
@@ -123,7 +121,7 @@ export function buildPaymentLifecycleSnapshot({
     state,
     label: labelForTimelineState(state),
     isOpen: !['closed', 'cancelled', 'duplicate'].includes(state),
-    isLate: state === 'late' || state === 'missed',
+    isLate: ['overdue', 'late', 'missed'].includes(state),
     isTerminal: ['closed', 'cancelled'].includes(state),
     daysFromDueDate,
     reasons,

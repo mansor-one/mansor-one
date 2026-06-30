@@ -93,7 +93,10 @@ export function ReviewQueueCandidateActions({
   }
 
   const disabled = isSubmitting || isPending
-  const groupedCategories = categories.reduce(
+  const uniqueCategories = categories.filter((category, index, list) => {
+    return list.findIndex((item) => item.value === category.value) === index
+  })
+  const groupedCategories = uniqueCategories.reduce(
     (groups, category) => {
       const kind = category.kind || 'expense'
       return {
@@ -108,16 +111,19 @@ export function ReviewQueueCandidateActions({
     return (
       <div className="space-y-2 pt-1">
         <select
-          className="border rounded px-3 py-2 text-sm"
+          className="rounded border border-slate-400 bg-white px-3 py-2 text-sm text-slate-950 dark:border-slate-600 dark:bg-slate-950 dark:text-slate-100"
           disabled={disabled}
           onChange={(event) => setSelectedCategoryState(event.target.value)}
           value={selectedCategoryState}
         >
-          <option value="">Select category</option>
+          <option value="">Seleccionar categoría</option>
           {Object.entries(groupedCategories).map(([kind, options]) => (
             <optgroup key={kind} label={categoryKindLabels[kind] || kind}>
-              {options.map((category) => (
-                <option key={category.value} value={category.value}>
+              {options.map((category, index) => (
+                <option
+                  key={`${kind}-${category.value}-${index}`}
+                  value={category.value}
+                >
                   {category.label}
                 </option>
               ))}

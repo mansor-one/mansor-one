@@ -13,6 +13,9 @@ export async function getDashboardSummary(
 
   return {
     liquidity,
-    planning,
+    planning: {
+      ...planning,
+      overduePayments: liquidity.overduePayments,
+    },
   }
 }

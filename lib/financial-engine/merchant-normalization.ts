@@ -1,4 +1,7 @@
 const CHANNEL_PREFIX_PATTERNS = [
+  /^EXTENDPAY\s+\d+\s+PLAN\s+(?=\S)/,
+  /^EXTENDPAY\s+PLAN\s+(?=\S)/,
+  /^PLAN\s+(?=\S)/,
   /^TRANF\s+ATHM\s+/,
   /^TRANSF\s+ATHM\s+/,
   /^TRANSFER\s+ATHM\s+/,
@@ -37,6 +40,8 @@ function normalizeKnownMerchant(value: string) {
   }
 
   if (value.startsWith('STARBUCKS')) return 'STARBUCKS'
+
+  if (/^MI FARMACIA(?:\s+[A-Z])?$/.test(value)) return 'MI FARMACIA'
 
   return value
 }

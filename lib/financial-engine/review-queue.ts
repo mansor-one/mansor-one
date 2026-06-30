@@ -517,7 +517,8 @@ export async function getReviewQueue(
         priority: priorityForCandidate(classification, confidence),
         merchant: normalizedMerchant || merchant,
         canonicalCategory,
-        suggestedCategory: transaction.category,
+        suggestedCategory:
+          canonicalCategory?.displayName || transaction.category,
         merchantKnowledge,
         financialIdentity: {
           normalizedIdentity:

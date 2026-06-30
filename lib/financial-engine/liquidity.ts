@@ -1,6 +1,20 @@
 import { getConnectedAssets } from './assets'
 import { getCreditCards, getManualAccounts } from './accounts'
+import {
+  getLedgerSummary,
+  type LedgerSummaryTransaction,
+} from './ledger-summary'
 import { getPortfolioSummary } from './portfolio'
+import {
+  buildReconciliationMatches,
+  type ReconciliationMatch,
+  type ReconciliationPaymentInstance,
+  type ReconciliationTransaction,
+} from './reconciliation'
+import {
+  buildPaymentLifecycleSnapshot,
+  CLOSED_PAYMENT_STATUSES,
+} from '../finance/paymentLifecycle'
 import type {
   ConnectedAccount,
   FinancialAsset,
@@ -9,6 +23,7 @@ import type {
   InstitutionBalance,
   LiquiditySummary,
   PaymentInstance,
+  ScheduledPayment,
 } from './types'
 
 function accountBalance(account: ConnectedAccount) {
@@ -65,6 +80,27 @@ async function getCurrentMonthPayments(
   return (data || []) as PaymentInstance[]
 }
 
+async function getPaymentInstances(supabase: FinancialSupabaseClient) {
+  const { data, error } = await supabase
+    .from('payment_instances')
+    .select('*')
+
+  if (error) throw error
+
+  return (data || []) as PaymentInstance[]
+}
+
+async function getActiveScheduledPayments(supabase: FinancialSupabaseClient) {
+  const { data, error } = await supabase
+    .from('scheduled_payments')
+    .select('*')
+    .eq('is_active', true)
+
+  if (error) throw error
+
+  return (data || []) as ScheduledPayment[]
+}
+
 async function getActiveIncomeSchedule(supabase: FinancialSupabaseClient) {
   const { data, error } = await supabase
     .from('income_schedule')
@@ -74,6 +110,294 @@ async function getActiveIncomeSchedule(supabase: FinancialSupabaseClient) {
   if (error) throw error
 
   return (data || []) as IncomeSchedule[]
+}
+
+function normalizePaymentName(value: string | null | undefined) {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/\s+/g, ' ')
+}
+
+function scheduledPaymentActiveForMonth(
+  payment: ScheduledPayment,
+  month: number
+) {
+  if (!payment.active_months) return true
+
+  return payment.active_months
+    .split(',')
+    .map((value) => Number(value.trim()))
+    .includes(month)
+}
+
+function paymentMatchesSchedule(
+  payment: PaymentInstance,
+  scheduledPayment: ScheduledPayment
+) {
+  if (
+    payment.scheduled_payment_id &&
+    payment.scheduled_payment_id === scheduledPayment.id
+  ) {
+    return true
+  }
+
+  const paymentName = normalizePaymentName(payment.name)
+  const scheduledName = normalizePaymentName(scheduledPayment.name)
+
+  return Boolean(
+    paymentName &&
+      scheduledName &&
+      (paymentName.includes(scheduledName) || scheduledName.includes(paymentName))
+  )
+}
+
+function paymentForCycle(
+  payments: PaymentInstance[],
+  scheduledPayment: ScheduledPayment,
+  month: number,
+  year: number
+) {
+  return payments.find(
+    (payment) =>
+      Number(payment.payment_month) === month &&
+      Number(payment.payment_year) === year &&
+      paymentMatchesSchedule(payment, scheduledPayment)
+  )
+}
+
+function previousCycle(month: number, year: number) {
+  if (month === 1) return { month: 12, year: year - 1 }
+
+  return { month: month - 1, year }
+}
+
+function hasConfirmedPreviousCycle(
+  payments: PaymentInstance[],
+  scheduledPayment: ScheduledPayment,
+  month: number,
+  year: number
+) {
+  const previous = previousCycle(month, year)
+  const previousPayment = paymentForCycle(
+    payments,
+    scheduledPayment,
+    previous.month,
+    previous.year
+  )
+  const previousStatus = String(previousPayment?.status || '').toLowerCase()
+
+  return CLOSED_PAYMENT_STATUSES.some((status) => status === previousStatus)
+}
+
+function dateForScheduledPayment(
+  scheduledPayment: ScheduledPayment,
+  month: number,
+  year: number
+) {
+  const day = Number(scheduledPayment.grace_day || scheduledPayment.due_day)
+  if (!day) return null
+
+  const lastDay = new Date(year, month, 0).getDate()
+  const safeDay = Math.min(day, lastDay)
+  const paddedMonth = String(month).padStart(2, '0')
+  const paddedDay = String(safeDay).padStart(2, '0')
+
+  return `${year}-${paddedMonth}-${paddedDay}`
+}
+
+function ledgerTransactionForReconciliation(
+  transaction: LedgerSummaryTransaction
+): ReconciliationTransaction {
+  return {
+    source: transaction.sourceTable,
+    id: transaction.id,
+    name: transaction.description,
+    amount: transaction.amount,
+    date: transaction.date,
+    institutionName:
+      typeof transaction.metadata.institutionName === 'string'
+        ? transaction.metadata.institutionName
+        : null,
+    accountName:
+      typeof transaction.metadata.accountName === 'string'
+        ? transaction.metadata.accountName
+        : null,
+    accountType:
+      typeof transaction.metadata.accountType === 'string'
+        ? transaction.metadata.accountType
+        : null,
+    accountSubtype:
+      typeof transaction.metadata.accountSubtype === 'string'
+        ? transaction.metadata.accountSubtype
+        : null,
+    category: transaction.category,
+  }
+}
+
+function paymentForReconciliation(
+  payment: PaymentInstance
+): ReconciliationPaymentInstance {
+  return {
+    id: payment.id,
+    name: payment.name || null,
+    amount: Number(payment.amount || 0),
+    status: payment.status || null,
+    effective_due_date: payment.effective_due_date || null,
+    updated_at: payment.updated_at || null,
+    notes: payment.notes || null,
+    scheduled_payment_id: payment.scheduled_payment_id || null,
+  }
+}
+
+function bestMatchByPaymentId(matches: ReconciliationMatch[]) {
+  const byPaymentId = new Map<string, ReconciliationMatch>()
+
+  matches.forEach((match) => {
+    const current = byPaymentId.get(match.paymentInstanceId)
+    if (!current || match.confidence > current.confidence) {
+      byPaymentId.set(match.paymentInstanceId, match)
+    }
+  })
+
+  return byPaymentId
+}
+
+function paymentReconciliationReason(
+  lifecycleState: string | null,
+  match: ReconciliationMatch | null
+) {
+  if (match) return match.reasons
+
+  if (lifecycleState === 'overdue') {
+    return [
+      'No confirmed ledger transaction matched this expected payment strongly enough.',
+    ]
+  }
+
+  return []
+}
+
+function withLifecycle(
+  payment: PaymentInstance,
+  today: string,
+  match: ReconciliationMatch | null = null
+): PaymentInstance {
+  const confirmedLedgerMatch =
+    match && match.transactionSource === 'quick_entries' && match.confidence >= 70
+  const detectedTransactionMatch = Boolean(match && match.confidence >= 50)
+  const snapshot = buildPaymentLifecycleSnapshot({
+    status: payment.status ?? null,
+    effectiveDueDate: payment.effective_due_date || null,
+    today,
+    hasDetectedTransaction: detectedTransactionMatch,
+    hasConfirmedLedgerEntry: Boolean(confirmedLedgerMatch),
+  })
+
+  return {
+    ...payment,
+    lifecycleState: snapshot.state,
+    lifecycleLabel: snapshot.label,
+    lifecycleIsOpen: snapshot.isOpen,
+    lifecycleIsClosed: snapshot.state === 'closed',
+    isOverdue: snapshot.state === 'overdue',
+    daysFromDueDate: snapshot.daysFromDueDate,
+    lifecycleReasons: snapshot.reasons,
+    lifecycleReconciliationConfidence: match?.confidence ?? null,
+    lifecycleMatchedTransaction: match
+      ? {
+          id: match.transactionId,
+          source: match.transactionSource,
+          name: match.transactionName,
+          amount: match.transactionAmount,
+          date: match.transactionDate,
+          confidence: match.confidence,
+          confidenceLevel: match.confidenceLevel,
+        }
+      : null,
+    lifecycleReconciliationReasons: paymentReconciliationReason(
+      snapshot.state,
+      match
+    ),
+  }
+}
+
+function expectedScheduledPayment(
+  scheduledPayment: ScheduledPayment,
+  month: number,
+  year: number,
+  today: string
+): PaymentInstance | null {
+  const effectiveDueDate = dateForScheduledPayment(scheduledPayment, month, year)
+  if (!effectiveDueDate) return null
+
+  return withLifecycle(
+    {
+      id: `scheduled:${scheduledPayment.id}:${year}-${month}`,
+      name: scheduledPayment.name,
+      amount: Number(scheduledPayment.amount || 0),
+      status: 'pending',
+      effective_due_date: effectiveDueDate,
+      payment_month: month,
+      payment_year: year,
+      scheduled_payment_id: scheduledPayment.id,
+      source: 'scheduled_payment',
+    },
+    today
+  )
+}
+
+function buildLifecyclePayments({
+  currentPayments,
+  allPayments,
+  scheduledPayments,
+  confirmedLedgerEntries,
+  month,
+  year,
+  today,
+}: {
+  currentPayments: PaymentInstance[]
+  allPayments: PaymentInstance[]
+  scheduledPayments: ScheduledPayment[]
+  confirmedLedgerEntries: LedgerSummaryTransaction[]
+  month: number
+  year: number
+  today: string
+}) {
+  const currentLifecyclePayments = currentPayments.map((payment) => ({
+    ...payment,
+    source: 'payment_instance' as const,
+  }))
+
+  const expectedPayments = scheduledPayments
+    .filter((payment) => scheduledPaymentActiveForMonth(payment, month))
+    .filter(
+      (payment) =>
+        !paymentForCycle(allPayments, payment, month, year) &&
+        hasConfirmedPreviousCycle(allPayments, payment, month, year)
+    )
+    .map((payment) => expectedScheduledPayment(payment, month, year, today))
+    .filter((payment): payment is PaymentInstance => payment !== null)
+  const openLifecyclePayments = [
+    ...currentLifecyclePayments,
+    ...expectedPayments,
+  ]
+  const reconciliation = buildReconciliationMatches({
+    transactions: confirmedLedgerEntries.map(ledgerTransactionForReconciliation),
+    payments: openLifecyclePayments.map(paymentForReconciliation),
+  })
+  const matchesByPaymentId = bestMatchByPaymentId(reconciliation.allMatches)
+  const annotatedPayments = openLifecyclePayments.map((payment) =>
+    withLifecycle(payment, today, matchesByPaymentId.get(payment.id) || null)
+  )
+
+  return annotatedPayments.sort((a, b) =>
+    String(a.effective_due_date || '').localeCompare(
+      String(b.effective_due_date || '')
+    )
+  )
 }
 
 export async function getLiquiditySummary(
@@ -88,14 +412,20 @@ export async function getLiquiditySummary(
     manualAccounts,
     creditCards,
     payments,
+    allPayments,
+    scheduledPayments,
     incomeSchedule,
+    ledgerSummary,
   ] = await Promise.all([
     getPortfolioSummary(supabase, userId),
     getConnectedAssets(supabase, userId),
     getManualAccounts(supabase, userId),
     getCreditCards(supabase, userId),
     getCurrentMonthPayments(supabase, now),
+    getPaymentInstances(supabase),
+    getActiveScheduledPayments(supabase),
     getActiveIncomeSchedule(supabase),
+    getLedgerSummary(supabase, userId),
   ])
 
   const connectedAccounts = connectedAssets.map(assetAsConnectedAccount)
@@ -135,20 +465,35 @@ export async function getLiquiditySummary(
   const cashAvailableManual = portfolio.totalManualLiquidAvailable
   const cashAvailableTotal = portfolio.totalLiquidAvailable
 
-  const pendingActionPayments = payments.filter(
-    (payment) => payment.status === 'pending'
+  const todayString = now.toISOString().slice(0, 10)
+  const lifecyclePayments = buildLifecyclePayments({
+    currentPayments: payments,
+    allPayments,
+    scheduledPayments,
+    confirmedLedgerEntries: ledgerSummary.confirmedLedgerEntries,
+    month: now.getMonth() + 1,
+    year: now.getFullYear(),
+    today: todayString,
+  })
+
+  const pendingActionPayments = lifecyclePayments.filter(
+    (payment) => payment.status === 'pending' && payment.lifecycleIsOpen !== false
   )
 
-  const initiatedPayments = payments.filter(
-    (payment) => payment.status === 'initiated'
+  const initiatedPayments = lifecyclePayments.filter(
+    (payment) => payment.status === 'initiated' && payment.lifecycleIsOpen !== false
   )
 
   // Backward compatibility: pendingPayments/totalPendingPayments remain the
   // committed unpaid cash view for existing Dashboard consumers. New fields
   // separate pending action from initiated payments waiting confirmation.
-  const committedPayments = payments.filter(
+  const committedPayments = lifecyclePayments.filter(
     (payment) =>
-      payment.status === 'pending' || payment.status === 'initiated'
+      payment.lifecycleIsOpen !== false &&
+      (payment.status === 'pending' || payment.status === 'initiated')
+  )
+  const overduePayments = lifecyclePayments.filter(
+    (payment) => payment.isOverdue === true
   )
 
   const pendingActionPaymentTotal = pendingActionPayments.reduce(
@@ -224,6 +569,8 @@ export async function getLiquiditySummary(
     connectedCreditAvailable,
     manualCardDebt,
     manualMinimumPayments,
+    lifecyclePayments,
+    overduePayments,
     pendingActionPayments,
     initiatedPayments,
     committedPayments,

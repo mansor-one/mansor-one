@@ -657,14 +657,14 @@ export function ReviewQueueClient({
   const tabs: { id: ReviewTab; label: string; count: number }[] = [
     { id: 'toReview', label: 'Por revisar', count: toReview.length },
     { id: 'ready', label: 'Listos', count: readyToConfirm.length },
-    { id: 'duplicates', label: 'Duplicados', count: possibleDuplicates.length },
+    { id: 'duplicates', label: 'Parecidas', count: possibleDuplicates.length },
     { id: 'ath', label: 'ATH', count: athReview.length },
     { id: 'all', label: 'Todo', count: visibleCandidates.length },
   ]
   const summaryCards = [
     { label: 'Por revisar', value: toReview.length },
     { label: 'Listos', value: readyToConfirm.length },
-    { label: 'Duplicados posibles', value: possibleDuplicates.length },
+    { label: 'Parecidas', value: possibleDuplicates.length },
     { label: 'ATH', value: athReview.length },
     { label: 'Todo visible', value: visibleCandidates.length },
     { label: 'Diagnóstico exacto', value: exactDuplicates.length },
@@ -692,8 +692,10 @@ export function ReviewQueueClient({
         <div className="flex flex-wrap gap-2">
           {tabs.map((tab) => (
             <button
-              className={`border rounded px-3 py-2 text-sm ${
-                activeTab === tab.id ? 'font-bold bg-gray-100' : ''
+              className={`rounded border px-3 py-2 text-sm transition-colors ${
+                activeTab === tab.id
+                  ? 'border-slate-500 bg-slate-900 font-bold text-white shadow-sm dark:border-slate-300 dark:bg-slate-100 dark:text-slate-950'
+                  : 'border-slate-300 bg-transparent text-slate-800 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-100 dark:hover:bg-slate-800'
               }`}
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}

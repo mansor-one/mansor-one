@@ -139,12 +139,94 @@ export type CreditCard = {
   id?: string
   name?: string | null
   bank?: string | null
+  owner_id?: string | null
+  plaid_account_id?: string | null
+  scheduled_payment_id?: string | null
+  credit_limit?: number | null
   balance?: number | null
   minimum_payment?: number | null
   due_day?: number | null
-  apr?: number | string | null
-  currency?: string | null
+  cutoff_day?: number | null
   is_active?: boolean | null
+  created_at?: string | null
+  card_type?: string | null
+  use_case?: string | null
+  interest_notes?: string | null
+  promo_end_date?: string | null
+  regular_apr?: number | null
+  promo_apr?: number | null
+  autopay_enabled?: boolean | null
+  autopay_account_label?: string | null
+  payment_account_notes?: string | null
+  manual_last4?: string | null
+  user_id?: string | null
+}
+
+export type PersonOption = {
+  id: string
+  name: string
+}
+
+export type CardProfileSource = 'manual' | 'plaid' | 'merged'
+
+export type CardProfile = {
+  id: string
+  displayName: string
+  institution: string | null
+  owner: string | null
+  ownerId: string | null
+  source: CardProfileSource
+  manualCreditCardId: string | null
+  plaidAccountId: string | null
+  plaidAccountName: string | null
+  manualPlaidAccountId: string | null
+  scheduledPaymentId: string | null
+  manualScheduledPaymentId: string | null
+  currentBalance: number | null
+  availableCredit: number | null
+  creditLimit: number | null
+  utilizationPercent: number | null
+  minimumPayment: number | null
+  dueDay: number | null
+  nextDueDate: string | null
+  paymentStatus: string | null
+  lastPaymentDate: string | null
+  interestNotes: string | null
+  regularAprNote: string | null
+  promoAprNote: string | null
+  regularApr: number | null
+  promoApr: number | null
+  promoEndDate: string | null
+  autopayEnabled: boolean | null
+  autopayAccountLabel: string | null
+  paymentAccountNotes: string | null
+  manualLast4: string | null
+  cardType: string | null
+  useCase: string | null
+  cutoffDay: number | null
+  daysUntilPromoEnd: number | null
+  promoEndingSoon: boolean
+  isActive: boolean
+  isConnected: boolean
+  warnings: string[]
+  scheduleLinkDiagnostics: string[]
+  missingDataChecklist: string[]
+  linkConfidence: number
+  duplicatePlaidAccountIds: string[]
+}
+
+export type CardsSummary = {
+  cards: CardProfile[]
+  attentionNeeded: CardProfile[]
+  activeCards: CardProfile[]
+  connectedCards: CardProfile[]
+  archivedCards: CardProfile[]
+  unresolvedCards: CardProfile[]
+  ownerOptions: PersonOption[]
+  totalBalance: number
+  totalAvailableCredit: number
+  totalMinimumPayment: number
+  warnings: string[]
 }
 
 export type PaymentInstance = {
@@ -152,9 +234,47 @@ export type PaymentInstance = {
   name?: string | null
   amount?: number | null
   status?: string | null
+  owner?: string | null
   effective_due_date?: string | null
+  updated_at?: string | null
+  notes?: string | null
   payment_month?: number | null
   payment_year?: number | null
+  scheduled_payment_id?: string | null
+  source?: 'payment_instance' | 'scheduled_payment'
+  lifecycleState?: string | null
+  lifecycleLabel?: string | null
+  lifecycleIsOpen?: boolean
+  lifecycleIsClosed?: boolean
+  isOverdue?: boolean
+  daysFromDueDate?: number | null
+  lifecycleReasons?: string[]
+  lifecycleReconciliationConfidence?: number | null
+  lifecycleMatchedTransaction?: {
+    id: string
+    source: string
+    name: string | null
+    amount: number
+    date: string | null
+    confidence: number
+    confidenceLevel: string
+  } | null
+  lifecycleReconciliationReasons?: string[]
+}
+
+export type ScheduledPayment = {
+  id: string
+  name?: string | null
+  amount?: number | null
+  due_day?: number | null
+  credit_card_id?: string | null
+  user_id?: string | null
+  grace_day?: number | null
+  active_months?: string | null
+  owner?: string | null
+  category?: string | null
+  recurrence_type?: string | null
+  is_active?: boolean | null
 }
 
 export type IncomeSchedule = {
@@ -199,6 +319,8 @@ export type AccountsSummary = {
 }
 
 export type LiquiditySummary = AccountsSummary & {
+  lifecyclePayments: PaymentInstance[]
+  overduePayments: PaymentInstance[]
   pendingActionPayments: PaymentInstance[]
   initiatedPayments: PaymentInstance[]
   committedPayments: PaymentInstance[]
@@ -216,6 +338,7 @@ export type LiquiditySummary = AccountsSummary & {
 export type PlanningSummary = {
   planningItems: PlanningItem[]
   totalFutureObligations: number
+  overduePayments?: PaymentInstance[]
 }
 
 export type DashboardSummary = {
