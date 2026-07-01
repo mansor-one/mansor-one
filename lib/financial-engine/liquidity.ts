@@ -11,10 +11,7 @@ import {
   type ReconciliationPaymentInstance,
   type ReconciliationTransaction,
 } from './reconciliation'
-import {
-  buildPaymentLifecycleSnapshot,
-  CLOSED_PAYMENT_STATUSES,
-} from '../finance/paymentLifecycle'
+import { buildPaymentLifecycleSnapshot } from '../finance/paymentLifecycle'
 import type {
   ConnectedAccount,
   FinancialAsset,
@@ -133,7 +130,7 @@ function scheduledPaymentActiveForMonth(
     .includes(month)
 }
 
-function paymentMatchesSchedule(
+export function paymentMatchesSchedule(
   payment: PaymentInstance,
   scheduledPayment: ScheduledPayment
 ) {
@@ -168,28 +165,37 @@ function paymentForCycle(
   )
 }
 
-function previousCycle(month: number, year: number) {
-  if (month === 1) return { month: 12, year: year - 1 }
+function nextCycle(month: number, year: number) {
+  if (month === 12) return { month: 1, year: year + 1 }
 
-  return { month: month - 1, year }
+  return { month: month + 1, year }
 }
 
-function hasConfirmedPreviousCycle(
+function previousKnownPaymentAmount(
   payments: PaymentInstance[],
   scheduledPayment: ScheduledPayment,
   month: number,
   year: number
 ) {
-  const previous = previousCycle(month, year)
-  const previousPayment = paymentForCycle(
-    payments,
-    scheduledPayment,
-    previous.month,
-    previous.year
-  )
-  const previousStatus = String(previousPayment?.status || '').toLowerCase()
+  const sortedPayments = payments
+    .filter((payment) => paymentMatchesSchedule(payment, scheduledPayment))
+    .filter((payment) => {
+      const paymentYear = Number(payment.payment_year || 0)
+      const paymentMonth = Number(payment.payment_month || 0)
 
-  return CLOSED_PAYMENT_STATUSES.some((status) => status === previousStatus)
+      return (
+        paymentYear < year ||
+        (paymentYear === year && paymentMonth < month)
+      )
+    })
+    .sort((a, b) => {
+      const left = Number(a.payment_year || 0) * 100 + Number(a.payment_month || 0)
+      const right = Number(b.payment_year || 0) * 100 + Number(b.payment_month || 0)
+
+      return right - left
+    })
+
+  return Number(sortedPayments[0]?.amount || scheduledPayment.amount || 0)
 }
 
 function dateForScheduledPayment(
@@ -197,8 +203,17 @@ function dateForScheduledPayment(
   month: number,
   year: number
 ) {
-  const day = Number(scheduledPayment.grace_day || scheduledPayment.due_day)
+  const dueDay = Number(scheduledPayment.due_day || 0)
+  const graceValue = Number(scheduledPayment.grace_day || 0)
+  const day = graceValue || dueDay
   if (!day) return null
+
+  if (graceValue && dueDay && graceValue !== dueDay && graceValue < dueDay) {
+    const dueDate = new Date(year, month - 1, dueDay)
+    dueDate.setDate(dueDate.getDate() + graceValue)
+
+    return dueDate.toISOString().slice(0, 10)
+  }
 
   const lastDay = new Date(year, month, 0).getDate()
   const safeDay = Math.min(day, lastDay)
@@ -206,6 +221,19 @@ function dateForScheduledPayment(
   const paddedDay = String(safeDay).padStart(2, '0')
 
   return `${year}-${paddedMonth}-${paddedDay}`
+}
+
+function scheduleExistedByCycleDueDate(
+  scheduledPayment: ScheduledPayment,
+  month: number,
+  year: number
+) {
+  if (!scheduledPayment.created_at) return true
+
+  const dueDate = dateForScheduledPayment(scheduledPayment, month, year)
+  if (!dueDate) return true
+
+  return scheduledPayment.created_at.slice(0, 10) <= dueDate
 }
 
 function ledgerTransactionForReconciliation(
@@ -324,11 +352,34 @@ function withLifecycle(
   }
 }
 
+function lifecyclePaymentScheduleKey(payment: PaymentInstance) {
+  return (
+    payment.scheduled_payment_id ||
+    normalizePaymentName(payment.name) ||
+    payment.id
+  )
+}
+
+function earliestOpenCyclePerSchedule(payments: PaymentInstance[]) {
+  const seenOpenSchedules = new Set<string>()
+
+  return payments.filter((payment) => {
+    if (payment.lifecycleIsOpen === false) return true
+
+    const key = lifecyclePaymentScheduleKey(payment)
+    if (seenOpenSchedules.has(key)) return false
+
+    seenOpenSchedules.add(key)
+    return true
+  })
+}
+
 function expectedScheduledPayment(
   scheduledPayment: ScheduledPayment,
   month: number,
   year: number,
-  today: string
+  today: string,
+  amount: number | null = null
 ): PaymentInstance | null {
   const effectiveDueDate = dateForScheduledPayment(scheduledPayment, month, year)
   if (!effectiveDueDate) return null
@@ -337,7 +388,7 @@ function expectedScheduledPayment(
     {
       id: `scheduled:${scheduledPayment.id}:${year}-${month}`,
       name: scheduledPayment.name,
-      amount: Number(scheduledPayment.amount || 0),
+      amount: Number(amount ?? scheduledPayment.amount ?? 0),
       status: 'pending',
       effective_due_date: effectiveDueDate,
       payment_month: month,
@@ -349,7 +400,7 @@ function expectedScheduledPayment(
   )
 }
 
-function buildLifecyclePayments({
+export function buildPaymentLifecycleView({
   currentPayments,
   allPayments,
   scheduledPayments,
@@ -373,16 +424,39 @@ function buildLifecyclePayments({
 
   const expectedPayments = scheduledPayments
     .filter((payment) => scheduledPaymentActiveForMonth(payment, month))
+    .filter((payment) => scheduleExistedByCycleDueDate(payment, month, year))
     .filter(
       (payment) =>
-        !paymentForCycle(allPayments, payment, month, year) &&
-        hasConfirmedPreviousCycle(allPayments, payment, month, year)
+        !paymentForCycle(allPayments, payment, month, year)
     )
-    .map((payment) => expectedScheduledPayment(payment, month, year, today))
+    .map((payment) =>
+      expectedScheduledPayment(
+        payment,
+        month,
+        year,
+        today,
+        previousKnownPaymentAmount(allPayments, payment, month, year)
+      )
+    )
+    .filter((payment): payment is PaymentInstance => payment !== null)
+  const next = nextCycle(month, year)
+  const nextExpectedPayments = scheduledPayments
+    .filter((payment) => scheduledPaymentActiveForMonth(payment, next.month))
+    .filter((payment) => !paymentForCycle(allPayments, payment, next.month, next.year))
+    .map((payment) =>
+      expectedScheduledPayment(
+        payment,
+        next.month,
+        next.year,
+        today,
+        previousKnownPaymentAmount(allPayments, payment, next.month, next.year)
+      )
+    )
     .filter((payment): payment is PaymentInstance => payment !== null)
   const openLifecyclePayments = [
     ...currentLifecyclePayments,
     ...expectedPayments,
+    ...nextExpectedPayments,
   ]
   const reconciliation = buildReconciliationMatches({
     transactions: confirmedLedgerEntries.map(ledgerTransactionForReconciliation),
@@ -393,11 +467,13 @@ function buildLifecyclePayments({
     withLifecycle(payment, today, matchesByPaymentId.get(payment.id) || null)
   )
 
-  return annotatedPayments.sort((a, b) =>
+  const sortedPayments = annotatedPayments.sort((a, b) =>
     String(a.effective_due_date || '').localeCompare(
       String(b.effective_due_date || '')
     )
   )
+
+  return earliestOpenCyclePerSchedule(sortedPayments)
 }
 
 export async function getLiquiditySummary(
@@ -466,7 +542,7 @@ export async function getLiquiditySummary(
   const cashAvailableTotal = portfolio.totalLiquidAvailable
 
   const todayString = now.toISOString().slice(0, 10)
-  const lifecyclePayments = buildLifecyclePayments({
+  const lifecyclePayments = buildPaymentLifecycleView({
     currentPayments: payments,
     allPayments,
     scheduledPayments,

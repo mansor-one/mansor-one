@@ -182,6 +182,8 @@ export type CardProfile = {
   manualPlaidAccountId: string | null
   scheduledPaymentId: string | null
   manualScheduledPaymentId: string | null
+  currentPaymentInstanceId: string | null
+  currentPaymentSource: PaymentInstance['source'] | null
   currentBalance: number | null
   availableCredit: number | null
   creditLimit: number | null
@@ -275,6 +277,7 @@ export type ScheduledPayment = {
   category?: string | null
   recurrence_type?: string | null
   is_active?: boolean | null
+  created_at?: string | null
 }
 
 export type IncomeSchedule = {

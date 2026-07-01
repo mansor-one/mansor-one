@@ -1,58 +1,60 @@
 import { requireUser } from '@/lib/auth/requireUser'
-import { getPortfolioSummary } from '@/lib/financial-engine'
+import { getDashboardSummary } from '@/lib/financial-engine'
 import { createServerSupabase } from '@/lib/supabase/server'
+import type { Metadata } from 'next'
 import Nav from '../components/Nav'
 export const dynamic = 'force-dynamic'
+
+export const metadata: Metadata = {
+  title: 'Timeline | Mansor One',
+}
 
 function formatDate(dateString: string) {
   const [year, month, day] = dateString.split('-')
   return `${month}/${day}/${year}`
 }
 
+type TimelineEvent = {
+  date: string
+  title: string
+  amount: number
+  type: 'income' | 'payment'
+  status: string
+  notes: string
+}
+
 export default async function TimelinePage() {
   const { supabase } = await createServerSupabase()
   const { user } = await requireUser(supabase)
-  const now = new Date()
-  const month = now.getMonth() + 1
-  const year = now.getFullYear()
+  const { liquidity } = await getDashboardSummary(supabase, user.id)
 
-  const portfolioSummary = await getPortfolioSummary(supabase, user.id)
-
-  const { data: incomes } = await supabase
-    .from('income_schedule')
-    .select('*')
-    .eq('is_active', true)
-
-  const { data: payments } = await supabase
-    .from('payment_instances')
-    .select('*')
-    .eq('payment_month', month)
-    .eq('payment_year', year)
-    .neq('status', 'paid')
-
-  const startingCash = portfolioSummary.totalLiquidAvailable
+  const startingCash = liquidity.cashAvailableTotal
 
   const incomeEvents =
-    incomes
+    liquidity.confirmedIncome
       ?.filter((income) => income.next_expected_date && income.amount)
-      .map((income) => ({
-        date: income.next_expected_date,
-        title: income.name,
+      .map((income): TimelineEvent => ({
+        date: income.next_expected_date || '',
+        title: income.name || 'Ingreso',
         amount: Number(income.amount || 0),
         type: 'income',
-        status: income.confidence || 'confirmed',
-        notes: income.notes || '',
+        status: 'confirmed',
+        notes: '',
       })) || []
 
   const paymentEvents =
-    payments
-      ?.filter((payment) => payment.effective_due_date)
-      .map((payment) => ({
+    liquidity.lifecyclePayments
+      .filter((payment) => payment.lifecycleIsOpen !== false)
+      .filter(
+        (payment): payment is typeof payment & { effective_due_date: string } =>
+          Boolean(payment.effective_due_date)
+      )
+      .map((payment): TimelineEvent => ({
         date: payment.effective_due_date,
-        title: payment.name,
+        title: payment.name || 'Pago',
         amount: -Number(payment.amount || 0),
         type: 'payment',
-        status: payment.status || 'pending',
+        status: payment.lifecycleLabel || payment.status || 'pending',
         notes: payment.notes || '',
       })) || []
 

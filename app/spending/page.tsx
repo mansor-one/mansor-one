@@ -9,9 +9,14 @@ import {
   type TransactionContext,
 } from '@/lib/financial-engine'
 import Link from 'next/link'
+import type { Metadata } from 'next'
 import Nav from '../components/Nav'
 
 export const dynamic = 'force-dynamic'
+
+export const metadata: Metadata = {
+  title: 'Gastos | Mansor One',
+}
 
 type PageProps = {
   searchParams?: Promise<{

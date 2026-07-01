@@ -1,8 +1,13 @@
 import { getDashboardSummary } from '@/lib/financial-engine'
 import { requireUser } from '@/lib/auth/requireUser'
 import { createServerSupabase } from '@/lib/supabase/server'
+import type { Metadata } from 'next'
 
 export const dynamic = 'force-dynamic'
+
+export const metadata: Metadata = {
+  title: 'Robototina | Mansor One',
+}
 
 type ReviewItemRow = {
   id: string

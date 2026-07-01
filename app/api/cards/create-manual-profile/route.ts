@@ -21,6 +21,18 @@ function dayValue(value: unknown) {
   return day >= 1 && day <= 31 ? day : null
 }
 
+function lastFourValue(value: unknown) {
+  const text = textValue(value)
+  if (!text) return null
+
+  const digits = text.replace(/\D/g, '')
+  return digits ? digits.slice(-4) : null
+}
+
+function booleanValue(value: unknown) {
+  return value === true
+}
+
 function logDevError(message: string, error: unknown) {
   if (process.env.NODE_ENV === 'production') return
 
@@ -57,7 +69,39 @@ export async function POST(request: Request) {
       )
     }
 
+    const { data: existingProfile, error: existingProfileError } =
+      await supabase
+        .from('credit_cards')
+        .select('id')
+        .eq('user_id', user.id)
+        .eq('plaid_account_id', plaidAccount.id)
+        .maybeSingle()
+
+    if (existingProfileError) throw existingProfileError
+
+    if (existingProfile) {
+      return NextResponse.json({
+        success: true,
+        cardId: existingProfile.id,
+        alreadyExists: true,
+      })
+    }
+
     const ownerId = textValue(body.ownerId)
+    if (ownerId) {
+      const { data: owner, error: ownerError } = await supabase
+        .from('people')
+        .select('id')
+        .eq('id', ownerId)
+        .maybeSingle()
+
+      if (ownerError) throw ownerError
+
+      if (!owner) {
+        return NextResponse.json({ error: 'Invalid owner' }, { status: 400 })
+      }
+    }
+
     const name = textValue(body.name) || plaidAccount.name || 'Credit card'
     const bank = textValue(body.bank) || plaidAccount.institution_name || null
 
@@ -73,11 +117,18 @@ export async function POST(request: Request) {
         balance: null,
         minimum_payment: numberValue(body.minimumPayment),
         due_day: dayValue(body.dueDay),
+        cutoff_day: dayValue(body.cutoffDay),
         is_active: true,
         card_type: textValue(body.cardType),
         use_case: textValue(body.useCase),
         interest_notes: textValue(body.interestNotes),
         promo_end_date: textValue(body.promoEndDate),
+        regular_apr: numberValue(body.regularApr),
+        promo_apr: numberValue(body.promoApr),
+        autopay_enabled: booleanValue(body.autopayEnabled),
+        autopay_account_label: textValue(body.autopayAccountLabel),
+        payment_account_notes: textValue(body.paymentAccountNotes),
+        manual_last4: lastFourValue(body.manualLast4),
       })
       .select('id')
       .single()

@@ -1,4 +1,8 @@
 import { getResolvedAccounts } from './account-resolver'
+import {
+  getLiquiditySummary,
+  paymentMatchesSchedule,
+} from './liquidity'
 import type {
   CardProfile,
   CardsSummary,
@@ -23,6 +27,7 @@ type ScheduleMatch = {
 }
 
 const CLOSED_PAYMENT_STATUSES = new Set(['paid', 'confirmed', 'closed'])
+const DUE_SOON_DAYS = 7
 const CARD_ALIASES: Record<string, string[]> = {
   'POPULAR VISA': ['VISA PREMIA REWARDS', 'BANCO POPULAR', 'POPULAR'],
   'VISA PREMIA REWARDS': ['POPULAR VISA', 'BANCO POPULAR', 'POPULAR'],
@@ -336,134 +341,74 @@ function scheduleDiagnostics({
   ]
 }
 
-function dateForDay(year: number, month: number, day: number) {
-  const lastDay = new Date(year, month, 0).getDate()
-  const safeDay = Math.min(day, lastDay)
+function manualDuplicateIds(manual: CreditCard, manualCards: CreditCard[]) {
+  const manualId = manual.id || ''
+  const plaidAccountId = manual.plaid_account_id || null
+  const manualSignal = normalize(`${manual.bank || ''} ${manual.name || ''}`)
 
-  return `${year}-${String(month).padStart(2, '0')}-${String(safeDay).padStart(
-    2,
-    '0'
-  )}`
+  return manualCards
+    .filter((candidate) => candidate.id && candidate.id !== manualId)
+    .filter((candidate) => {
+      if (
+        plaidAccountId &&
+        candidate.plaid_account_id &&
+        candidate.plaid_account_id === plaidAccountId
+      ) {
+        return true
+      }
+
+      const candidateSignal = normalize(
+        `${candidate.bank || ''} ${candidate.name || ''}`
+      )
+
+      return Boolean(manualSignal && candidateSignal === manualSignal)
+    })
+    .map((candidate) => candidate.id || '')
+    .filter(Boolean)
 }
 
-function scheduleActiveForMonth(schedule: ScheduledPayment, month: number) {
-  if (!schedule.active_months) return true
-
-  return schedule.active_months
-    .split(',')
-    .map((value) => Number(value.trim()))
-    .includes(month)
-}
-
-function nextActiveMonth(schedule: ScheduledPayment, from: Date) {
-  for (let offset = 0; offset < 18; offset += 1) {
-    const candidate = new Date(from.getFullYear(), from.getMonth() + offset, 1)
-    const month = candidate.getMonth() + 1
-
-    if (scheduleActiveForMonth(schedule, month)) {
-      return { month, year: candidate.getFullYear() }
-    }
-  }
-
-  return null
-}
-
-function nextDueDate(
+function nextOpenLifecyclePayment(
   schedule: ScheduledPayment | null,
-  payment: PaymentInstance | null,
-  today: Date
-) {
-  if (!schedule) return payment?.effective_due_date || null
-
-  const currentDue = payment?.effective_due_date || null
-  const currentStatus = normalize(payment?.status).toLowerCase()
-  const dueDate = currentDue ? new Date(`${currentDue}T00:00:00`) : null
-  const paidCurrentCycle =
-    currentStatus && CLOSED_PAYMENT_STATUSES.has(currentStatus)
-
-  if (currentDue && (!paidCurrentCycle || (dueDate && dueDate >= today))) {
-    return currentDue
-  }
-
-  const day = Number(schedule.grace_day || schedule.due_day)
-  if (!day) return currentDue
-
-  const next = nextActiveMonth(
-    schedule,
-    new Date(today.getFullYear(), today.getMonth() + 1, 1)
-  )
-  if (!next) return null
-
-  return dateForDay(next.year, next.month, day)
-}
-
-function paymentMatchesSchedule(
-  payment: PaymentInstance,
-  schedule: ScheduledPayment
-) {
-  if (
-    payment.scheduled_payment_id &&
-    payment.scheduled_payment_id === schedule.id
-  ) {
-    return true
-  }
-
-  const paymentName = normalize(payment.name)
-  const scheduleName = normalize(schedule.name)
-
-  return Boolean(
-    paymentName &&
-      scheduleName &&
-      (paymentName.includes(scheduleName) || scheduleName.includes(paymentName))
-  )
-}
-
-function currentCyclePayment(
-  schedule: ScheduledPayment | null,
-  payments: PaymentInstance[],
-  today: Date
+  payments: PaymentInstance[]
 ) {
   if (!schedule) return null
-
-  const month = today.getMonth() + 1
-  const year = today.getFullYear()
 
   return (
     payments.find(
       (payment) =>
-        Number(payment.payment_month) === month &&
-        Number(payment.payment_year) === year &&
+        payment.lifecycleIsOpen !== false &&
         paymentMatchesSchedule(payment, schedule)
-    ) || null
+    ) ||
+    null
   )
 }
 
-function lifecyclePaymentStatus(
-  schedule: ScheduledPayment | null,
-  payment: PaymentInstance | null,
-  today: Date
-) {
-  if (!schedule && !payment) return null
+function lifecyclePaymentStatus(payment: PaymentInstance | null, today: Date) {
+  if (!payment) return null
 
-  const status = normalize(payment?.status).toLowerCase()
-  if (status && CLOSED_PAYMENT_STATUSES.has(status)) return 'paid'
-  if (status === 'initiated') return 'initiated'
+  if (payment.lifecycleState === 'closed') return 'paid'
+  if (payment.lifecycleState === 'overdue') return 'overdue'
 
-  const dueDateValue =
-    payment?.effective_due_date ||
-    (schedule?.due_day
-      ? dateForDay(
-          today.getFullYear(),
-          today.getMonth() + 1,
-          Number(schedule.grace_day || schedule.due_day)
-        )
-      : null)
-  const dueDate = dueDateValue ? new Date(`${dueDateValue}T00:00:00`) : null
+  const status = normalize(payment.status).toLowerCase()
+  const dueDate = payment.effective_due_date
+    ? new Date(`${payment.effective_due_date}T00:00:00`)
+    : null
 
-  if (dueDate && dueDate < today) return 'overdue'
-  if (schedule || payment) return 'upcoming'
+  if (status === 'initiated' || payment.lifecycleState === 'detected') {
+    return 'initiated'
+  }
 
-  return null
+  if (dueDate) {
+    const daysUntilDue = Math.ceil(
+      (dueDate.getTime() - today.getTime()) / (24 * 60 * 60 * 1000)
+    )
+
+    if (daysUntilDue <= DUE_SOON_DAYS) return 'dueSoon'
+
+    return 'upcoming'
+  }
+
+  return 'upcoming'
 }
 
 function lastPaidPayment(
@@ -577,7 +522,7 @@ function profileWarnings({
   if (!schedule) warnings.push('No payment schedule')
   if (!owner) warnings.push('Missing owner')
   if (!account) warnings.push('Not connected to Plaid')
-  if (duplicateIds.length > 0) warnings.push('Duplicate Plaid account')
+  if (duplicateIds.length > 0) warnings.push('Duplicate manual profile')
   if (!creditLimit || creditLimit <= 0) warnings.push('Missing credit limit')
   if (!schedule?.due_day && !manual?.due_day) warnings.push('Missing due date')
   if (manual?.is_active === false && account) {
@@ -624,7 +569,7 @@ function buildProfile({
   today: Date
   peopleById: Map<string, string>
 }): CardProfile {
-  const currentPayment = currentCyclePayment(schedule, payments, today)
+  const currentPayment = nextOpenLifecyclePayment(schedule, payments)
   const paidPayment = lastPaidPayment(schedule, payments)
   const manualBalance = numberValue(manual?.balance)
   const plaidBalance = numberValue(account?.current_balance)
@@ -679,6 +624,9 @@ function buildProfile({
     manualPlaidAccountId: manual?.plaid_account_id || null,
     scheduledPaymentId: schedule?.id || null,
     manualScheduledPaymentId: manual?.scheduled_payment_id || null,
+    currentPaymentInstanceId:
+      currentPayment?.source === 'payment_instance' ? currentPayment.id : null,
+    currentPaymentSource: currentPayment?.source || null,
     currentBalance,
     availableCredit,
     creditLimit,
@@ -688,8 +636,8 @@ function buildProfile({
       numberValue(manual?.minimum_payment) ??
       numberValue(schedule?.amount),
     dueDay,
-    nextDueDate: nextDueDate(schedule, currentPayment, today),
-    paymentStatus: lifecyclePaymentStatus(schedule, currentPayment, today),
+    nextDueDate: currentPayment?.effective_due_date || null,
+    paymentStatus: lifecyclePaymentStatus(currentPayment, today),
     lastPaymentDate: paidPayment?.effective_due_date || null,
     interestNotes: manual?.interest_notes || null,
     regularAprNote: regularAprNote(manual?.interest_notes),
@@ -749,23 +697,13 @@ async function getActiveScheduledPayments(supabase: FinancialSupabaseClient) {
   return (data || []) as ScheduledPayment[]
 }
 
-async function getPaymentInstances(supabase: FinancialSupabaseClient) {
-  const { data, error } = await supabase
-    .from('payment_instances')
-    .select('*')
-
-  if (error) throw error
-
-  return (data || []) as PaymentInstance[]
-}
-
 async function getPeople(supabase: FinancialSupabaseClient) {
   const { data, error } = await supabase
     .from('people')
     .select('id, name')
     .order('name', { ascending: true })
 
-  if (error) throw error
+  if (error) return []
 
   return (data || []) as PersonOption[]
 }
@@ -795,15 +733,16 @@ export async function getCardsSummary(
     manualCards,
     { resolvedAccounts },
     schedules,
-    payments,
+    liquidity,
     ownerOptions,
   ] = await Promise.all([
     getAllCreditCards(supabase, userId),
     getResolvedAccounts(supabase, userId),
     getActiveScheduledPayments(supabase),
-    getPaymentInstances(supabase),
+    getLiquiditySummary(supabase, userId),
     getPeople(supabase),
   ])
+  const payments = liquidity.lifecyclePayments
   const peopleById = new Map(
     ownerOptions.map((person) => [person.id, person.name])
   )
@@ -838,7 +777,7 @@ export async function getCardsSummary(
         account,
         schedule: scheduleMatch?.schedule || null,
         payments,
-        duplicateIds: account?.duplicates?.map((item) => item.id || '').filter(Boolean) || [],
+        duplicateIds: manualDuplicateIds(manual, manualCards),
         scheduleLinkDiagnostics: scheduleDiagnostics({
           selectedMatch: scheduleMatch,
           profileName: diagnosticProfileName,
@@ -873,7 +812,7 @@ export async function getCardsSummary(
           account,
           schedule: scheduleMatch?.schedule || null,
           payments,
-          duplicateIds: account.duplicates?.map((item) => item.id || '').filter(Boolean) || [],
+          duplicateIds: [],
           scheduleLinkDiagnostics: scheduleDiagnostics({
             selectedMatch: scheduleMatch,
             profileName: account.name || '',

@@ -58,6 +58,32 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Card not found' }, { status: 404 })
     }
 
+    const { data: existingSchedule, error: existingScheduleError } =
+      await supabase
+        .from('scheduled_payments')
+        .select('id')
+        .eq('credit_card_id', card.id)
+        .eq('is_active', true)
+        .maybeSingle()
+
+    if (existingScheduleError) throw existingScheduleError
+
+    if (existingSchedule) {
+      const { error: linkError } = await supabase
+        .from('credit_cards')
+        .update({ scheduled_payment_id: existingSchedule.id })
+        .eq('id', card.id)
+        .eq('user_id', user.id)
+
+      if (linkError) throw linkError
+
+      return NextResponse.json({
+        success: true,
+        scheduledPaymentId: existingSchedule.id,
+        alreadyExists: true,
+      })
+    }
+
     const { data, error } = await supabase
       .from('scheduled_payments')
       .insert({
@@ -79,6 +105,14 @@ export async function POST(request: Request) {
       .single()
 
     if (error) throw error
+
+    const { error: linkError } = await supabase
+      .from('credit_cards')
+      .update({ scheduled_payment_id: data.id })
+      .eq('id', card.id)
+      .eq('user_id', user.id)
+
+    if (linkError) throw linkError
 
     return NextResponse.json({ success: true, scheduledPaymentId: data.id })
   } catch (error) {

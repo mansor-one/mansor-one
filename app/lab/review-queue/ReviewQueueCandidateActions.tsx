@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation'
 type ReviewQueueActionMode =
   | 'readyToConfirm'
   | 'needsCategory'
+  | 'needsManualReview'
   | 'possibleDuplicate'
   | 'athReview'
 
@@ -29,6 +30,7 @@ export function ReviewQueueCandidateActions({
   categories = [],
   buttonLabel,
   selectedCategoryOverride,
+  quickCategories = [],
   onSkip,
 }: {
   plaidImportId: string
@@ -36,6 +38,7 @@ export function ReviewQueueCandidateActions({
   categories?: CategoryOption[]
   buttonLabel?: string
   selectedCategoryOverride?: string
+  quickCategories?: string[]
   onSkip?: () => void
 }) {
   const router = useRouter()
@@ -51,7 +54,9 @@ export function ReviewQueueCandidateActions({
     try {
       const isDuplicateAction = mode === 'possibleDuplicate'
       const selectedCategory =
-        mode === 'needsCategory' || mode === 'athReview'
+        mode === 'needsCategory' ||
+        mode === 'needsManualReview' ||
+        mode === 'athReview'
           ? selectedCategoryOverride || selectedCategoryState
           : selectedCategoryOverride
       const response = await fetch(
@@ -107,9 +112,34 @@ export function ReviewQueueCandidateActions({
     {} as Record<string, CategoryOption[]>
   )
 
-  if (mode === 'needsCategory' || (mode === 'athReview' && !selectedCategoryOverride)) {
+  const needsCategoryChoice =
+    mode === 'needsCategory' ||
+    mode === 'needsManualReview' ||
+    (mode === 'athReview' && !selectedCategoryOverride)
+
+  if (needsCategoryChoice) {
     return (
       <div className="space-y-2 pt-1">
+        {quickCategories.length > 0 && (
+          <div className="flex flex-wrap gap-2">
+            {quickCategories.map((category) => (
+              <button
+                className={`rounded border px-3 py-2 text-sm ${
+                  selectedCategoryState === category
+                    ? 'border-slate-500 bg-slate-900 text-white dark:border-slate-300 dark:bg-slate-100 dark:text-slate-950'
+                    : ''
+                }`}
+                disabled={disabled}
+                key={category}
+                onClick={() => setSelectedCategoryState(category)}
+                type="button"
+              >
+                {category}
+              </button>
+            ))}
+          </div>
+        )}
+
         <select
           className="rounded border border-slate-400 bg-white px-3 py-2 text-sm text-slate-950 dark:border-slate-600 dark:bg-slate-950 dark:text-slate-100"
           disabled={disabled}

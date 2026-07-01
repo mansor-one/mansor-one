@@ -7,10 +7,15 @@ import {
   type LedgerSummaryTransaction,
   transactionContext,
 } from '@/lib/financial-engine'
+import type { Metadata } from 'next'
 import Nav from '../components/Nav'
 import HistoryClient, { type HistoryMovement } from './HistoryClient'
 
 export const dynamic = 'force-dynamic'
+
+export const metadata: Metadata = {
+  title: 'Movimientos | Mansor One',
+}
 
 function categoryFromCode(code: string | null) {
   return code ? getCategoryByCode(code) : null

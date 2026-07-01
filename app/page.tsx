@@ -1,4 +1,5 @@
 import { requireUser } from '@/lib/auth/requireUser'
+import type { Metadata } from 'next'
 import {
   canonicalCategoryCodeForText,
   commonMerchantDefaultCategoryCode,
@@ -15,6 +16,10 @@ import Link from 'next/link'
 import Nav from './components/Nav'
 
 export const dynamic = 'force-dynamic'
+
+export const metadata: Metadata = {
+  title: 'Dashboard | Mansor One',
+}
 
 type Movement = {
   id: string

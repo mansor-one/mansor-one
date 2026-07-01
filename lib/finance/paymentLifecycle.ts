@@ -21,7 +21,7 @@ export const PAYMENT_TIMELINE_STATES = [
 
 export type PaymentTimelineState = (typeof PAYMENT_TIMELINE_STATES)[number]
 
-export const LEGACY_PAYMENT_STATUSES = ['promise', 'paid'] as const
+export const LEGACY_PAYMENT_STATUSES = ['promise', 'paid', 'closed'] as const
 
 export type LegacyPaymentStatus = (typeof LEGACY_PAYMENT_STATUSES)[number]
 
@@ -36,6 +36,7 @@ export const OPEN_PAYMENT_STATUSES: PaymentStatus[] = [
 export const CLOSED_PAYMENT_STATUSES: PaymentStatus[] = [
   'confirmed',
   'paid',
+  'closed',
 ]
 
 export type PaymentLifecycleSnapshotInput = {
@@ -103,16 +104,19 @@ export function buildPaymentLifecycleSnapshot({
     CLOSED_PAYMENT_STATUSES.includes(normalizedStatus as PaymentStatus)
   ) {
     state = 'closed'
-    reasons.push('Payment is confirmed in the ledger or marked paid.')
+    reasons.push('Payment is confirmed in the ledger or explicitly confirmed.')
+  } else if (daysFromDueDate !== null && daysFromDueDate > 0) {
+    state = 'overdue'
+    reasons.push('Payment due date passed without a confirmed payment.')
+    if (hasDetectedTransaction) {
+      reasons.push('A possible matching transaction exists but is not confirmed.')
+    }
   } else if (hasDetectedTransaction) {
     state = 'detected'
     reasons.push('A matching transaction has been detected.')
   } else if (normalizedStatus === 'initiated') {
     state = 'initiated'
     reasons.push('Payment has been initiated but not confirmed.')
-  } else if (daysFromDueDate !== null && daysFromDueDate > 0) {
-    state = 'overdue'
-    reasons.push('Payment due date passed without a confirmed payment.')
   } else {
     reasons.push('Payment is expected and still open.')
   }

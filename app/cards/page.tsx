@@ -1,10 +1,15 @@
 import { requireUser } from '@/lib/auth/requireUser'
 import { getCardsSummary, type CardsSummary } from '@/lib/financial-engine'
 import { createServerSupabase } from '@/lib/supabase/server'
+import type { Metadata } from 'next'
 import Nav from '../components/Nav'
 import CardsClient from './CardsClient'
 
 export const dynamic = 'force-dynamic'
+
+export const metadata: Metadata = {
+  title: 'Tarjetas | Mansor One',
+}
 
 export default async function CardsPage() {
   const { supabase } = await createServerSupabase()

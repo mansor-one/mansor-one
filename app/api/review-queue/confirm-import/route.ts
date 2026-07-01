@@ -7,7 +7,11 @@ import { getReviewQueue } from '@/lib/financial-engine/review-queue'
 import { getSystemCategories } from '@/lib/financial-engine/categories'
 import { createServerSupabase } from '@/lib/supabase/server'
 
-type ConfirmImportClassification = 'readyToConfirm' | 'needsCategory' | 'athReview'
+type ConfirmImportClassification =
+  | 'readyToConfirm'
+  | 'needsCategory'
+  | 'athReview'
+  | 'needsManualReview'
 
 function parseExpectedClassification(
   value: unknown,
@@ -20,7 +24,8 @@ function parseExpectedClassification(
   if (
     value === 'readyToConfirm' ||
     value === 'needsCategory' ||
-    value === 'athReview'
+    value === 'athReview' ||
+    value === 'needsManualReview'
   ) {
     return value
   }
@@ -87,6 +92,7 @@ export async function POST(request: Request) {
 
     if (
       (expectedClassification === 'needsCategory' ||
+        expectedClassification === 'needsManualReview' ||
         expectedClassification === 'athReview') &&
       !selectedCategory
     ) {
@@ -114,7 +120,9 @@ export async function POST(request: Request) {
         ? queue.needsCategory
         : expectedClassification === 'athReview'
           ? queue.athReview
-          : queue.readyToConfirm
+          : expectedClassification === 'needsManualReview'
+            ? queue.needsManualReview
+            : queue.readyToConfirm
     const candidate = candidates.find(
       (item) =>
         item.sourceTable === 'plaid_imports' &&

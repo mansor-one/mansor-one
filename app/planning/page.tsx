@@ -1,5 +1,21 @@
 import { requireUser } from '@/lib/auth/requireUser'
+import type { Metadata } from 'next'
 import Nav from '../components/Nav'
+
+export const metadata: Metadata = {
+  title: 'Planning | Mansor One',
+}
+
+type PlanningItemRow = {
+  id: string
+  name: string | null
+  item_type: string | null
+  status: string | null
+  target_amount: number | null
+  current_amount: number | null
+  due_date: string | null
+  owner: string | null
+}
 
 function money(value: number | null) {
   return `$${Number(value || 0).toLocaleString()}`
@@ -102,7 +118,7 @@ function PlanningSection({
   items,
 }: {
   title: string
-  items: any[]
+  items: PlanningItemRow[]
 }) {
 
   return (
@@ -120,12 +136,12 @@ function PlanningSection({
 
       {items.map(item => {
 
+        const targetAmount = Number(item.target_amount || 0)
+        const currentAmount = Number(item.current_amount || 0)
         const percent =
-          item.target_amount > 0
+          targetAmount > 0
             ? Math.round(
-                (Number(item.current_amount || 0) /
-                  Number(item.target_amount)) *
-                  100
+                (currentAmount / targetAmount) * 100
               )
             : 0
 

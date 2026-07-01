@@ -53,6 +53,7 @@ function statusLabel(status: string | null) {
   if (status === 'initiated') return 'Iniciado'
   if (status === 'pending') return 'Pendiente'
   if (status === 'overdue') return 'Vencido'
+  if (status === 'dueSoon') return 'Vence pronto'
   if (status === 'upcoming') return 'Próximo pago'
 
   return status
@@ -62,6 +63,7 @@ function statusClasses(status: string | null) {
   if (status === 'paid') return 'border-emerald-700 bg-emerald-950/40'
   if (status === 'initiated') return 'border-amber-700 bg-amber-950/40'
   if (status === 'overdue') return 'border-red-700 bg-red-950/40'
+  if (status === 'dueSoon') return 'border-amber-700 bg-amber-950/40'
   if (status === 'upcoming') return 'border-sky-700 bg-sky-950/40'
 
   return 'border-neutral-700 bg-neutral-900'
@@ -71,7 +73,7 @@ function warningLabel(warning: string) {
   const labels: Record<string, string> = {
     'No payment schedule': 'Sin calendario',
     'Not connected to Plaid': 'No conectada a Plaid',
-    'Duplicate Plaid account': 'Cuenta Plaid duplicada',
+    'Duplicate manual profile': 'Perfil manual duplicado',
     'Missing credit limit': 'Falta límite',
     'Missing due date': 'Falta fecha de pago',
     'Missing owner': 'Falta dueño',
@@ -287,6 +289,13 @@ export default function CardsClient({ summary }: CardsClientProps) {
         creditLimit: formData.get('creditLimit'),
         minimumPayment: formData.get('minimumPayment'),
         dueDay: formData.get('dueDay'),
+        cutoffDay: formData.get('cutoffDay'),
+        regularApr: formData.get('regularApr'),
+        promoApr: formData.get('promoApr'),
+        autopayEnabled: formData.get('autopayEnabled') === 'on',
+        autopayAccountLabel: formData.get('autopayAccountLabel'),
+        paymentAccountNotes: formData.get('paymentAccountNotes'),
+        manualLast4: formData.get('manualLast4'),
         promoEndDate: formData.get('promoEndDate'),
         interestNotes: formData.get('interestNotes'),
         cardType: formData.get('cardType'),
@@ -317,6 +326,20 @@ export default function CardsClient({ summary }: CardsClientProps) {
       refresh('Calendario creado.')
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'No se pudo crear.')
+    }
+  }
+
+  async function handleConfirmPayment(card: CardProfile) {
+    if (!card.currentPaymentInstanceId) return
+
+    try {
+      await submitJson('/api/cards/confirm-payment', {
+        cardProfileId: card.id,
+        paymentInstanceId: card.currentPaymentInstanceId,
+      })
+      refresh('Pago marcado como confirmado.')
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'No se pudo confirmar.')
     }
   }
 
@@ -541,6 +564,18 @@ export default function CardsClient({ summary }: CardsClientProps) {
                   Crear calendario de pago
                 </button>
               )}
+              {card.currentPaymentInstanceId &&
+                (card.paymentStatus === 'overdue' ||
+                  card.paymentStatus === 'initiated') && (
+                  <button
+                    className="rounded border border-emerald-700 bg-emerald-950/40 px-3 py-2 text-sm text-emerald-100"
+                    disabled={isPending}
+                    onClick={() => handleConfirmPayment(card)}
+                    type="button"
+                  >
+                    Marcar pago como confirmado
+                  </button>
+                )}
             </div>
 
             <div className="mt-4 flex flex-wrap gap-2">
@@ -875,18 +910,44 @@ function ManualProfileForm({
         <Field label="Día de pago">
           <TextInput name="dueDay" type="number" />
         </Field>
+        <Field label="Día de corte">
+          <TextInput name="cutoffDay" type="number" />
+        </Field>
+        <Field label="APR regular">
+          <TextInput name="regularApr" type="number" />
+        </Field>
+        <Field label="APR promo">
+          <TextInput name="promoApr" type="number" />
+        </Field>
         <Field label="Promo termina">
           <TextInput name="promoEndDate" type="date" />
+        </Field>
+        <Field label="Últimos 4 manual">
+          <TextInput name="manualLast4" />
+        </Field>
+        <Field label="Cuenta autopay">
+          <TextInput name="autopayAccountLabel" />
         </Field>
         <Field label="Tipo">
           <TextInput defaultValue="debt" name="cardType" />
         </Field>
       </div>
 
+      <label className="flex items-center gap-2 text-sm">
+        <input name="autopayEnabled" type="checkbox" />
+        Autopay activo
+      </label>
+
       <Field label="Notas de interés">
         <textarea
           className="min-h-24 w-full rounded border border-neutral-700 bg-neutral-950 px-3 py-2"
           name="interestNotes"
+        />
+      </Field>
+      <Field label="Notas de cuenta de pago">
+        <textarea
+          className="min-h-20 w-full rounded border border-neutral-700 bg-neutral-950 px-3 py-2"
+          name="paymentAccountNotes"
         />
       </Field>
       <Field label="Uso recomendado">

@@ -78,6 +78,28 @@ function categoryLabel(candidate: ReviewQueueCandidate) {
   )
 }
 
+function needsCategoryAnswer(candidate: ReviewQueueCandidate) {
+  const category = categoryLabel(candidate).toLowerCase()
+
+  return (
+    candidate.classification === 'needsCategory' ||
+    candidate.classification === 'needsManualReview' ||
+    category === 'revisar' ||
+    category === 'needs category' ||
+    category === 'sin categoría'
+  )
+}
+
+function quickCategoryChoices(candidate: ReviewQueueCandidate) {
+  const name = normalizedName(candidate).toLowerCase()
+
+  if (name.includes('colegio') || name.includes('school')) {
+    return ['School / Education', 'Tuition', 'Tutoring']
+  }
+
+  return []
+}
+
 function isExactImportedDuplicate(candidate: ReviewQueueCandidate) {
   const match = candidate.duplicateContext?.bestDuplicateMatch
 
@@ -434,14 +456,19 @@ function CandidateActions({
     )
   }
 
-  if (candidate.classification === 'needsCategory') {
+  if (needsCategoryAnswer(candidate)) {
     return (
       <ReviewQueueCandidateActions
         buttonLabel="Agregar al historial"
         categories={categoryOptions}
-        mode="needsCategory"
+        mode={
+          candidate.classification === 'needsManualReview'
+            ? 'needsManualReview'
+            : 'needsCategory'
+        }
         onSkip={onSkip}
         plaidImportId={candidate.transaction.id}
+        quickCategories={quickCategoryChoices(candidate)}
       />
     )
   }
