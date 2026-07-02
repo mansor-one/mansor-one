@@ -399,6 +399,17 @@ function paymentCycleDateMatches(left: PaymentInstance, right: PaymentInstance) 
   )
 }
 
+function paymentCycleMatches(left: PaymentInstance, right: PaymentInstance) {
+  return Boolean(
+    left.payment_month &&
+      right.payment_month &&
+      left.payment_year &&
+      right.payment_year &&
+      Number(left.payment_month) === Number(right.payment_month) &&
+      Number(left.payment_year) === Number(right.payment_year)
+  )
+}
+
 function paymentNameMatchesMigratedAlias(
   legacyPayment: PaymentInstance,
   obligationPayment: PaymentInstance
@@ -425,7 +436,10 @@ function migratedObligationMatchesLegacyPayment(
     legacyPayment.scheduled_payment_id &&
     legacyScheduledIds.has(legacyPayment.scheduled_payment_id)
   ) {
-    return true
+    return (
+      paymentCycleMatches(legacyPayment, obligationPayment) ||
+      paymentCycleDateMatches(legacyPayment, obligationPayment)
+    )
   }
 
   return paymentNameMatchesMigratedAlias(legacyPayment, obligationPayment)
