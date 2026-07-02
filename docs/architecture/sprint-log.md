@@ -63,6 +63,8 @@ Progreso definido:
 - ADR-017 agregado: Plaid Sync guarda source facts, no significado financiero confirmado.
 - ADR-018 agregado: Planning Obligations separa obligacion de proveedor.
 - ADR-019 agregado: Mansor One es household finance.
+- Obligations v1 foundation agregado como migracion schema-only con RLS, sin UI, sin seed y sin migrar `scheduled_payments`.
+- ADR-020 agregado: Obligations es dominio separado de `scheduled_payments`.
 
 ## Pendiente
 

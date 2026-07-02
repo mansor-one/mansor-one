@@ -177,3 +177,13 @@ Mansor One should support Manuel and Soraya as a shared household finance system
 Owner labels, Plaid accounts, manual records, Planning items, obligations, Review Queue context and Robototina briefings should be household-aware. Until a durable household model exists, UI may use "Manuel y Soraya" or "familia" for shared surfaces and should avoid implying that every transaction belongs only to Manuel.
 
 Consecuencia: before using Soraya FirstBank or Vec Solutions in production, depository account owner labeling and a household ownership model are required. Page-level owner logic should not be duplicated; ownership should flow through Financial Engine or a dedicated household model.
+
+## ADR-020: Obligations Are A Separate Domain
+
+Estado: aceptado.
+
+Non-card recurring obligations should not be forced into `scheduled_payments`.
+
+Obligations model durable household commitments such as Toyota, Honda, water, recorte de grama and fumigacion. The obligation is separate from the current provider/vendor, expected cycle instances and payment links.
+
+Consecuencia: Obligations v1 uses dedicated tables: `obligations`, `obligation_providers`, `obligation_instances` and `obligation_payment_links`. These tables are not connected to UI yet, do not migrate `scheduled_payments` yet and do not seed real data yet. Future Financial Engine work should merge these obligation instances into the shared Payment Lifecycle output.

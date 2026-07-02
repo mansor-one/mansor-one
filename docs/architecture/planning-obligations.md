@@ -65,12 +65,13 @@ Provider changes should create a new current provider state or history entry, no
 
 Recommended conceptual entities:
 
-- `household_obligations`: durable recurring need, owner, category, frequency, expected amount.
+- `obligations`: durable recurring need, owner, category, frequency, expected amount.
 - `obligation_providers`: current and historical providers, contact info, active dates.
-- `payment_instances`: expected cycle-level payment/service occurrence.
+- `obligation_instances`: expected cycle-level payment/service occurrence.
+- `obligation_payment_links`: manual or reconciled links to Plaid imports or confirmed ledger rows.
 - `quick_entries` / ledger: confirmed historical payment movements.
 
-Until schema exists, keep this as design guidance only.
+Obligations v1 creates these tables as a schema foundation only. It does not connect UI, migrate `scheduled_payments`, seed real data or alter ledger calculations yet.
 
 ## Planning V2 Requirements
 
@@ -80,6 +81,33 @@ Until schema exists, keep this as design guidance only.
 - Allow estimated amounts when exact bill/service amount is unknown.
 - Feed Dashboard, Robototina, Timeline and future notifications through Financial Engine.
 - Keep direct page-level calculations out of Planning UI.
+
+## Obligations V1 Foundation
+
+Migration: `20260702_obligations_v1.sql`.
+
+Tables:
+
+- `obligations`
+- `obligation_providers`
+- `obligation_instances`
+- `obligation_payment_links`
+
+Security:
+
+- every table has `user_id`
+- RLS is enabled from day one
+- authenticated policies scope select/insert/update/delete to `auth.uid()`
+- child tables use composite foreign keys with `(id, user_id)` to prevent cross-user obligation/provider/instance links
+
+Not included in v1:
+
+- UI
+- seed data
+- scheduled payment migration
+- Payment Lifecycle engine integration
+- manual mark-paid API
+- payment link UI
 
 ## Product Behavior
 
