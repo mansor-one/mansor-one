@@ -1,6 +1,6 @@
 # Architecture Decision Records
 
-Last updated: 2026-06-26
+Last updated: 2026-07-02
 
 ## Sprint Review
 
@@ -86,7 +86,7 @@ Ingresos extraordinarios esperados, como Team Share Bonus o Christmas Bonus, no 
 
 Consecuencia: estos eventos deben alimentar Financial Summary, Decision Engine, Robototina, Planning y un Debt Engine futuro como escenarios y horizonte de planificacion. Mansor One puede preparar recomendaciones, pero debe pedir confirmacion antes de asumir montos definitivos o asignaciones como pago de tarjetas, balance transfer, consolidacion, metas u obligaciones.
 
-## ADR-011: Payment Lifecycle V1 Separates Intent From Reconciliation
+## ADR-011: Payment Lifecycle V2 Separates Expected Cycles, Confirmation, And Reconciliation
 
 Estado: aceptado.
 
@@ -94,7 +94,9 @@ Los pagos deben migrar gradualmente hacia estados canonicos `pending`, `initiate
 
 `initiated` existe porque en la vida real hay un periodo entre iniciar un pago y verlo confirmado por banco, Plaid o ledger manual. Este estado permite reducir preguntas repetidas sin tratar el pago como completamente confirmado.
 
-Consecuencia: reconciliacion debe permanecer separada del lifecycle. El estado describe la creencia actual sobre la obligacion; la reconciliacion debe probarla contra movimientos, transacciones o un ledger futuro. No se cambia schema ni comportamiento actual en v1.
+En v2, las paginas deben consumir una vista compartida de lifecycle. Si el ciclo actual esta cerrado por `paid`, `confirmed`, `closed` o por un movimiento confirmado en ledger, la proxima fecha esperada debe avanzar al siguiente ciclo. Un ciclo solo esta vencido si su fecha efectiva, incluyendo grace period cuando exista, es anterior a hoy y el ciclo no esta cerrado.
+
+Consecuencia: Dashboard, Cards, Robototina, Timeline y Planning preview no deben leer `payment_instances` crudo como verdad final. Deben consumir el mismo output de lifecycle para evitar estados divergentes. Reconciliacion debe permanecer separada del lifecycle: el estado describe la creencia actual sobre la obligacion; la reconciliacion prueba esa creencia contra movimientos, transacciones o un ledger futuro.
 
 ## ADR-012: Canonical Category Engine Defines Financial Meaning
 
@@ -110,7 +112,9 @@ Estado: aceptado.
 
 Merchant Knowledge recuerda merchants normalizados, estadisticas, categoria canonica probable y confianza. Merchant Rules son reglas accionables que podran sugerir o aplicar categorias cuando el flujo de Transaction Intelligence lo permita.
 
-Consecuencia: `lib/financial-engine/merchant-knowledge.ts` no modifica categorizacion existente, `merchant_rules`, `transaction_suggestions`, `plaid_imports` ni `quick_entries`. En v1 solo provee helpers deterministas para que Transaction Intelligence pueda aprender sin acoplar merchant, Plaid category y categoria canonica.
+Merchant Learning debe ser event-driven: las confirmaciones de usuario y los movimientos confirmados son eventos de aprendizaje. El sistema puede derivar memoria desde `quick_entries` confirmados y, en una version persistente futura, registrar observaciones, cambios, drift y confianza como eventos auditables.
+
+Consecuencia: `lib/financial-engine/merchant-knowledge.ts` no debe aprender de sugerencias o import candidates como si fueran verdad. Puede usar imports como senal de "seen", pero la categoria aprendida debe venir de confirmaciones o ledger confirmado. Merchant Knowledge no modifica categorizacion existente, `merchant_rules`, `transaction_suggestions`, `plaid_imports` ni `quick_entries` directamente.
 
 ## ADR-014: Engines Are Source Of Truth, Pages Are Windows
 
@@ -127,3 +131,49 @@ Estado: aceptado.
 Las metas financieras no deben guardar `currentBalance` como verdad editable. El balance debe derivarse del funding ledger de la meta: deposits y `transfer_in` suman, withdrawals y `transfer_out` restan, y adjustments aplican su monto con signo.
 
 Consecuencia: Goal Engine puede calcular progreso, remaining amount, health y confianza de forma auditable. Una futura tabla persistente de goals debe preservar el ledger como fuente de verdad y tratar cualquier balance materializado como cache o snapshot, no como dato primario.
+
+## ADR-016: Review Queue Is The Ingestion Gate For Unconfirmed Movements
+
+Estado: aceptado.
+
+External sources such as Plaid, ATH Movil, Gmail and future OCR may create source observations or enrichment, but they must not create confirmed financial history automatically.
+
+The Review Queue is the user-facing ingestion gate for ambiguous or unconfirmed movements. Promotion into `quick_entries` must happen through explicit user confirmation, duplicate cleanup, or a narrowly scoped safe promotion helper that verifies ownership and idempotency.
+
+Consecuencia: Plaid sync may create or update `plaid_accounts` and `plaid_imports`, but not ledger rows. Spending, History and confirmed Dashboard movements should come from confirmed ledger entries, while Review Queue remains the place where candidates become history.
+
+## ADR-017: Plaid Sync Stores Source Facts, Not Financial Meaning
+
+Estado: aceptado.
+
+Plaid sync has two separate responsibilities:
+
+- account sync updates connected account facts in `plaid_accounts`
+- transaction sync creates or updates source candidates in `plaid_imports`
+
+Plaid sync may run cleanup that marks imports as already imported when the same user already has a confirmed `quick_entries.plaid_transaction_id`, and may backfill missing account context from `plaid_accounts`. It must not create ledger entries automatically.
+
+Consecuencia: sync responses should distinguish transactions returned by Plaid, new imports created, pending imports, rows cleaned and context backfilled. Future Plaid Sync v2 should persist transaction sync cursors per connection and consider uniqueness on `(user_id, plaid_transaction_id)`.
+
+## ADR-018: Planning Obligations Separate Obligation From Provider
+
+Estado: aceptado.
+
+Recurring household services and obligations should model the durable need separately from the current vendor or provider.
+
+Examples:
+
+- obligation: Recorte de grama; current vendor: Figueroa Guardia
+- obligation: Fumigacion; current vendor: Felix
+
+Consecuencia: changing provider, phone, amount, frequency, category, owner or payment method must not delete or rewrite historical payments. Planning v2 should show the obligation first and the current provider second.
+
+## ADR-019: Mansor One Is Household Finance
+
+Estado: aceptado.
+
+Mansor One should support Manuel and Soraya as a shared household finance system, not a single-person app with hardcoded ownership assumptions.
+
+Owner labels, Plaid accounts, manual records, Planning items, obligations, Review Queue context and Robototina briefings should be household-aware. Until a durable household model exists, UI may use "Manuel y Soraya" or "familia" for shared surfaces and should avoid implying that every transaction belongs only to Manuel.
+
+Consecuencia: before using Soraya FirstBank or Vec Solutions in production, depository account owner labeling and a household ownership model are required. Page-level owner logic should not be duplicated; ownership should flow through Financial Engine or a dedicated household model.

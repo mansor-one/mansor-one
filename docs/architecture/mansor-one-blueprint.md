@@ -1,6 +1,6 @@
 # Mansor One Architecture Blueprint v1
 
-Last updated: 2026-06-28
+Last updated: 2026-07-02
 
 ## Vision
 
@@ -87,6 +87,8 @@ Plaid provides connected account balances and bank/card transaction imports.
 
 Plaid is only one source. It is not the center of Mansor One. It is an input into Portfolio, Liquidity, Transaction Intelligence and Reconciliation.
 
+Plaid sync stores source facts in `plaid_accounts` and `plaid_imports`. It does not create confirmed ledger history automatically. See `plaid-sync.md`.
+
 ### ATH Movil
 
 ATH Movil is enrichment and context, not the primary money source.
@@ -142,6 +144,8 @@ Current or planned surfaces include:
 
 Capture is not interpretation. It should store or expose source facts, then let Knowledge and Financial Engines interpret them.
 
+Review Queue is the ingestion gate for unconfirmed movements. External sources can create observations and enrichment, but user confirmation is required before they become confirmed financial history.
+
 ## Knowledge Layer
 
 ### Canonical Categories
@@ -155,6 +159,8 @@ Labels are display text. Free-text categories are legacy and should migrate grad
 Merchant Knowledge identifies repeated merchants and learned behavior.
 
 It answers: "Have we seen this merchant before, and do we understand it?"
+
+Merchant Learning should be event-driven: confirmed ledger movements and explicit user confirmations are learning events; raw imports and suggestions are only weak signals.
 
 ### Financial Identity
 
@@ -201,9 +207,11 @@ Planning owns user-visible future obligations, priorities and planning items.
 
 It should not become a substitute for ledger, portfolio or debt engines.
 
+Recurring household services must separate the durable obligation from the current vendor/provider. Provider changes should preserve historical payments and only affect future planning context. See `planning-obligations.md`.
+
 ### Payment Lifecycle
 
-Payment Lifecycle defines the states of a payment obligation.
+Payment Lifecycle defines the states of a payment obligation and the expected cycle currently being evaluated.
 
 Current canonical direction:
 
@@ -212,6 +220,8 @@ Current canonical direction:
 - `confirmed`: payment was verified
 
 Legacy states like `paid` and `promise` remain during migration.
+
+Dashboard, Cards, Timeline, Planning preview and Robototina should consume one shared lifecycle output. Closed cycles advance to the next expected due date, and overdue status requires an open cycle whose effective due date is before today.
 
 ### Financial Summary
 
@@ -269,6 +279,10 @@ Lets the user compare future outcomes before committing decisions.
 ### Financial Memory
 
 Stores durable user preferences, repeated decisions, financial rules of thumb and household context.
+
+### Household Model
+
+Mansor One is household finance for Manuel and Soraya. Ownership should be explicit, shared surfaces should avoid hardcoding only Manuel, and Soraya/FirstBank production use requires depository account owner labeling. See `household-finance.md`.
 
 ## User Experience
 

@@ -4,7 +4,7 @@ Last updated: 2026-07-02
 
 ## Sprint Review
 
-Sprint 1 creo la base operativa. Sprint 2 esta separando calculos financieros de la UI.
+Sprint 1 creo la base operativa. Sprint 2 separo calculos financieros de la UI. La arquitectura actual esta orientada a engines compartidos, Review Queue como puerta de ingestion, Plaid como fuente de facts, Payment Lifecycle compartido y household finance para Manuel y Soraya.
 
 ## Sprint 1
 
@@ -53,6 +53,16 @@ Progreso definido:
 - ADR-014 agregado: engines son fuente de verdad y paginas son ventanas.
 - Goal Engine v1 creado como fundacion read-only para metas, funding ledger, progreso, health y confianza.
 - ADR-015 agregado: los balances de metas se derivan del ledger, no se almacenan manualmente.
+- Review Queue documentado como puerta de ingestion para movimientos no confirmados.
+- Plaid Sync Flow documentado: account sync, transaction sync, cleanup, backfill y limites de seguridad.
+- Payment Lifecycle actualizado a v2: ciclo cerrado avanza proxima fecha, overdue solo si ciclo abierto y fecha efectiva paso.
+- Merchant Learning documentado como aprendizaje event-driven desde confirmaciones y ledger confirmado.
+- Planning/Obligations v2 documentado: obligacion recurrente separada de vendor/proveedor.
+- Household Finance documentado para Manuel y Soraya, incluyendo owner labeling futuro para FirstBank/Soraya.
+- ADR-016 agregado: Review Queue es el ingestion gate para movimientos no confirmados.
+- ADR-017 agregado: Plaid Sync guarda source facts, no significado financiero confirmado.
+- ADR-018 agregado: Planning Obligations separa obligacion de proveedor.
+- ADR-019 agregado: Mansor One es household finance.
 
 ## Pendiente
 
@@ -63,7 +73,9 @@ Progreso definido:
 - Backlog P0 futuro, no implementado todavia: antes de usar FirstBank Soraya en produccion, agregar owner labeling para cuentas Plaid depository y conectarlo al modelo household.
 - Backlog P1 futuro, no implementado todavia: Financial Categories v2 debe agregar Sports, reclasificar servicios recurrentes de Amazon como Subscriptions, organizar categorias por grupos logicos, permitir que Merchant Learning aprenda categoria desde confirmaciones y mantener categorias genericas para finanzas del household.
 - Backlog P1 futuro, no implementado todavia: Plaid Sync v2 debe persistir transaction sync cursor por conexion y evaluar migrar unicidad de imports a `(user_id, plaid_transaction_id)` en vez de depender de unicidad global del Plaid transaction id.
+- Backlog P1 futuro, no implementado todavia: Planning/Obligations debe separar obligacion recurrente de vendor/proveedor actual para servicios del hogar como recorte de grama y fumigacion; cambiar proveedor no debe borrar ni reescribir pagos historicos.
 - Regla para estos backlog items: todo debe fluir por Financial Engine o motores derivados, no por calculos locales en Dashboard, Spending, Planning, Timeline, Cards ni Robototina.
+- Mantener documentacion de ADRs, blueprint y sprint log sincronizada al cerrar cada sprint.
 - Rediseñar Accounts como superficie unificada de assets con mutaciones separadas.
 - Definir si Cashflow debe seguir usando `scheduled_payments` o migrar a `payment_instances`.
 - Renombrar Pablo a Robototina en UI y dominio cuando se planifique el cambio.

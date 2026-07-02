@@ -1,12 +1,14 @@
 # Transaction Intelligence
 
-Last updated: 2026-06-26
+Last updated: 2026-07-02
 
 ## Proposito
 
 Transaction Intelligence define como Mansor One debe sugerir, revisar, confirmar y aprender categorias de movimientos sin convertir `quick_entries` en un campo JSON desordenado.
 
-Nota: existe una migracion v1 para la capa de sugerencias, revision, reglas y enriquecimientos. Todavia no esta conectada al comportamiento de Plaid import ni a `quick_entries`.
+Nota: existe una migracion v1 para la capa de sugerencias, revision, reglas y enriquecimientos. La direccion actual es que Review Queue sea la puerta de ingestion para movimientos no confirmados.
+
+Plaid, ATH, Gmail y OCR futuro pueden crear observaciones, sugerencias o enriquecimiento. La historia financiera confirmada entra a `quick_entries` solo por confirmacion explicita o por un flujo de promocion idempotente y seguro.
 
 ## Roles Actuales
 
@@ -21,6 +23,8 @@ Debe guardar datos finales y consultables como descripcion, monto, fecha, catego
 Es la cola de candidatos importados desde Plaid. Contiene transacciones bancarias antes o durante su conversion a `quick_entries`.
 
 Puede tener categoria sugerida e indicador `imported`, pero no debe convertirse en el motor completo de aprendizaje.
+
+Plaid sync puede crear/actualizar estas filas y completar contexto de cuenta. No debe crear ledger confirmado directamente.
 
 ### `ath_movil_emails`
 
