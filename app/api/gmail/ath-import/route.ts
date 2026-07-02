@@ -1,4 +1,6 @@
 import { NextResponse } from 'next/server'
+import { requireUser } from '@/lib/auth/requireUser'
+import { createServerSupabase } from '@/lib/supabase/server'
 import { createClient } from '@supabase/supabase-js'
 
 const supabaseAdmin = createClient(
@@ -23,11 +25,25 @@ async function getGoogleAccessToken() {
   return data.access_token
 }
 
-function getHeader(headers: any[], name: string) {
+type GmailHeader = {
+  name: string
+  value?: string
+}
+
+type GmailMessageListItem = {
+  id: string
+}
+
+type AthRule = {
+  keyword: string
+  category: string
+}
+
+function getHeader(headers: GmailHeader[], name: string) {
   return headers?.find((h) => h.name.toLowerCase() === name.toLowerCase())?.value || ''
 }
 
-function categorize(text: string, rules: any[] = []) {
+function categorize(text: string, rules: AthRule[] = []) {
   const s = text.toLowerCase()
 
 
@@ -50,7 +66,7 @@ function categorize(text: string, rules: any[] = []) {
   return 'Revisar'
 }
 
-function parseAthEmail(subject: string, snippet: string, rules: any[] = []) {
+function parseAthEmail(subject: string, snippet: string, rules: AthRule[] = []) {
   const text = `${subject} ${snippet}`
 
   const amountMatch = text.match(/\$([\d,]+(?:\.\d{2})?)/)
@@ -113,6 +129,8 @@ function parseAthEmail(subject: string, snippet: string, rules: any[] = []) {
 
 export async function GET() {
   try {
+    const { supabase } = await createServerSupabase()
+    const { user } = await requireUser(supabase)
     const accessToken = await getGoogleAccessToken()
     const q = encodeURIComponent('from:info@notifications.evertecinc.com')
 
@@ -136,7 +154,7 @@ if (rulesError) {
 }
 
     const rows = await Promise.all(
-      (listData.messages || []).map(async (msg: any) => {
+      ((listData.messages || []) as GmailMessageListItem[]).map(async (msg) => {
         const detailRes = await fetch(
           `https://gmail.googleapis.com/gmail/v1/users/me/messages/${msg.id}?format=metadata&metadataHeaders=Subject&metadataHeaders=Date&metadataHeaders=From`,
           { headers: { Authorization: `Bearer ${accessToken}` } }
@@ -149,7 +167,7 @@ if (rulesError) {
         const parsed = parseAthEmail(subject, detail.snippet || '', rules || [])
 
         return {
-  user_id: process.env.MANSOR_USER_ID!,
+  user_id: user.id,
   gmail_message_id: msg.id,
   email_date: emailDate ? new Date(emailDate).toISOString() : null,
   subject,
@@ -157,6 +175,15 @@ if (rulesError) {
 }
       })
     )
+
+    if (rows.length === 0) {
+      return NextResponse.json({
+        ok: true,
+        gmailFound: 0,
+        inserted: 0,
+        note: 'No ATH Movil messages found.',
+      })
+    }
 
     const { data, error } = await supabaseAdmin
       .from('ath_movil_emails')
@@ -173,9 +200,10 @@ if (rulesError) {
       inserted: data?.length || 0,
       note: 'Duplicates were ignored by gmail_message_id.',
     })
-  } catch (err: any) {
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err)
     return NextResponse.json(
-      { ok: false, error: err.message || String(err) },
+      { ok: false, error: message },
       { status: 500 }
     )
   }

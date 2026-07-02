@@ -3,6 +3,7 @@
 import type { CardProfile, CardsSummary } from '@/lib/financial-engine'
 import { useRouter } from 'next/navigation'
 import { FormEvent, useMemo, useState, useTransition } from 'react'
+import InstitutionLogo from '../components/InstitutionLogo'
 
 type CardsClientProps = {
   summary: CardsSummary
@@ -451,15 +452,20 @@ export default function CardsClient({ summary }: CardsClientProps) {
             key={card.id}
           >
             <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-              <div>
-                <p className="text-xs uppercase tracking-wide text-neutral-500">
-                  {fallback(card.institution, 'Institución no identificada')}
-                </p>
-                <h3 className="mt-1 text-xl font-bold">{card.displayName}</h3>
-                <p className="mt-1 text-sm text-neutral-400">
-                  {sourceLabel(card)} ·{' '}
-                  {fallback(card.owner, 'Dueño no identificado')}
-                </p>
+              <div className="flex min-w-0 items-start gap-3">
+                <InstitutionLogo institution={card.institution} />
+                <div className="min-w-0">
+                  <p className="truncate text-xs uppercase tracking-wide text-neutral-500">
+                    {fallback(card.institution, 'Institución no identificada')}
+                  </p>
+                  <h3 className="mt-1 truncate text-xl font-bold">
+                    {card.displayName}
+                  </h3>
+                  <p className="mt-1 text-sm text-neutral-400">
+                    {sourceLabel(card)} ·{' '}
+                    {fallback(card.owner, 'Dueño no identificado')}
+                  </p>
+                </div>
               </div>
 
               <div

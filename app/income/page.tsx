@@ -1,5 +1,7 @@
 'use client'
 
+/* eslint-disable @typescript-eslint/no-explicit-any, react-hooks/set-state-in-effect */
+
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import Nav from '../components/Nav'
@@ -26,30 +28,6 @@ export default function IncomePage() {
     loadIncome()
   }, [])
 
-  async function updateIncome(
-    id: string,
-    amount: number,
-    nextDate: string,
-    confidence: string
-  ) {
-    const { error } = await supabase
-      .from('income_schedule')
-      .update({
-        amount,
-        next_expected_date: nextDate,
-        confidence,
-      })
-      .eq('id', id)
-
-    if (error) {
-      setMessage(error.message)
-      return
-    }
-
-    setMessage('Ingreso actualizado ✅')
-    loadIncome()
-  }
-
   const totalExpected =
     income.reduce(
       (sum, item) => sum + Number(item.amount || 0),
@@ -63,6 +41,11 @@ export default function IncomePage() {
       </h1>
 
       <Nav />
+
+      <div className="border rounded p-4">
+        Modo seguro: esta página legacy está en solo lectura. Los cambios de
+        ingresos se habilitarán desde un flujo autenticado y con ownership.
+      </div>
 
       {message && (
         <div className="border rounded p-3">
@@ -85,7 +68,6 @@ export default function IncomePage() {
           <IncomeCard
             key={item.id}
             item={item}
-            onSave={updateIncome}
           />
         ))}
       </div>
@@ -95,15 +77,8 @@ export default function IncomePage() {
 
 function IncomeCard({
   item,
-  onSave,
 }: {
   item: any
-  onSave: (
-    id: string,
-    amount: number,
-    nextDate: string,
-    confidence: string
-  ) => void
 }) {
   const [amount, setAmount] = useState(item.amount || 0)
   const [date, setDate] = useState(
@@ -161,16 +136,9 @@ function IncomeCard({
 
       <button
         className="border rounded p-2"
-        onClick={() =>
-          onSave(
-            item.id,
-            Number(amount),
-            date,
-            confidence
-          )
-        }
+        disabled
       >
-        Guardar
+        Guardar deshabilitado
       </button>
     </div>
   )

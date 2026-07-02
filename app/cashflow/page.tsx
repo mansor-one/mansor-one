@@ -1,11 +1,13 @@
-import { supabase } from '@/lib/supabase'
+import { requireUser } from '@/lib/auth/requireUser'
 import Nav from '../components/Nav'
 
 export default async function CashflowPage() {
+  const { supabase, user } = await requireUser()
   const { data: payments } = await supabase
     .from('scheduled_payments')
     .select('*')
     .eq('is_active', true)
+    .or(`user_id.eq.${user.id},user_id.is.null`)
     .order('due_day', { ascending: true })
 
   const { data: income } = await supabase

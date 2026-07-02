@@ -1,5 +1,7 @@
 'use client'
 
+/* eslint-disable @typescript-eslint/no-explicit-any, react-hooks/set-state-in-effect */
+
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import Nav from '../components/Nav'
@@ -30,21 +32,6 @@ export default function PaymentInstancesPage() {
       .eq('is_active', true)
 
     setLiabilities(liabilitiesData || [])
-  }
-
-  async function updateStatus(id: string, status: string) {
-    const { error } = await supabase
-      .from('payment_instances')
-      .update({ status })
-      .eq('id', id)
-
-    if (error) {
-      setMessage(error.message)
-      return
-    }
-
-    setMessage('Actualizado ✅')
-    loadPayments()
   }
 
   useEffect(() => {
@@ -108,6 +95,11 @@ export default function PaymentInstancesPage() {
       <h1 className="text-3xl font-bold">📌 Pagos del Mes</h1>
       <Nav />
 
+      <div className="border rounded p-4">
+        Modo seguro: esta página legacy está en solo lectura. Los cambios de
+        pagos se harán desde el flujo unificado de tarjetas y lifecycle.
+      </div>
+
       {message && <p>{message}</p>}
 
       <section className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -149,21 +141,21 @@ export default function PaymentInstancesPage() {
             <div className="flex gap-2 flex-wrap pt-2">
               <button
                 className="border rounded p-2"
-                onClick={() => updateStatus(payment.id, 'pending')}
+                disabled
               >
                 🔴 Pendiente
               </button>
 
               <button
                 className="border rounded p-2"
-                onClick={() => updateStatus(payment.id, 'promise')}
+                disabled
               >
                 🟡 Promesa
               </button>
 
               <button
                 className="border rounded p-2"
-                onClick={() => updateStatus(payment.id, 'paid')}
+                disabled
               >
                 🟢 Pagado
               </button>

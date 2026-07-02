@@ -13,6 +13,7 @@ import {
   type TransactionContext,
 } from '@/lib/financial-engine'
 import Link from 'next/link'
+import InstitutionLogo from './components/InstitutionLogo'
 import Nav from './components/Nav'
 
 export const dynamic = 'force-dynamic'
@@ -223,24 +224,22 @@ function topMerchants(movements: Movement[]) {
     .sort((a, b) => b.amount - a.amount)
 }
 
-function householdGreeting(transactions: LedgerSummaryTransaction[]) {
-  const owners = new Set<string>()
-
-  transactions.forEach((transaction) => {
-    const owner = transaction.metadata.owner
-    if (typeof owner === 'string' && owner.trim()) {
-      owners.add(owner.trim())
-    }
-  })
-
-  const names = [...owners].filter((owner) =>
-    ['manuel', 'soraya'].includes(owner.toLowerCase())
-  )
-
-  if (names.length >= 2) return `${names.join(' y ')}`
-  if (names.length === 1) return names[0]
-
+function householdGreeting() {
   return 'Manuel y Soraya'
+}
+
+function timeOfDayGreeting(date: Date) {
+  const hourText = new Intl.DateTimeFormat('en-US', {
+    hour: 'numeric',
+    hour12: false,
+    timeZone: 'America/Puerto_Rico',
+  }).format(date)
+  const hour = Number(hourText) % 24
+
+  if (hour < 12) return 'Buenos días'
+  if (hour < 18) return 'Buenas tardes'
+
+  return 'Buenas noches'
 }
 
 function financialHealth(
@@ -367,6 +366,7 @@ function reviewProgress(confirmedCount: number, pendingCount: number) {
 }
 
 function robototinaBriefing({
+  greeting,
   household,
   trafficLights,
   reviewPercent,
@@ -374,6 +374,7 @@ function robototinaBriefing({
   topCategory,
   monthlySpent,
 }: {
+  greeting: string
   household: string
   trafficLights: PaymentTrafficLight[]
   reviewPercent: number
@@ -381,7 +382,7 @@ function robototinaBriefing({
   topCategory: ReturnType<typeof topCategories>[number] | undefined
   monthlySpent: number
 }) {
-  const lines = [`Buenos días ${household}. Estas son las cosas importantes de hoy:`]
+  const lines = [`${greeting} ${household}. Estas son las cosas importantes de hoy:`]
   const urgentPayment =
     trafficLights.find((item) => item.tone === 'red') ||
     trafficLights.find((item) => item.tone === 'yellow')
@@ -432,7 +433,8 @@ export default async function Home() {
 
   const { liquidity, planning } = dashboardSummary
   const ledgerSummary = reviewQueue.source.ledgerSummary
-  const household = householdGreeting(ledgerSummary.confirmedLedgerEntries)
+  const household = householdGreeting()
+  const greeting = timeOfDayGreeting(now)
   const confirmedMovements = dedupeMovements(
     ledgerSummary.confirmedLedgerEntries
       .map(movementFromTransaction)
@@ -505,6 +507,7 @@ export default async function Home() {
     reviewQueue.statistics.totalCandidates
   )
   const briefingLines = robototinaBriefing({
+    greeting,
     household,
     trafficLights: paymentLights,
     reviewPercent,
@@ -531,7 +534,7 @@ export default async function Home() {
             <div>
               <p className="text-sm text-neutral-400">{currentMonth}</p>
               <h1 className="text-3xl font-bold md:text-5xl">
-                👋 Buenos días, {household}.
+                👋 {greeting}, {household}.
               </h1>
             </div>
 
@@ -757,9 +760,15 @@ export default async function Home() {
                 <span className="font-medium">{movement.merchant}</span>
                 <span>{money(movement.amount)}</span>
                 <span>{movement.category}</span>
-                <span className="text-neutral-400">
-                  {displayInstitution(movement.context)} ·{' '}
-                  {displayAccount(movement.context)}
+                <span className="flex min-w-0 items-center gap-2 text-neutral-400">
+                  <InstitutionLogo
+                    institution={displayInstitution(movement.context)}
+                    size="sm"
+                  />
+                  <span className="min-w-0 truncate">
+                    {displayInstitution(movement.context)} ·{' '}
+                    {displayAccount(movement.context)}
+                  </span>
                 </span>
               </div>
             ))}

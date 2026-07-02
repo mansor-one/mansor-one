@@ -1,5 +1,7 @@
 'use client'
 
+/* eslint-disable @typescript-eslint/no-explicit-any, react-hooks/set-state-in-effect */
+
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import Nav from '../components/Nav'
@@ -12,7 +14,7 @@ export default function QuickEntryPage() {
   const [entryType, setEntryType] = useState('expense')
   const [owner, setOwner] = useState('Manuel')
   const [category, setCategory] = useState('Comida')
-  const [message, setMessage] = useState('')
+  const message = ''
 
   async function loadAccounts() {
     const { data } = await supabase
@@ -29,63 +31,17 @@ export default function QuickEntryPage() {
     loadAccounts()
   }, [])
 
-  async function saveEntry() {
-    const selectedAccount = accounts.find((a) => a.id === accountId)
-
-    if (!selectedAccount) {
-      setMessage('Selecciona una cuenta.')
-      return
-    }
-
-    const entryAmount = Number(amount)
-
-    if (!description || !entryAmount) {
-      setMessage('Completa descripción y monto.')
-      return
-    }
-
-    const newBalance =
-      entryType === 'income'
-        ? Number(selectedAccount.balance || 0) + entryAmount
-        : Number(selectedAccount.balance || 0) - entryAmount
-
-    const { error: entryError } = await supabase.from('quick_entries').insert({
-      description,
-      amount: entryAmount,
-      category,
-      entry_type: entryType,
-      owner,
-      source: 'manual',
-      account_id: selectedAccount.id,
-      account_name: selectedAccount.name,
-    })
-
-    if (entryError) {
-      setMessage(entryError.message)
-      return
-    }
-
-    const { error: accountError } = await supabase
-      .from('accounts')
-      .update({ balance: newBalance })
-      .eq('id', selectedAccount.id)
-
-    if (accountError) {
-      setMessage(accountError.message)
-      return
-    }
-
-    setDescription('')
-    setAmount('')
-    setMessage('Entrada guardada y balance actualizado ✅')
-    loadAccounts()
-  }
-
   return (
     <main className="p-8 space-y-6">
       <h1 className="text-3xl font-bold">⚡ Quick Entry</h1>
 
       <Nav />
+
+      <div className="border rounded p-4">
+        Modo seguro: esta página legacy está en solo lectura. Las entradas
+        manuales deben pasar por un flujo autenticado antes de escribir al
+        historial.
+      </div>
 
       <div className="space-y-4 max-w-md">
         <select
@@ -153,8 +109,8 @@ export default function QuickEntryPage() {
           <option value="Soraya">Soraya</option>
         </select>
 
-        <button className="border rounded p-2 w-full" onClick={saveEntry}>
-          Guardar
+        <button className="border rounded p-2 w-full" disabled>
+          Guardar deshabilitado
         </button>
 
         {message && <p>{message}</p>}

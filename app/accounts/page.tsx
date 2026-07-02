@@ -1,5 +1,7 @@
 'use client'
 
+/* eslint-disable @typescript-eslint/no-explicit-any, react-hooks/set-state-in-effect */
+
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import Nav from '../components/Nav'
@@ -37,39 +39,6 @@ export default function AccountsPage() {
 
     setAccounts(manualData || [])
     setPlaidAccounts(plaidData || [])
-  }
-
-  async function updateBalance(id: string, balance: number) {
-    const { error } = await supabase
-      .from('accounts')
-      .update({ balance })
-      .eq('id', id)
-
-    if (error) {
-      setMessage(error.message)
-      return
-    }
-
-    setMessage('Balance actualizado ✅')
-    loadAccounts()
-  }
-
-  async function syncPlaidAccounts() {
-    setMessage('Actualizando balances de Plaid...')
-
-    const response = await fetch('/api/plaid/sync-accounts', {
-      method: 'POST',
-    })
-
-    const data = await response.json()
-
-    if (data.error) {
-      setMessage(data.error)
-      return
-    }
-
-    setMessage(`Balances actualizados ✅ Cuentas: ${data.synced_accounts}`)
-    loadAccounts()
   }
 
   useEffect(() => {
@@ -133,8 +102,13 @@ export default function AccountsPage() {
 
       <Nav />
 
-      <button className="border rounded p-3" onClick={syncPlaidAccounts}>
-        🔄 Actualizar balances Plaid
+      <div className="border rounded p-4">
+        Modo seguro: esta página legacy está en solo lectura. La actualización
+        de balances debe pasar por APIs autenticadas y scoped por usuario.
+      </div>
+
+      <button className="border rounded p-3" disabled>
+        🔄 Actualizar balances Plaid deshabilitado
       </button>
 
       {message && <p>{message}</p>}
@@ -223,7 +197,6 @@ export default function AccountsPage() {
           <AccountCard
             key={account.id}
             account={account}
-            onSave={updateBalance}
           />
         ))}
       </section>
@@ -233,10 +206,8 @@ export default function AccountsPage() {
 
 function AccountCard({
   account,
-  onSave,
 }: {
   account: any
-  onSave: (id: string, balance: number) => void
 }) {
   const [balance, setBalance] = useState(account.balance || 0)
 
@@ -257,9 +228,9 @@ function AccountCard({
 
       <button
         className="border rounded p-2"
-        onClick={() => onSave(account.id, Number(balance))}
+        disabled
       >
-        Guardar balance
+        Guardar balance deshabilitado
       </button>
     </div>
   )

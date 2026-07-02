@@ -1,6 +1,6 @@
 # Sprint Log
 
-Last updated: 2026-06-26
+Last updated: 2026-07-02
 
 ## Sprint Review
 
@@ -56,6 +56,14 @@ Progreso definido:
 
 ## Pendiente
 
+- Backlog P0/P1 futuro, no implementado todavia: agregar obligaciones Honda y Toyota al Payment Lifecycle mediante el Financial Engine, no con logica de pagina.
+- Backlog P1 futuro, no implementado todavia: mejorar visibilidad credito vs debito en Dashboard y Spending desde un helper compartido del Financial Engine.
+- Backlog P1 futuro, no implementado todavia: planificar Robototina v2 como asistente accionable que proponga decisiones, explique tradeoffs y pida confirmacion, no como beta message board.
+- Backlog P1 futuro, no implementado todavia: preparar modelo de household/owners para visibilidad de Soraya, FirstBank y Vec Solutions sin duplicar logica por pagina.
+- Backlog P0 futuro, no implementado todavia: antes de usar FirstBank Soraya en produccion, agregar owner labeling para cuentas Plaid depository y conectarlo al modelo household.
+- Backlog P1 futuro, no implementado todavia: Financial Categories v2 debe agregar Sports, reclasificar servicios recurrentes de Amazon como Subscriptions, organizar categorias por grupos logicos, permitir que Merchant Learning aprenda categoria desde confirmaciones y mantener categorias genericas para finanzas del household.
+- Backlog P1 futuro, no implementado todavia: Plaid Sync v2 debe persistir transaction sync cursor por conexion y evaluar migrar unicidad de imports a `(user_id, plaid_transaction_id)` en vez de depender de unicidad global del Plaid transaction id.
+- Regla para estos backlog items: todo debe fluir por Financial Engine o motores derivados, no por calculos locales en Dashboard, Spending, Planning, Timeline, Cards ni Robototina.
 - Rediseñar Accounts como superficie unificada de assets con mutaciones separadas.
 - Definir si Cashflow debe seguir usando `scheduled_payments` o migrar a `payment_instances`.
 - Renombrar Pablo a Robototina en UI y dominio cuando se planifique el cambio.

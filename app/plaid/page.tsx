@@ -1,7 +1,9 @@
 import { requireUser } from '@/lib/auth/requireUser'
 import type { Metadata } from 'next'
 import Nav from '../components/Nav'
+import InstitutionLogo from '../components/InstitutionLogo'
 import ConnectPlaidButton from './ConnectPlaidButton'
+import PlaidSyncActions from './PlaidSyncActions'
 
 export const metadata: Metadata = {
   title: 'Bancos conectados | Mansor One',
@@ -15,6 +17,14 @@ type PlaidConnection = {
   encrypted_access_token: string | null
 }
 
+type PlaidAccountSyncRow = {
+  updated_at: string | null
+}
+
+type PlaidImportSyncRow = {
+  transaction_date: string | null
+}
+
 function formatDate(dateString: string | null) {
   if (!dateString) return 'Sin fecha'
 
@@ -25,13 +35,47 @@ function formatDate(dateString: string | null) {
 }
 
 export default async function PlaidPage() {
-  const { supabase } = await requireUser()
-  const { data: connections, error } = await supabase
-    .from('plaid_connections')
-    .select('id, institution_name, created_at, user_id, encrypted_access_token')
-    .order('created_at', { ascending: false })
+  const { supabase, user } = await requireUser()
+  const [
+    connectionsResult,
+    accountSyncResult,
+    importSyncResult,
+    importCountResult,
+  ] = await Promise.all([
+    supabase
+      .from('plaid_connections')
+      .select('id, institution_name, created_at, user_id, encrypted_access_token')
+      .eq('user_id', user.id)
+      .order('created_at', { ascending: false }),
+    supabase
+      .from('plaid_accounts')
+      .select('updated_at')
+      .eq('user_id', user.id)
+      .not('updated_at', 'is', null)
+      .order('updated_at', { ascending: false })
+      .limit(1),
+    supabase
+      .from('plaid_imports')
+      .select('transaction_date')
+      .eq('user_id', user.id)
+      .order('transaction_date', { ascending: false })
+      .limit(1),
+    supabase
+      .from('plaid_imports')
+      .select('id', { count: 'exact', head: true })
+      .eq('user_id', user.id)
+      .eq('imported', false),
+  ])
 
+  const connections = connectionsResult.data
+  const error = connectionsResult.error
   const safeConnections = connections || []
+  const latestAccountSync =
+    ((accountSyncResult.data || []) as PlaidAccountSyncRow[])[0]?.updated_at ||
+    null
+  const latestImportDate =
+    ((importSyncResult.data || []) as PlaidImportSyncRow[])[0]?.transaction_date ||
+    null
 
   return (
     <main className="min-h-screen bg-neutral-950 px-4 py-6 text-neutral-100 md:px-8">
@@ -51,6 +95,12 @@ export default async function PlaidPage() {
         </header>
 
         <ConnectPlaidButton />
+
+        <PlaidSyncActions
+          lastAccountSync={latestAccountSync}
+          lastTransactionDate={latestImportDate}
+          pendingImportCount={importCountResult.count ?? 0}
+        />
 
         <section className="space-y-4">
           <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
@@ -94,13 +144,16 @@ export default async function PlaidPage() {
                   className="space-y-4 rounded border border-neutral-800 bg-neutral-900 p-5 shadow-sm"
                 >
                   <div className="flex items-start justify-between gap-4">
-                    <div>
-                      <p className="text-xs uppercase tracking-wide text-neutral-500">
-                        Institución
-                      </p>
-                      <h3 className="mt-1 text-xl font-semibold">
-                        {institution}
-                      </h3>
+                    <div className="flex min-w-0 items-start gap-3">
+                      <InstitutionLogo institution={institution} />
+                      <div className="min-w-0">
+                        <p className="text-xs uppercase tracking-wide text-neutral-500">
+                          Institución
+                        </p>
+                        <h3 className="mt-1 truncate text-xl font-semibold">
+                          {institution}
+                        </h3>
+                      </div>
                     </div>
                     <span
                       className={`rounded-full border px-3 py-1 text-sm ${statusClasses}`}
