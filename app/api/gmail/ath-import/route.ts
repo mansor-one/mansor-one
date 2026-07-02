@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { requireUser } from '@/lib/auth/requireUser'
+import { requireApiUser } from '@/lib/auth/requireApiUser'
 import { createServerSupabase } from '@/lib/supabase/server'
 import { createClient } from '@supabase/supabase-js'
 
@@ -130,7 +130,9 @@ function parseAthEmail(subject: string, snippet: string, rules: AthRule[] = []) 
 export async function GET() {
   try {
     const { supabase } = await createServerSupabase()
-    const { user } = await requireUser(supabase)
+    const auth = await requireApiUser(supabase)
+    if (!auth.ok) return auth.response
+    const { user } = auth
     const accessToken = await getGoogleAccessToken()
     const q = encodeURIComponent('from:info@notifications.evertecinc.com')
 

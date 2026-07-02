@@ -1,3 +1,12 @@
+import {
+  getObligationsSummary,
+  type EnrichedObligationInstance,
+} from '../financial-engine/obligations'
+import type {
+  FinancialSupabaseClient,
+  PaymentInstance,
+} from '../financial-engine/types'
+
 export const PAYMENT_LIFECYCLE_STATES = [
   'pending',
   'initiated',
@@ -57,6 +66,10 @@ export type PaymentLifecycleSnapshot = {
   isTerminal: boolean
   daysFromDueDate: number | null
   reasons: string[]
+}
+
+export type ObligationLifecyclePaymentOptions = {
+  today?: string
 }
 
 function dateOnly(value: string | null | undefined) {
@@ -130,4 +143,143 @@ export function buildPaymentLifecycleSnapshot({
     daysFromDueDate,
     reasons,
   }
+}
+
+function dateParts(value: string | null | undefined) {
+  if (!value) return { month: null, year: null }
+
+  const [year, month] = value.slice(0, 10).split('-').map(Number)
+
+  return {
+    month: Number.isFinite(month) ? month : null,
+    year: Number.isFinite(year) ? year : null,
+  }
+}
+
+function obligationStatusForLifecycle(instance: EnrichedObligationInstance) {
+  const status = String(instance.status || '').toLowerCase()
+
+  if (status === 'cancelled' || status === 'canceled') return 'cancelled'
+  if (status === 'closed' || status === 'confirmed') return status
+  if (status === 'initiated') return 'initiated'
+
+  return 'pending'
+}
+
+function obligationLifecycleReasons(instance: EnrichedObligationInstance) {
+  const reasons: string[] = []
+
+  if (instance.isEstimated) {
+    reasons.push('Obligation amount is estimated.')
+  }
+
+  if (instance.isInGracePeriod) {
+    reasons.push('Obligation is inside its grace period.')
+  }
+
+  if (instance.provider) {
+    reasons.push(`Current provider is ${instance.provider.provider_name}.`)
+  }
+
+  return reasons
+}
+
+function compactNotes(...notes: Array<string | null | undefined>) {
+  const parts = notes
+    .map((note) => String(note || '').trim())
+    .filter(Boolean)
+
+  return parts.length ? parts.join(' | ') : null
+}
+
+function friendlyObligationNotes(instance: EnrichedObligationInstance) {
+  const description = String(instance.obligation.description || '').trim()
+
+  return description || null
+}
+
+function legacySourceIdsFromText(value: string | null | undefined) {
+  const text = String(value || '')
+  const matches = text.matchAll(
+    /\b(?:scheduled_payments|liabilities)\.[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi
+  )
+
+  return Array.from(new Set(Array.from(matches, (match) => match[0])))
+}
+
+export function obligationInstanceToLifecyclePayment(
+  instance: EnrichedObligationInstance,
+  today?: string
+): PaymentInstance {
+  const { month, year } = dateParts(instance.expected_date)
+  const notes = compactNotes(instance.notes, instance.obligation.notes)
+  const snapshot = buildPaymentLifecycleSnapshot({
+    status: obligationStatusForLifecycle(instance),
+    effectiveDueDate: instance.effective_due_date,
+    today,
+  })
+  const extraReasons = obligationLifecycleReasons(instance)
+
+  return {
+    id: `obligation:${instance.id}`,
+    name: instance.obligation.name,
+    amount: Number(
+      instance.amount_expected ?? instance.obligation.default_amount ?? 0
+    ),
+    status: obligationStatusForLifecycle(instance),
+    owner: instance.obligation.owner,
+    expected_date: instance.expected_date,
+    effective_due_date: instance.effective_due_date,
+    grace_due_date: instance.effective_due_date,
+    updated_at: instance.updated_at,
+    notes,
+    displayNotes: friendlyObligationNotes(instance),
+    payment_month: month,
+    payment_year: year,
+    scheduled_payment_id: null,
+    source: 'obligation',
+    lifecycleItemType: 'obligation',
+    obligationId: instance.obligation_id,
+    obligationInstanceId: instance.id,
+    obligationProviderId: instance.provider_id,
+    obligationType: instance.obligation.obligation_type,
+    obligationCategoryCode: instance.obligation.category_code,
+    obligationProviderName: instance.provider?.provider_name || null,
+    paymentMethod:
+      instance.provider?.payment_method ||
+      instance.obligation.payment_method ||
+      null,
+    legacySourceIds: legacySourceIdsFromText(notes),
+    isEstimated: instance.isEstimated,
+    isInGracePeriod: instance.isInGracePeriod,
+    lifecycleState: snapshot.state,
+    lifecycleLabel: snapshot.label,
+    lifecycleIsOpen: snapshot.isOpen,
+    lifecycleIsClosed: snapshot.state === 'closed',
+    isOverdue: snapshot.state === 'overdue',
+    daysFromDueDate: snapshot.daysFromDueDate,
+    lifecycleReasons: [...snapshot.reasons, ...extraReasons],
+    lifecycleReconciliationConfidence: null,
+    lifecycleMatchedTransaction: null,
+    lifecycleReconciliationReasons:
+      snapshot.state === 'overdue'
+        ? [
+            'No confirmed ledger transaction is linked to this obligation instance.',
+          ]
+        : [],
+  }
+}
+
+export async function getObligationLifecyclePaymentItems(
+  supabase: FinancialSupabaseClient,
+  userId: string,
+  options: ObligationLifecyclePaymentOptions = {}
+): Promise<PaymentInstance[]> {
+  const summary = await getObligationsSummary(supabase, userId, {
+    today: options.today,
+  })
+
+  return summary.allInstances.map((instance) =>
+    obligationInstanceToLifecyclePayment(instance, summary.asOfDate)
+  )
 }

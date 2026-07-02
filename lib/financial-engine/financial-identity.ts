@@ -348,15 +348,22 @@ export function analyzeFinancialIdentity(
     }
   }
 
+  const amount = Math.abs(Number(input.amount || 0))
+  const looksLikeAmazonSubscription =
+    normalizedName.includes('AMAZON') &&
+    (includesAny(normalizedName, ['AMAZON PRIME', 'AMAZON DIGITAL', 'AMZN DIGITAL']) ||
+      Math.abs(amount - 8.35) < 0.01)
+
   if (
-    includesAny(normalizedName, ['OPENAI', 'APPLE', 'NINTENDO'])
+    includesAny(normalizedName, ['OPENAI', 'APPLE', 'NINTENDO']) ||
+    looksLikeAmazonSubscription
   ) {
     return {
       normalizedIdentity: normalizedName,
       identityType: 'subscription',
       confidence: 0.72,
       shouldReview: false,
-      canonicalCategoryCode: null,
+      canonicalCategoryCode: 'subscriptions',
       reasons: [...reasons, 'Merchant pattern = subscription.'],
     }
   }

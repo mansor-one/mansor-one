@@ -1,8 +1,14 @@
 import { requireUser } from '@/lib/auth/requireUser'
+import {
+  friendlyLifecyclePaymentNotes,
+  lifecyclePaymentDueDate,
+  lifecyclePaymentGraceUntilDate,
+} from '@/lib/finance/lifecycleDisplay'
 import type { Metadata } from 'next'
 import {
   canonicalCategoryCodeForText,
   commonMerchantDefaultCategoryCode,
+  type FinancialAsset,
   getCategoryByCode,
   getDashboardSummary,
   getPortfolioSummary,
@@ -66,8 +72,53 @@ function money(value: unknown) {
   })}`
 }
 
+function numberOrNull(value: unknown) {
+  if (value === null || value === undefined) return null
+
+  const number = Number(value)
+  return Number.isFinite(number) ? number : null
+}
+
 function dateOnly(date: Date) {
   return date.toISOString().slice(0, 10)
+}
+
+function formatDateTime(value: unknown) {
+  if (typeof value !== 'string' || !value) return 'No sync timestamp'
+
+  const date = new Date(value)
+  if (!Number.isFinite(date.getTime())) return 'Invalid sync timestamp'
+
+  return date.toLocaleString('es-PR', {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  })
+}
+
+function syncAgeMs(asset: FinancialAsset, now: Date) {
+  const updatedAt = asset.metadata.updatedAt
+  if (typeof updatedAt !== 'string' || !updatedAt) return null
+
+  const updatedAtTime = new Date(updatedAt).getTime()
+  if (!Number.isFinite(updatedAtTime)) return null
+
+  return now.getTime() - updatedAtTime
+}
+
+function isStaleCashSync(asset: FinancialAsset, now: Date) {
+  const ageMs = syncAgeMs(asset, now)
+
+  return ageMs !== null && ageMs > 24 * 60 * 60 * 1000
+}
+
+function cashIncludedReason(asset: FinancialAsset) {
+  if (asset.isConnected) {
+    return asset.usableBalance === null
+      ? 'Included as connected liquid cash; no usable balance available.'
+      : 'Included as connected depository/cash; usable = lower of available and current balance.'
+  }
+
+  return 'Included as active manual account marked spendable.'
 }
 
 function daysBetween(from: Date, toDateString: string | null | undefined) {
@@ -89,7 +140,8 @@ function categoryFromCode(code: string | null) {
 function resolvedCategoryCode(transaction: LedgerSummaryTransaction) {
   const ledgerCategoryCode = canonicalCategoryCodeForText(transaction.category)
   const merchantDefaultCode = commonMerchantDefaultCategoryCode(
-    transaction.description
+    transaction.description,
+    { amount: transaction.amount }
   )
   const ledgerCategory = categoryFromCode(ledgerCategoryCode)
   const merchantDefault = categoryFromCode(merchantDefaultCode)
@@ -415,6 +467,88 @@ function robototinaBriefing({
   return lines
 }
 
+function CashBalanceBreakdown({
+  accounts,
+  now,
+}: {
+  accounts: FinancialAsset[]
+  now: Date
+}) {
+  const staleAccounts = accounts.filter((account) =>
+    isStaleCashSync(account, now)
+  )
+
+  return (
+    <details className="mt-4 rounded border border-neutral-700 bg-neutral-950/50 p-3">
+      <summary className="cursor-pointer text-sm font-semibold text-neutral-100">
+        Ver cuentas incluidas ({accounts.length})
+      </summary>
+
+      <div className="mt-3 space-y-3">
+        {staleAccounts.length > 0 && (
+          <div className="rounded border border-amber-700 bg-amber-950/40 p-3 text-xs text-amber-100">
+            {staleAccounts.length === 1
+              ? '1 cuenta incluida tiene balance stale.'
+              : `${staleAccounts.length} cuentas incluidas tienen balance stale.`}{' '}
+            Revisa la hora de sincronización antes de tomar decisiones de cash.
+          </div>
+        )}
+
+        {accounts.map((account) => {
+          const updatedAt = account.metadata.updatedAt
+          const stale = isStaleCashSync(account, now)
+          const availableBalance = numberOrNull(account.availableBalance)
+          const currentBalance = numberOrNull(account.balance)
+          const usableBalance = numberOrNull(account.usableBalance)
+
+          return (
+            <div
+              className="rounded border border-neutral-800 bg-neutral-950/60 p-3 text-sm"
+              key={account.id}
+            >
+              <div className="flex flex-col gap-1 md:flex-row md:items-start md:justify-between">
+                <div>
+                  <p className="font-semibold">
+                    {account.institution || 'Manual'} ·{' '}
+                    {account.name || 'Cuenta sin nombre'}
+                  </p>
+                  <p className="text-xs text-neutral-400">
+                    {cashIncludedReason(account)}
+                  </p>
+                </div>
+                {stale && (
+                  <span className="w-fit rounded border border-amber-700 px-2 py-1 text-xs text-amber-100">
+                    Stale sync
+                  </span>
+                )}
+              </div>
+
+              <div className="mt-3 grid grid-cols-2 gap-3 text-xs md:grid-cols-4">
+                <div>
+                  <p className="text-neutral-400">Usable</p>
+                  <p className="font-bold">{money(usableBalance)}</p>
+                </div>
+                <div>
+                  <p className="text-neutral-400">Available</p>
+                  <p className="font-bold">{money(availableBalance)}</p>
+                </div>
+                <div>
+                  <p className="text-neutral-400">Current</p>
+                  <p className="font-bold">{money(currentBalance)}</p>
+                </div>
+                <div>
+                  <p className="text-neutral-400">Last synced</p>
+                  <p className="font-bold">{formatDateTime(updatedAt)}</p>
+                </div>
+              </div>
+            </div>
+          )
+        })}
+      </div>
+    </details>
+  )
+}
+
 export default async function Home() {
   const { supabase, user } = await requireUser()
   const now = new Date()
@@ -483,9 +617,11 @@ export default async function Home() {
         String(b.effective_due_date || '')
       )
     )
-  const paymentLights = upcomingPayments.map((payment) =>
+  const upcomingPaymentCards = upcomingPayments.map((payment) =>
     paymentTrafficLight(payment, now)
   )
+  const paymentLights = upcomingPaymentCards
+    .slice()
     .sort(
       (a, b) =>
         tonePriority(a.tone) - tonePriority(b.tone) ||
@@ -515,6 +651,7 @@ export default async function Home() {
     topCategory,
     monthlySpent,
   })
+  const includedCashAccounts = portfolioSummary.liquidAssets
   const lastUpdated = now.toLocaleString('es-PR', {
     dateStyle: 'medium',
     timeStyle: 'short',
@@ -562,6 +699,7 @@ export default async function Home() {
               {toneDot(health.tone)} {health.label}
             </p>
             <p className="mt-1 text-xs text-neutral-300">{health.detail}</p>
+            <CashBalanceBreakdown accounts={includedCashAccounts} now={now} />
           </div>
           <SummaryCard
             label="Gastado este mes"
@@ -843,11 +981,11 @@ export default async function Home() {
           </section>
         </div>
 
-        {paymentLights.length > 0 && (
+        {upcomingPaymentCards.length > 0 && (
           <section className="rounded-lg border border-neutral-800 bg-neutral-900 p-4">
             <h2 className="mb-4 text-xl font-bold">Próximos pagos</h2>
             <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
-              {paymentLights.map((item) => (
+              {upcomingPaymentCards.map((item) => (
                 <div
                   className={`rounded border p-3 ${toneClasses(item.tone)}`}
                   key={item.payment.id}
@@ -855,14 +993,36 @@ export default async function Home() {
                   <p className="font-medium">
                     {toneDot(item.tone)} {item.payment.name || 'Pago'}
                   </p>
+                  {(() => {
+                    const dueDate = lifecyclePaymentDueDate(item.payment)
+                    const graceUntilDate = lifecyclePaymentGraceUntilDate(
+                      item.payment
+                    )
+                    const notes = friendlyLifecyclePaymentNotes(item.payment)
+
+                    return (
+                      <>
+                        <p className="text-sm text-neutral-400">
+                          Vence: {dueDate || 'Sin fecha'}
+                        </p>
+                        {graceUntilDate && (
+                          <p className="text-sm text-neutral-400">
+                            Gracia hasta: {graceUntilDate}
+                          </p>
+                        )}
+                        {notes && (
+                          <p className="text-sm text-neutral-300">
+                            {notes}
+                          </p>
+                        )}
+                      </>
+                    )
+                  })()}
                   <p className="text-sm text-neutral-400">
-                    Fecha {item.payment.effective_due_date || 'Sin fecha'}
-                  </p>
-                  <p className="text-sm text-neutral-300">
                     {item.label}
                   </p>
                   <p className="mt-2 text-lg font-bold">
-                    {money(item.payment.amount)}
+                    Monto: {money(item.payment.amount)}
                   </p>
                 </div>
               ))}

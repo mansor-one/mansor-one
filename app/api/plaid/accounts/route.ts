@@ -1,11 +1,13 @@
 import { NextResponse } from 'next/server'
 import { createServerSupabase } from '@/lib/supabase/server'
-import { requireUser } from '@/lib/auth/requireUser'
+import { requireApiUser } from '@/lib/auth/requireApiUser'
 
 export async function GET() {
   try {
     const { supabase } = await createServerSupabase()
-    const { user } = await requireUser(supabase)
+    const auth = await requireApiUser(supabase)
+    if (!auth.ok) return auth.response
+    const { user } = auth
 
     const { data, error } = await supabase
       .from('plaid_accounts')

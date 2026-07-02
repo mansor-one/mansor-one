@@ -65,15 +65,19 @@ Progreso definido:
 - ADR-019 agregado: Mansor One es household finance.
 - Obligations v1 foundation agregado como migracion schema-only con RLS, sin UI, sin seed y sin migrar `scheduled_payments`.
 - ADR-020 agregado: Obligations es dominio separado de `scheduled_payments`.
+- Project Phoenix Legacy Retirement plan agregado como diseno audit-only: mapping row-by-row, batches de migracion, duplicados Honda/Guagua e Hipoteca, cards diferidos al dominio Cards y planning/future items retenidos en `planning_items`.
 
 ## Pendiente
 
 - Backlog P0/P1 futuro, no implementado todavia: agregar obligaciones Honda y Toyota al Payment Lifecycle mediante el Financial Engine, no con logica de pagina.
+- Backlog P0 futuro, no implementado todavia: ejecutar Project Phoenix por batches con scripts revisados, sin borrar tablas legacy hasta completar parity checks del Financial Engine y links historicos.
 - Backlog P1 futuro, no implementado todavia: mejorar visibilidad credito vs debito en Dashboard y Spending desde un helper compartido del Financial Engine.
 - Backlog P1 futuro, no implementado todavia: planificar Robototina v2 como asistente accionable que proponga decisiones, explique tradeoffs y pida confirmacion, no como beta message board.
 - Backlog P1 futuro, no implementado todavia: preparar modelo de household/owners para visibilidad de Soraya, FirstBank y Vec Solutions sin duplicar logica por pagina.
 - Backlog P0 futuro, no implementado todavia: antes de usar FirstBank Soraya en produccion, agregar owner labeling para cuentas Plaid depository y conectarlo al modelo household.
 - Backlog P1 futuro, no implementado todavia: Financial Categories v2 debe agregar Sports, reclasificar servicios recurrentes de Amazon como Subscriptions, organizar categorias por grupos logicos, permitir que Merchant Learning aprenda categoria desde confirmaciones y mantener categorias genericas para finanzas del household.
+- Backlog P0 futuro, no implementado todavia: dejar de usar solamente el signo del monto para definir `quick_entries.entry_type`; entry type debe derivarse de categoria canonica, identidad financiera o decision confirmada.
+- Backlog P1 futuro, no implementado todavia: agregar flag explicito de exclusion para cuentas manuales para separar cuenta activa de cuenta incluida en `Disponible hoy`.
 - Backlog P1 futuro, no implementado todavia: Plaid Sync v2 debe persistir transaction sync cursor por conexion y evaluar migrar unicidad de imports a `(user_id, plaid_transaction_id)` en vez de depender de unicidad global del Plaid transaction id.
 - Backlog P1 futuro, no implementado todavia: Planning/Obligations debe separar obligacion recurrente de vendor/proveedor actual para servicios del hogar como recorte de grama y fumigacion; cambiar proveedor no debe borrar ni reescribir pagos historicos.
 - Regla para estos backlog items: todo debe fluir por Financial Engine o motores derivados, no por calculos locales en Dashboard, Spending, Planning, Timeline, Cards ni Robototina.

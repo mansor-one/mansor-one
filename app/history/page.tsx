@@ -24,7 +24,8 @@ function categoryFromCode(code: string | null) {
 function resolvedCategoryCode(transaction: LedgerSummaryTransaction) {
   const ledgerCategoryCode = canonicalCategoryCodeForText(transaction.category)
   const merchantDefaultCode = commonMerchantDefaultCategoryCode(
-    transaction.description
+    transaction.description,
+    { amount: transaction.amount }
   )
   const ledgerCategory = categoryFromCode(ledgerCategoryCode)
   const merchantDefault = categoryFromCode(merchantDefaultCode)

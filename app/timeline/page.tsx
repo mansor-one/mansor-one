@@ -1,4 +1,9 @@
 import { requireUser } from '@/lib/auth/requireUser'
+import {
+  friendlyLifecyclePaymentNotes,
+  lifecyclePaymentDueDate,
+  lifecyclePaymentGraceUntilDate,
+} from '@/lib/finance/lifecycleDisplay'
 import { getDashboardSummary } from '@/lib/financial-engine'
 import { createServerSupabase } from '@/lib/supabase/server'
 import type { Metadata } from 'next'
@@ -21,6 +26,8 @@ type TimelineEvent = {
   type: 'income' | 'payment'
   status: string
   notes: string
+  dueDate: string
+  graceUntilDate: string | null
 }
 
 export default async function TimelinePage() {
@@ -40,6 +47,8 @@ export default async function TimelinePage() {
         type: 'income',
         status: 'confirmed',
         notes: '',
+        dueDate: income.next_expected_date || '',
+        graceUntilDate: null,
       })) || []
 
   const paymentEvents =
@@ -55,7 +64,9 @@ export default async function TimelinePage() {
         amount: -Number(payment.amount || 0),
         type: 'payment',
         status: payment.lifecycleLabel || payment.status || 'pending',
-        notes: payment.notes || '',
+        notes: friendlyLifecyclePaymentNotes(payment) || '',
+        dueDate: lifecyclePaymentDueDate(payment) || payment.effective_due_date,
+        graceUntilDate: lifecyclePaymentGraceUntilDate(payment),
       })) || []
 
   const events = [...incomeEvents, ...paymentEvents].sort((a, b) => {
@@ -133,7 +144,14 @@ export default async function TimelinePage() {
               {event.type === 'income' ? '🟢' : '🔴'} {event.title}
             </h2>
 
-            <p>Fecha: {formatDate(event.date)}</p>
+            <p>
+              {event.type === 'payment' ? 'Vence' : 'Fecha'}:{' '}
+              {formatDate(event.dueDate)}
+            </p>
+
+            {event.graceUntilDate && (
+              <p>Gracia hasta: {formatDate(event.graceUntilDate)}</p>
+            )}
 
             <p>
               Monto: {event.amount >= 0 ? '+' : '-'}$

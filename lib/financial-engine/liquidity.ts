@@ -11,7 +11,10 @@ import {
   type ReconciliationPaymentInstance,
   type ReconciliationTransaction,
 } from './reconciliation'
-import { buildPaymentLifecycleSnapshot } from '../finance/paymentLifecycle'
+import {
+  buildPaymentLifecycleSnapshot,
+  getObligationLifecyclePaymentItems,
+} from '../finance/paymentLifecycle'
 import type {
   ConnectedAccount,
   FinancialAsset,
@@ -353,11 +356,95 @@ function withLifecycle(
 }
 
 function lifecyclePaymentScheduleKey(payment: PaymentInstance) {
+  if (payment.source === 'obligation') {
+    return payment.obligationInstanceId || payment.id
+  }
+
   return (
     payment.scheduled_payment_id ||
     normalizePaymentName(payment.name) ||
     payment.id
   )
+}
+
+const PROJECT_PHOENIX_MIGRATED_SCHEDULE_ALIASES: Record<string, string[]> = {
+  'honda soraya': ['guagua soraya'],
+  'hipoteca casa cayey': ['hipoteca'],
+}
+
+function legacyScheduledIdsFromPayment(payment: PaymentInstance) {
+  const ids = new Set<string>()
+
+  for (const sourceId of payment.legacySourceIds || []) {
+    const match = sourceId.match(
+      /^scheduled_payments\.([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i
+    )
+
+    if (match) ids.add(match[1])
+  }
+
+  return ids
+}
+
+function paymentAmountMatches(left: PaymentInstance, right: PaymentInstance) {
+  return Math.round(Number(left.amount || 0) * 100) ===
+    Math.round(Number(right.amount || 0) * 100)
+}
+
+function paymentCycleDateMatches(left: PaymentInstance, right: PaymentInstance) {
+  return Boolean(
+    left.effective_due_date &&
+      right.effective_due_date &&
+      left.effective_due_date === right.effective_due_date
+  )
+}
+
+function paymentNameMatchesMigratedAlias(
+  legacyPayment: PaymentInstance,
+  obligationPayment: PaymentInstance
+) {
+  const obligationName = normalizePaymentName(obligationPayment.name)
+  const legacyName = normalizePaymentName(legacyPayment.name)
+  const aliases = PROJECT_PHOENIX_MIGRATED_SCHEDULE_ALIASES[obligationName] || []
+
+  return aliases.includes(legacyName)
+}
+
+function migratedObligationMatchesLegacyPayment(
+  legacyPayment: PaymentInstance,
+  obligationPayment: PaymentInstance
+) {
+  if (obligationPayment.source !== 'obligation') return false
+  if (legacyPayment.source === 'obligation') return false
+  if (!paymentAmountMatches(legacyPayment, obligationPayment)) return false
+  if (!paymentCycleDateMatches(legacyPayment, obligationPayment)) return false
+
+  const legacyScheduledIds = legacyScheduledIdsFromPayment(obligationPayment)
+
+  if (
+    legacyPayment.scheduled_payment_id &&
+    legacyScheduledIds.has(legacyPayment.scheduled_payment_id)
+  ) {
+    return true
+  }
+
+  return paymentNameMatchesMigratedAlias(legacyPayment, obligationPayment)
+}
+
+function removeMigratedLegacyLifecycleDuplicates(payments: PaymentInstance[]) {
+  const obligationPayments = payments.filter(
+    (payment) => payment.source === 'obligation'
+  )
+
+  if (!obligationPayments.length) return payments
+
+  return payments.filter((payment) => {
+    if (payment.source === 'obligation') return true
+
+    return !obligationPayments.some((obligationPayment) =>
+      migratedObligationMatchesLegacyPayment(payment, obligationPayment)
+    )
+  })
 }
 
 function earliestOpenCyclePerSchedule(payments: PaymentInstance[]) {
@@ -395,6 +482,9 @@ function expectedScheduledPayment(
       payment_year: year,
       scheduled_payment_id: scheduledPayment.id,
       source: 'scheduled_payment',
+      lifecycleItemType: scheduledPayment.credit_card_id
+        ? 'card_payment'
+        : 'scheduled_payment',
     },
     today
   )
@@ -405,6 +495,7 @@ export function buildPaymentLifecycleView({
   allPayments,
   scheduledPayments,
   confirmedLedgerEntries,
+  obligationPayments = [],
   month,
   year,
   today,
@@ -413,14 +504,29 @@ export function buildPaymentLifecycleView({
   allPayments: PaymentInstance[]
   scheduledPayments: ScheduledPayment[]
   confirmedLedgerEntries: LedgerSummaryTransaction[]
+  obligationPayments?: PaymentInstance[]
   month: number
   year: number
   today: string
 }) {
-  const currentLifecyclePayments = currentPayments.map((payment) => ({
-    ...payment,
-    source: 'payment_instance' as const,
-  }))
+  const scheduledPaymentById = new Map(
+    scheduledPayments.map((payment) => [payment.id, payment])
+  )
+  const currentLifecyclePayments = currentPayments.map((payment) => {
+    const schedule = payment.scheduled_payment_id
+      ? scheduledPaymentById.get(payment.scheduled_payment_id)
+      : null
+
+    return {
+      ...payment,
+      source: 'payment_instance' as const,
+      lifecycleItemType: schedule?.credit_card_id
+        ? 'card_payment' as const
+        : payment.scheduled_payment_id
+        ? 'scheduled_payment' as const
+        : payment.lifecycleItemType,
+    }
+  })
 
   const expectedPayments = scheduledPayments
     .filter((payment) => scheduledPaymentActiveForMonth(payment, month))
@@ -467,7 +573,11 @@ export function buildPaymentLifecycleView({
     withLifecycle(payment, today, matchesByPaymentId.get(payment.id) || null)
   )
 
-  const sortedPayments = annotatedPayments.sort((a, b) =>
+  const bridgedPayments = removeMigratedLegacyLifecycleDuplicates([
+    ...annotatedPayments,
+    ...obligationPayments,
+  ])
+  const sortedPayments = bridgedPayments.sort((a, b) =>
     String(a.effective_due_date || '').localeCompare(
       String(b.effective_due_date || '')
     )
@@ -492,6 +602,7 @@ export async function getLiquiditySummary(
     scheduledPayments,
     incomeSchedule,
     ledgerSummary,
+    obligationLifecyclePayments,
   ] = await Promise.all([
     getPortfolioSummary(supabase, userId),
     getConnectedAssets(supabase, userId),
@@ -502,6 +613,7 @@ export async function getLiquiditySummary(
     getActiveScheduledPayments(supabase),
     getActiveIncomeSchedule(supabase),
     getLedgerSummary(supabase, userId),
+    getObligationLifecyclePaymentItems(supabase, userId),
   ])
 
   const connectedAccounts = connectedAssets.map(assetAsConnectedAccount)
@@ -547,6 +659,7 @@ export async function getLiquiditySummary(
     allPayments,
     scheduledPayments,
     confirmedLedgerEntries: ledgerSummary.confirmedLedgerEntries,
+    obligationPayments: obligationLifecyclePayments,
     month: now.getMonth() + 1,
     year: now.getFullYear(),
     today: todayString,

@@ -473,7 +473,9 @@ export async function getReviewQueue(
       const categoryCode =
         merchantKnowledge?.canonicalCategoryCode ||
         financialIdentity.canonicalCategoryCode ||
-        commonMerchantDefaultCategoryCode(merchant) ||
+        commonMerchantDefaultCategoryCode(merchant, {
+          amount: transaction.amount,
+        }) ||
         canonicalCategoryCodeForText(transaction.category) ||
         null
       const canonicalCategory = categoryCode

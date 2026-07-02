@@ -35,6 +35,9 @@ const systemCategories = [
   { id: 'housing', parentId: null, code: 'housing', displayName: 'Housing', kind: 'expense', isSystem: true, sortOrder: 300 },
   { id: 'housing_mortgage', parentId: 'housing', code: 'housing_mortgage', displayName: 'Mortgage', kind: 'expense', isSystem: true, sortOrder: 301 },
   { id: 'housing_repairs', parentId: 'housing', code: 'housing_repairs', displayName: 'Repairs', kind: 'expense', isSystem: true, sortOrder: 303 },
+  { id: 'housing_home_maintenance', parentId: 'housing', code: 'housing_home_maintenance', displayName: 'Home Maintenance', kind: 'expense', isSystem: true, sortOrder: 304 },
+  { id: 'housing_yard_maintenance', parentId: 'housing_home_maintenance', code: 'housing_yard_maintenance', displayName: 'Yard Maintenance', kind: 'expense', isSystem: true, sortOrder: 305 },
+  { id: 'housing_pest_control', parentId: 'housing_home_maintenance', code: 'housing_pest_control', displayName: 'Pest Control', kind: 'expense', isSystem: true, sortOrder: 306 },
 
   { id: 'finance', parentId: null, code: 'finance', displayName: 'Finance', kind: 'expense', isSystem: true, sortOrder: 400 },
   { id: 'finance_bank_fees', parentId: 'finance', code: 'finance_bank_fees', displayName: 'Bank Fee', kind: 'expense', isSystem: true, sortOrder: 401 },
@@ -90,6 +93,8 @@ const systemCategories = [
   { id: 'entertainment_events', parentId: 'entertainment', code: 'entertainment_events', displayName: 'Events', kind: 'expense', isSystem: true, sortOrder: 1501 },
   { id: 'entertainment_streaming', parentId: 'entertainment', code: 'entertainment_streaming', displayName: 'Streaming', kind: 'expense', isSystem: true, sortOrder: 1502 },
 
+  { id: 'sports', parentId: null, code: 'sports', displayName: 'Sports', kind: 'expense', isSystem: true, sortOrder: 1550 },
+
   { id: 'savings', parentId: null, code: 'savings', displayName: 'Savings', kind: 'transfer', isSystem: true, sortOrder: 1600 },
   { id: 'savings_emergency', parentId: 'savings', code: 'savings_emergency', displayName: 'Emergency Fund', kind: 'transfer', isSystem: true, sortOrder: 1601 },
   { id: 'savings_goals', parentId: 'savings', code: 'savings_goals', displayName: 'Goals', kind: 'transfer', isSystem: true, sortOrder: 1602 },
@@ -108,16 +113,17 @@ const systemCategories = [
 
   { id: 'utilities', parentId: null, code: 'utilities', displayName: 'Utilities', kind: 'expense', isSystem: true, sortOrder: 1900 },
   { id: 'utilities_electricity', parentId: 'utilities', code: 'utilities_electricity', displayName: 'Electricity', kind: 'expense', isSystem: true, sortOrder: 1901 },
-  { id: 'utilities_water', parentId: 'utilities', code: 'utilities_water', displayName: 'Water', kind: 'expense', isSystem: true, sortOrder: 1902 },
+  { id: 'utilities_water', parentId: 'utilities', code: 'utilities_water', displayName: 'Utilities Water', kind: 'expense', isSystem: true, sortOrder: 1902 },
   { id: 'utilities_internet', parentId: 'utilities', code: 'utilities_internet', displayName: 'Internet', kind: 'expense', isSystem: true, sortOrder: 1903 },
   { id: 'utilities_phone', parentId: 'utilities', code: 'utilities_phone', displayName: 'Phone', kind: 'expense', isSystem: true, sortOrder: 1904 },
 
   { id: 'debt', parentId: null, code: 'debt', displayName: 'Debt / Payment', kind: 'payment', isSystem: true, sortOrder: 1950 },
   { id: 'debt_auto_loan', parentId: 'debt', code: 'debt_auto_loan', displayName: 'Auto Loan', kind: 'payment', isSystem: true, sortOrder: 1951 },
-  { id: 'debt_credit_card_payment', parentId: 'debt', code: 'debt_credit_card_payment', displayName: 'Credit Card Payment', kind: 'payment', isSystem: true, sortOrder: 1952 },
-  { id: 'debt_personal_loan', parentId: 'debt', code: 'debt_personal_loan', displayName: 'Personal Loan', kind: 'payment', isSystem: true, sortOrder: 1953 },
-  { id: 'debt_insurance', parentId: 'debt', code: 'debt_insurance', displayName: 'Insurance', kind: 'payment', isSystem: true, sortOrder: 1954 },
-  { id: 'debt_tax_planilla', parentId: 'debt', code: 'debt_tax_planilla', displayName: 'Tax / Planilla', kind: 'payment', isSystem: true, sortOrder: 1955 },
+  { id: 'debt_mortgage', parentId: 'debt', code: 'debt_mortgage', displayName: 'Mortgage', kind: 'payment', isSystem: true, sortOrder: 1952 },
+  { id: 'debt_credit_card_payment', parentId: 'debt', code: 'debt_credit_card_payment', displayName: 'Credit Card Payment', kind: 'payment', isSystem: true, sortOrder: 1953 },
+  { id: 'debt_personal_loan', parentId: 'debt', code: 'debt_personal_loan', displayName: 'Personal Loan', kind: 'payment', isSystem: true, sortOrder: 1954 },
+  { id: 'debt_insurance', parentId: 'debt', code: 'debt_insurance', displayName: 'Insurance', kind: 'payment', isSystem: true, sortOrder: 1955 },
+  { id: 'debt_tax_planilla', parentId: 'debt', code: 'debt_tax_planilla', displayName: 'Tax / Planilla', kind: 'payment', isSystem: true, sortOrder: 1956 },
 
   { id: 'miscellaneous', parentId: null, code: 'miscellaneous', displayName: 'Miscellaneous', kind: 'expense', isSystem: true, sortOrder: 2000 },
   { id: 'miscellaneous_other', parentId: 'miscellaneous', code: 'miscellaneous_other', displayName: 'Other', kind: 'expense', isSystem: true, sortOrder: 2001 },
@@ -182,7 +188,9 @@ const categoryAliases: Record<string, string> = {
   goals: 'savings_goals',
   gasolina: 'transportation_gas',
   gas: 'transportation_gas',
+  grama: 'housing_yard_maintenance',
   groceries: 'food_groceries',
+  'home maintenance': 'housing_home_maintenance',
   health: 'health',
   ingreso: 'income',
   'interest income': 'income_interest',
@@ -201,10 +209,13 @@ const categoryAliases: Record<string, string> = {
   parking: 'transportation_parking',
   'pago de tarjeta': 'transfers_card_payment',
   peajes: 'transportation_tolls',
+  'pest control': 'housing_pest_control',
   'person transfer': 'transfers_person',
   'personal care': 'health_beauty_personal_care',
   pharmacy: 'health_pharmacy',
+  prasa: 'utilities_water',
   reimbursement: 'income_reimbursement',
+  'recorte de grama': 'housing_yard_maintenance',
   refund: 'income_refund',
   refunds: 'income_refund',
   restaurantes: 'food_restaurants',
@@ -221,6 +232,7 @@ const categoryAliases: Record<string, string> = {
   clothes: 'shopping_clothing',
   ropa: 'shopping_clothing',
   spa: 'health_beauty_personal_care',
+  sports: 'sports',
   streaming: 'entertainment_streaming',
   supermercado: 'food_groceries',
   supermarket: 'food_groceries',
@@ -236,7 +248,17 @@ const categoryAliases: Record<string, string> = {
   travel: 'travel',
   unas: 'health_beauty_personal_care',
   utilities: 'utilities',
+  'utilities water': 'utilities_water',
   'vehicle registration': 'transportation_vehicle_registration',
+  water: 'utilities_water',
+  'yard maintenance': 'housing_yard_maintenance',
+  aaa: 'utilities_water',
+  agua: 'utilities_water',
+  'auto loan': 'debt_auto_loan',
+  deportes: 'sports',
+  fumigacion: 'housing_pest_control',
+  hipoteca: 'debt_mortgage',
+  mortgage: 'debt_mortgage',
 }
 
 const commonMerchantCategoryDefaults: Array<{
@@ -253,7 +275,7 @@ const commonMerchantCategoryDefaults: Array<{
   { patterns: ['WALGREENS', 'CVS', 'PHARMACY', 'FARMACIA'], canonicalCategoryCode: 'health_pharmacy' },
   { patterns: ['COSTCO', 'WALMART', 'ECONO'], canonicalCategoryCode: 'food_groceries' },
   { patterns: ['OPENAI', 'APPLE', 'NINTENDO'], canonicalCategoryCode: 'subscriptions' },
-  { patterns: ['AMAZON PRIME VIDEO'], canonicalCategoryCode: 'entertainment_streaming' },
+  { patterns: ['AMAZON PRIME', 'AMAZON DIGITAL', 'AMZN DIGITAL', 'AMZN MKTPLACE DIGITAL'], canonicalCategoryCode: 'subscriptions' },
   { patterns: ['CARIBBEAN CINEMAS'], canonicalCategoryCode: 'entertainment' },
   { patterns: ['MSC CRUISES', 'MSC CRUISE'], canonicalCategoryCode: 'travel' },
   { patterns: ['CESCO', 'MARBETE', 'MARBET'], canonicalCategoryCode: 'transportation_vehicle_registration' },
@@ -288,10 +310,18 @@ export function canonicalCategoryCodeForText(
 }
 
 export function commonMerchantDefaultCategoryCode(
-  merchantName: string | null | undefined
+  merchantName: string | null | undefined,
+  options: { amount?: number | null; isRecurring?: boolean } = {}
 ) {
   const normalizedMerchant = normalizeMerchantAlias(merchantName)
   if (!normalizedMerchant) return null
+
+  const amount = Math.abs(Number(options.amount || 0))
+  const looksLikeAmazonSubscription =
+    normalizedMerchant.includes('AMAZON') &&
+    (options.isRecurring === true || Math.abs(amount - 8.35) < 0.01)
+
+  if (looksLikeAmazonSubscription) return 'subscriptions'
 
   return (
     commonMerchantCategoryDefaults.find((defaultCategory) =>

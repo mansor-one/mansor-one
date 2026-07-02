@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { requireUser } from '@/lib/auth/requireUser'
+import { requireApiUser } from '@/lib/auth/requireApiUser'
 import { getCardsSummary } from '@/lib/financial-engine'
 import { createServerSupabase } from '@/lib/supabase/server'
 
@@ -16,7 +16,9 @@ function logDevError(message: string, error: unknown) {
 export async function POST(request: Request) {
   try {
     const { supabase } = await createServerSupabase()
-    const { user } = await requireUser(supabase)
+    const auth = await requireApiUser(supabase)
+    if (!auth.ok) return auth.response
+    const { user } = auth
     const body = await request.json()
     const cardProfileId = textValue(body.cardProfileId)
     const paymentInstanceId = textValue(body.paymentInstanceId)

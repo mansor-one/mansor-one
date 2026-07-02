@@ -237,13 +237,27 @@ export type PaymentInstance = {
   amount?: number | null
   status?: string | null
   owner?: string | null
+  expected_date?: string | null
   effective_due_date?: string | null
+  grace_due_date?: string | null
   updated_at?: string | null
   notes?: string | null
+  displayNotes?: string | null
   payment_month?: number | null
   payment_year?: number | null
   scheduled_payment_id?: string | null
-  source?: 'payment_instance' | 'scheduled_payment'
+  source?: 'payment_instance' | 'scheduled_payment' | 'obligation'
+  lifecycleItemType?: 'card_payment' | 'scheduled_payment' | 'obligation'
+  obligationId?: string | null
+  obligationInstanceId?: string | null
+  obligationProviderId?: string | null
+  obligationType?: string | null
+  obligationCategoryCode?: string | null
+  obligationProviderName?: string | null
+  paymentMethod?: string | null
+  legacySourceIds?: string[]
+  isEstimated?: boolean
+  isInGracePeriod?: boolean
   lifecycleState?: string | null
   lifecycleLabel?: string | null
   lifecycleIsOpen?: boolean
