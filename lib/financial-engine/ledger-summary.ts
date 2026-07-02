@@ -54,6 +54,7 @@ export type LedgerSummary = {
 type PlaidImportRow = {
   id: string
   plaid_transaction_id?: string | null
+  plaid_account_id?: string | null
   transaction_date?: string | null
   merchant?: string | null
   amount?: number | string | null
@@ -180,6 +181,7 @@ function plaidImportTransaction(row: PlaidImportRow): LedgerSummaryTransaction {
       institutionName: row.institution_name || null,
       accountName: row.account_name || null,
       accountMask: row.account_mask || null,
+      plaidAccountId: row.plaid_account_id || null,
       accountType: row.account_type || null,
       accountSubtype: row.account_subtype || null,
       suggestedCategory: row.suggested_category || null,
@@ -218,6 +220,9 @@ function quickEntryTransaction(
         null,
       accountMask:
         (matchingPlaidImport?.metadata.accountMask as string | null) || null,
+      plaidAccountId:
+        (matchingPlaidImport?.metadata.plaidAccountId as string | null) ||
+        null,
       accountType:
         (matchingPlaidImport?.metadata.accountType as string | null) || null,
       accountSubtype:
@@ -259,10 +264,57 @@ function directPlaidTransactionMatch(
   }
 }
 
+function metadataText(transaction: LedgerSummaryTransaction, key: string) {
+  const value = transaction.metadata[key]
+  return typeof value === 'string' && value.trim() ? value.trim() : null
+}
+
+function normalizedMetadataText(
+  transaction: LedgerSummaryTransaction,
+  key: string
+) {
+  return normalizeDescription(metadataText(transaction, key))
+}
+
+function duplicateAccountIdentityMatches(
+  importCandidate: LedgerSummaryTransaction,
+  ledgerEntry: LedgerSummaryTransaction
+) {
+  const importPlaidAccountId = metadataText(importCandidate, 'plaidAccountId')
+  const ledgerPlaidAccountId = metadataText(ledgerEntry, 'plaidAccountId')
+
+  if (importPlaidAccountId && ledgerPlaidAccountId) {
+    return importPlaidAccountId === ledgerPlaidAccountId
+  }
+
+  const importInstitution = normalizedMetadataText(
+    importCandidate,
+    'institutionName'
+  )
+  const ledgerInstitution = normalizedMetadataText(ledgerEntry, 'institutionName')
+  const importAccount = normalizedMetadataText(importCandidate, 'accountName')
+  const ledgerAccount = normalizedMetadataText(ledgerEntry, 'accountName')
+  const importMask = metadataText(importCandidate, 'accountMask')
+  const ledgerMask = metadataText(ledgerEntry, 'accountMask')
+
+  if (!importInstitution || !ledgerInstitution) return false
+  if (!importAccount || !ledgerAccount) return false
+  if (importInstitution !== ledgerInstitution) return false
+  if (importAccount !== ledgerAccount) return false
+
+  if (importMask || ledgerMask) return importMask === ledgerMask
+
+  return true
+}
+
 function heuristicDuplicateMatch(
   importCandidate: LedgerSummaryTransaction,
   ledgerEntry: LedgerSummaryTransaction
 ): LedgerDuplicateMatch | null {
+  if (!duplicateAccountIdentityMatches(importCandidate, ledgerEntry)) {
+    return null
+  }
+
   if (amountCents(importCandidate.amount) !== amountCents(ledgerEntry.amount)) {
     return null
   }
@@ -290,7 +342,7 @@ function heuristicDuplicateMatch(
   return {
     confirmedLedgerEntry: ledgerEntry,
     matchType: 'heuristic',
-    confidence: days === 0 ? 85 : 75,
+    confidence: days === 0 ? 65 : 55,
     amountDifference: Math.abs(
       Math.abs(importCandidate.amount) - Math.abs(ledgerEntry.amount)
     ),
@@ -298,6 +350,7 @@ function heuristicDuplicateMatch(
     normalizedImportDescription,
     normalizedLedgerDescription,
     reasons: [
+      'Account identity matches.',
       'Amounts match.',
       'Dates are within one day.',
       'Merchant and description normalize to a similar value.',
@@ -375,7 +428,7 @@ export async function getLedgerSummary(
     supabase
       .from('plaid_imports')
       .select(
-        'id, plaid_transaction_id, transaction_date, merchant, amount, suggested_category, plaid_category, imported, institution_name, account_name, account_mask, account_type, account_subtype'
+        'id, plaid_transaction_id, plaid_account_id, transaction_date, merchant, amount, suggested_category, plaid_category, imported, institution_name, account_name, account_mask, account_type, account_subtype'
       )
       .eq('user_id', userId)
       .order('transaction_date', { ascending: false }),

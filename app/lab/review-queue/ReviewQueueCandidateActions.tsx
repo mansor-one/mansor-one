@@ -180,7 +180,7 @@ export function ReviewQueueCandidateActions({
               onClick={onSkip}
               type="button"
             >
-              Saltar por ahora
+              Revisar después
             </button>
           )}
 
@@ -212,7 +212,7 @@ export function ReviewQueueCandidateActions({
           onClick={onSkip}
           type="button"
         >
-          Saltar por ahora
+          Revisar después
         </button>
       )}
 

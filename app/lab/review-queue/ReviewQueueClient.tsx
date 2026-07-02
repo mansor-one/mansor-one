@@ -70,6 +70,13 @@ function accountLabel(transaction: LedgerSummaryTransaction) {
   return [institution, accountText].filter(Boolean).join(' · ') || 'Unknown'
 }
 
+function sourceLabel(transaction: LedgerSummaryTransaction) {
+  if (transaction.sourceTable === 'plaid_imports') return 'Plaid import'
+  if (transaction.source === 'plaid') return 'Ledger confirmado · Plaid'
+
+  return 'Ledger confirmado'
+}
+
 function categoryLabel(candidate: ReviewQueueCandidate) {
   return (
     candidate.canonicalCategory?.displayName ||
@@ -159,7 +166,7 @@ function whyIsItHere(candidate: ReviewQueueCandidate) {
   }
 
   if (isPossibleDuplicate(candidate)) {
-    return 'Esto puede ser una compra separada.'
+    return 'Encontramos un movimiento parecido ya confirmado. Revisa si es el mismo o una compra separada.'
   }
 
   if (candidate.classification === 'needsCategory') {
@@ -193,7 +200,7 @@ function whatShouldIDo(candidate: ReviewQueueCandidate) {
   if (candidate.classification === 'athReview') return 'Confirmar como comercio'
   if (candidate.classification === 'readyToConfirm') return 'Agregar al historial'
 
-  return 'Saltar por ahora'
+  return 'Revisar después'
 }
 
 function whatHappens(candidate: ReviewQueueCandidate) {
@@ -315,11 +322,63 @@ function DetailTransaction({
   )
 }
 
-function TechnicalDetails({ candidate }: { candidate: ReviewQueueCandidate }) {
+function DuplicateComparison({ candidate }: { candidate: ReviewQueueCandidate }) {
+  const match = candidate.duplicateContext?.bestDuplicateMatch
+
+  if (!match) return null
+
+  const compared = match.confirmedLedgerEntry
+
+  return (
+    <div className="border rounded p-3 text-sm space-y-3">
+      <div>
+        <p className="font-semibold">Comparado contra</p>
+        <p className="text-sm opacity-70">
+          {match.matchType} · {match.confidence}% confianza
+        </p>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
+        <div>
+          <p className="font-semibold">Source</p>
+          <p>{sourceLabel(compared)}</p>
+        </div>
+        <div className="md:col-span-2">
+          <p className="font-semibold">Merchant / description</p>
+          <p>{compared.description || 'Desconocido'}</p>
+        </div>
+        <div>
+          <p className="font-semibold">Date</p>
+          <p>{compared.date || 'Sin fecha'}</p>
+        </div>
+        <div>
+          <p className="font-semibold">Amount</p>
+          <p>{signedMoney(compared.amount)}</p>
+        </div>
+        <div className="md:col-span-3">
+          <p className="font-semibold">Institution / account</p>
+          <p>{accountLabel(compared)}</p>
+        </div>
+        <div className="md:col-span-2">
+          <p className="font-semibold">Match reason</p>
+          <p>{match.reasons.join(' ')}</p>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function TechnicalDetails({
+  candidate,
+  open = false,
+}: {
+  candidate: ReviewQueueCandidate
+  open?: boolean
+}) {
   const match = candidate.reconciliationContext?.match
 
   return (
-    <details className="border rounded p-3 text-sm">
+    <details className="border rounded p-3 text-sm" open={open}>
       <summary className="font-semibold cursor-pointer">
         Mostrar detalles técnicos
       </summary>
@@ -389,10 +448,12 @@ function CandidateActions({
   group,
   categoryOptions,
   onSkip,
+  onReviewDetails,
 }: {
   group: CandidateGroup
   categoryOptions: CategoryOption[]
   onSkip: () => void
+  onReviewDetails?: () => void
 }) {
   const candidate = group.primary
   const [changeCategory, setChangeCategory] = useState(false)
@@ -446,11 +507,15 @@ function CandidateActions({
   if (isPossibleDuplicate(candidate)) {
     return (
       <div className="flex flex-wrap gap-3">
-        <a className="border rounded px-3 py-2 text-sm" href={`#details-${group.key}`}>
+        <button
+          className="border rounded px-3 py-2 text-sm"
+          onClick={onReviewDetails}
+          type="button"
+        >
           Revisar detalles
-        </a>
+        </button>
         <button className="border rounded px-3 py-2 text-sm" onClick={onSkip} type="button">
-          Saltar por ahora
+          Revisar después
         </button>
       </div>
     )
@@ -506,7 +571,7 @@ function CandidateActions({
           Cambiar categoría
         </button>
         <button className="border rounded px-3 py-2 text-sm" onClick={onSkip} type="button">
-          Saltar por ahora
+          Revisar después
         </button>
       </div>
     )
@@ -537,7 +602,7 @@ function CandidateActions({
 
   return (
     <button className="border rounded px-3 py-2 text-sm" onClick={onSkip} type="button">
-      Saltar por ahora
+      Revisar después
     </button>
   )
 }
@@ -553,6 +618,7 @@ function CandidateCard({
 }) {
   const candidate = group.primary
   const happens = whatHappens(candidate)
+  const [showTechnicalDetails, setShowTechnicalDetails] = useState(false)
 
   return (
     <div className="border rounded p-4 space-y-4">
@@ -600,6 +666,8 @@ function CandidateCard({
         </div>
       </div>
 
+      {candidate.duplicateContext && <DuplicateComparison candidate={candidate} />}
+
       <div className="border rounded p-3 text-sm">
         <p className="font-semibold">Qué pasa al hacer clic?</p>
         <ul className="list-disc pl-5">
@@ -613,10 +681,11 @@ function CandidateCard({
         categoryOptions={categoryOptions}
         group={group}
         onSkip={onSkip}
+        onReviewDetails={() => setShowTechnicalDetails(true)}
       />
 
       <div id={`details-${group.key}`}>
-        <TechnicalDetails candidate={candidate} />
+        <TechnicalDetails candidate={candidate} open={showTechnicalDetails} />
       </div>
     </div>
   )

@@ -332,7 +332,21 @@ function reasonsForCandidate({
   reconciliationContext: ReconciliationMatch | null
   financialIdentity: FinancialIdentityAnalysis
 }) {
-  const reasons: string[] = [`Classified as ${classification}.`]
+  const primaryReasonByClassification: Record<ReviewQueueClassification, string> = {
+    readyToConfirm:
+      'Mansor One reconoce este movimiento y puede agregarlo al historial.',
+    needsCategory:
+      'Mansor One necesita una categoría antes de agregarlo al historial.',
+    possibleDuplicate:
+      'Encontramos un movimiento parecido ya confirmado. Revisa si es el mismo o una compra separada.',
+    athReview:
+      'Mansor One necesita confirmar este ATH antes de agregarlo al historial.',
+    paymentConfirmation:
+      'Este movimiento puede cerrar un pago esperado.',
+    needsManualReview:
+      'Mansor One necesita confirmar este movimiento antes de agregarlo al historial.',
+  }
+  const reasons: string[] = [primaryReasonByClassification[classification]]
 
   if (canonicalCategory) {
     reasons.push(`Mapped to canonical category ${canonicalCategory.code}.`)
