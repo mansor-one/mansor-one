@@ -483,10 +483,27 @@ function CashBalanceBreakdown({
       <div className="mt-3 space-y-3">
         {staleAccounts.length > 0 && (
           <div className="rounded border border-amber-700 bg-amber-950/40 p-3 text-xs text-amber-100">
-            {staleAccounts.length === 1
-              ? '1 cuenta incluida tiene balance stale.'
-              : `${staleAccounts.length} cuentas incluidas tienen balance stale.`}{' '}
-            Revisa la hora de sincronización antes de tomar decisiones de cash.
+            <p>
+              {staleAccounts.length === 1
+                ? '1 cuenta incluida tiene balance stale.'
+                : `${staleAccounts.length} cuentas incluidas tienen balance stale.`}{' '}
+              Revisa la hora de sincronización antes de tomar decisiones de
+              cash.
+            </p>
+            <div className="mt-2 flex flex-wrap gap-2">
+              <Link
+                className="rounded border border-amber-600 px-2 py-1 font-semibold transition hover:bg-amber-900/60"
+                href="/portfolio"
+              >
+                Ver Portfolio
+              </Link>
+              <Link
+                className="rounded border border-amber-600 px-2 py-1 font-semibold transition hover:bg-amber-900/60"
+                href="/plaid"
+              >
+                Ver bancos conectados
+              </Link>
+            </div>
           </div>
         )}
 
@@ -696,6 +713,12 @@ export default async function Home() {
             </p>
             <p className="mt-1 text-xs text-neutral-300">{health.detail}</p>
             <CashBalanceBreakdown accounts={includedCashAccounts} now={now} />
+            <Link
+              className="mt-3 inline-flex rounded border border-neutral-600 px-3 py-2 text-xs font-semibold transition hover:border-neutral-300 hover:bg-neutral-800"
+              href="/portfolio"
+            >
+              Ver cuentas en Portfolio
+            </Link>
           </div>
           <SummaryCard
             label="Gastado este mes"
@@ -711,6 +734,7 @@ export default async function Home() {
             label="Pendientes por clasificar"
             value={reviewQueue.statistics.totalCandidates}
             detail="Pendientes por clasificar"
+            href="/lab/review-queue"
           />
           <SummaryCard
             label="Movimientos no-gasto"
@@ -722,6 +746,7 @@ export default async function Home() {
             value={money(liquidity.committedPaymentsTotal)}
             detail={`${liquidity.committedPayments.length} compromisos abiertos`}
             helper="Incluye obligaciones y pagos legacy del ciclo actual/próximo."
+            href="/timeline"
           />
         </section>
 
@@ -751,6 +776,15 @@ export default async function Home() {
                   )}`
                 : 'Planning todavía necesita configuración'
             }
+            href="/planning"
+          />
+          <SummaryCard
+            label="🏦 Net worth"
+            value={money(portfolioSummary.netWorth)}
+            detail={`${portfolioSummary.totalAssets} activos · ${money(
+              portfolioSummary.totalLiabilities
+            )} deudas`}
+            href="/portfolio"
           />
         </section>
 
@@ -989,20 +1023,43 @@ function SummaryCard({
   value,
   detail,
   helper,
+  href,
 }: {
   label: string
   value: string | number
   detail: string
   helper?: string
+  href?: string
 }) {
-  return (
-    <div className="rounded-lg border border-neutral-800 bg-neutral-900 p-4">
+  const className =
+    'rounded-lg border border-neutral-800 bg-neutral-900 p-4 transition hover:border-neutral-500 hover:bg-neutral-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-300'
+  const content = (
+    <>
       <p className="text-sm text-neutral-400">{label}</p>
       <p className="mt-2 text-2xl font-bold">{value}</p>
       <p className="mt-1 text-xs text-neutral-500">{detail}</p>
       {helper ? (
         <p className="mt-2 text-xs text-neutral-500">{helper}</p>
       ) : null}
+      {href ? (
+        <p className="mt-3 text-xs font-semibold text-neutral-300">
+          Abrir detalle
+        </p>
+      ) : null}
+    </>
+  )
+
+  if (href) {
+    return (
+      <Link aria-label={`${label}: abrir detalle`} className={className} href={href}>
+        {content}
+      </Link>
+    )
+  }
+
+  return (
+    <div className="rounded-lg border border-neutral-800 bg-neutral-900 p-4">
+      {content}
     </div>
   )
 }

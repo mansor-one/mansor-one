@@ -54,6 +54,27 @@ function percent(value: number) {
   return `${Math.round(value * 100)}%`
 }
 
+function confidenceExplanation(value: number) {
+  if (value >= 0.75) {
+    return {
+      label: 'High confidence',
+      helper: 'Mansor One has enough context to suggest the next step.',
+    }
+  }
+
+  if (value >= 0.45) {
+    return {
+      label: 'Needs review',
+      helper: 'There is useful context, but your decision is still needed.',
+    }
+  }
+
+  return {
+    label: 'Low confidence',
+    helper: 'Mansor One does not have enough context to decide safely.',
+  }
+}
+
 function metadataString(transaction: LedgerSummaryTransaction, key: string) {
   const value = transaction.metadata?.[key]
   return typeof value === 'string' && value ? value : null
@@ -152,12 +173,12 @@ function looksLikeMessage(candidate: ReviewQueueCandidate) {
 
 function whatIsThis(candidate: ReviewQueueCandidate) {
   if (isExactImportedDuplicate(candidate)) return 'Ya importado'
-  if (isPossibleDuplicate(candidate)) return 'Posible duplicado'
+  if (isPossibleDuplicate(candidate)) return '¿Duplicado o compra separada?'
   if (candidate.classification === 'needsCategory') return 'Movimiento sin categoría'
-  if (candidate.classification === 'readyToConfirm') return 'Movimiento listo'
-  if (candidate.classification === 'athReview') return 'Revisión ATH'
+  if (candidate.classification === 'readyToConfirm') return 'Listo para confirmar'
+  if (candidate.classification === 'athReview') return 'ATH detectado'
   if (candidate.classification === 'paymentConfirmation') return 'Pago posible'
-  return 'Revisión necesaria'
+  return 'Necesita decisión'
 }
 
 function whyIsItHere(candidate: ReviewQueueCandidate) {
@@ -191,28 +212,39 @@ function whyIsItHere(candidate: ReviewQueueCandidate) {
 }
 
 function whatShouldIDo(candidate: ReviewQueueCandidate) {
-  if (isExactImportedDuplicate(candidate)) return 'Marcar como ya importado'
-  if (isPossibleDuplicate(candidate)) return 'Revisar detalles'
-  if (candidate.classification === 'needsCategory') return 'Escoger categoría'
-  if (candidate.financialIdentity.identityType === 'person_transfer') {
-    return 'Confirmar como transferencia interna'
+  if (isExactImportedDuplicate(candidate)) return 'Mark as duplicate'
+  if (isPossibleDuplicate(candidate)) {
+    return 'Decide whether this is the same transaction or a separate purchase.'
   }
-  if (candidate.classification === 'athReview') return 'Confirmar como comercio'
-  if (candidate.classification === 'readyToConfirm') return 'Agregar al historial'
+  if (candidate.classification === 'needsCategory') {
+    return 'Confirm the suggested category or change it before adding.'
+  }
+  if (candidate.financialIdentity.identityType === 'person_transfer') {
+    return 'Confirm as internal transfer'
+  }
+  if (candidate.classification === 'athReview') {
+    return 'Confirm whether this ATH should be added with this category.'
+  }
+  if (candidate.classification === 'readyToConfirm') {
+    return 'Confirm whether it should be added to financial history.'
+  }
 
-  return 'Revisar después'
+  return 'Review later'
 }
 
 function whatHappens(candidate: ReviewQueueCandidate) {
   if (isExactImportedDuplicate(candidate)) {
-    return ['Marca el import de Plaid como importado', 'Mantiene el movimiento confirmado existente']
+    return [
+      'Marks the Plaid import as already represented',
+      'Keeps the existing confirmed movement',
+    ]
   }
 
   if (candidate.classification === 'readyToConfirm') {
     return [
-      'Agrega el movimiento al historial financiero',
-      'Marca el import de Plaid como importado',
-      'Lo remueve del Review Queue',
+      'Adds the movement to financial history',
+      'Marks the Plaid import as imported',
+      'Removes it from Review Queue',
     ]
   }
 
@@ -221,13 +253,13 @@ function whatHappens(candidate: ReviewQueueCandidate) {
     candidate.classification === 'athReview'
   ) {
     return [
-      'Agrega el movimiento al historial financiero con la categoría seleccionada',
-      'Marca el import de Plaid como importado',
-      'Lo remueve del Review Queue',
+      'Adds the movement to financial history with the selected category',
+      'Marks the Plaid import as imported',
+      'Removes it from Review Queue',
     ]
   }
 
-  return ['Deja el movimiento en Review Queue para revisarlo luego']
+  return ['Keeps the movement in Review Queue for later review']
 }
 
 function logicalGroupKey(candidate: ReviewQueueCandidate) {
@@ -332,9 +364,11 @@ function DuplicateComparison({ candidate }: { candidate: ReviewQueueCandidate })
   return (
     <div className="border rounded p-3 text-sm space-y-3">
       <div>
-        <p className="font-semibold">Comparado contra</p>
+        <p className="font-semibold">
+          Is this the same transaction or a separate purchase?
+        </p>
         <p className="text-sm opacity-70">
-          {match.matchType} · {match.confidence}% confianza
+          Compare the candidate against the confirmed movement before deciding.
         </p>
       </div>
 
@@ -384,6 +418,17 @@ function TechnicalDetails({
       </summary>
 
       <div className="mt-3 space-y-3">
+        <div className="border rounded p-3 space-y-1">
+          <h4 className="font-semibold">Confidence</h4>
+          <p>
+            {confidenceExplanation(candidate.confidence).label} ·{' '}
+            {percent(candidate.confidence)}
+          </p>
+          <p className="opacity-70">
+            {confidenceExplanation(candidate.confidence).helper}
+          </p>
+        </div>
+
         {candidate.duplicateContext && (
           <div className="space-y-2">
             <DetailTransaction
@@ -484,7 +529,37 @@ function CandidateActions({
       return
     }
 
-      setDuplicateMessage('Marcado como ya importado')
+    setDuplicateMessage('Marked as duplicate')
+    startTransition(() => router.refresh())
+  }
+
+  async function resolvePossibleDuplicate(action: 'mark_duplicate' | 'keep_separate') {
+    setDuplicateMessage('')
+
+    const response = await fetch('/api/review-queue/resolve-duplicate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action,
+        plaidImportId: candidate.transaction.id,
+        selectedCategory:
+          action === 'keep_separate'
+            ? candidate.canonicalCategory?.displayName || undefined
+            : undefined,
+      }),
+    })
+    const data = await response.json()
+
+    if (!response.ok || data.error) {
+      setDuplicateMessage(data.error || 'Could not resolve duplicate')
+      return
+    }
+
+    setDuplicateMessage(
+      action === 'mark_duplicate'
+        ? 'Marked as duplicate'
+        : 'Kept as separate transaction'
+    )
     startTransition(() => router.refresh())
   }
 
@@ -497,7 +572,7 @@ function CandidateActions({
           onClick={markDuplicateGroupImported}
           type="button"
         >
-          Marcar como ya importado
+          Mark as duplicate
         </button>
         {duplicateMessage && <p className="text-sm opacity-70">{duplicateMessage}</p>}
       </div>
@@ -508,15 +583,45 @@ function CandidateActions({
     return (
       <div className="flex flex-wrap gap-3">
         <button
+          className="border rounded px-3 py-2 text-sm font-medium disabled:opacity-60"
+          disabled={isPending}
+          onClick={() => resolvePossibleDuplicate('mark_duplicate')}
+          type="button"
+        >
+          Mark as duplicate
+        </button>
+        <button
+          className="border rounded px-3 py-2 text-sm font-medium disabled:opacity-60"
+          disabled={isPending}
+          onClick={() => resolvePossibleDuplicate('keep_separate')}
+          type="button"
+        >
+          Keep as separate transaction
+        </button>
+        <button
           className="border rounded px-3 py-2 text-sm"
+          disabled={isPending}
           onClick={onReviewDetails}
           type="button"
         >
-          Revisar detalles
+          Compare transactions
         </button>
-        <button className="border rounded px-3 py-2 text-sm" onClick={onSkip} type="button">
-          Revisar después
+        <button
+          className="border rounded px-3 py-2 text-sm"
+          disabled={isPending}
+          onClick={onSkip}
+          type="button"
+        >
+          Review later
         </button>
+        <p className="basis-full text-xs opacity-70">
+          Mark as duplicate and keep as separate transaction are intentionally
+          manual decisions. Compare the records first; no automatic decision is
+          made.
+        </p>
+        {duplicateMessage && (
+          <p className="basis-full text-sm opacity-70">{duplicateMessage}</p>
+        )}
       </div>
     )
   }
@@ -524,7 +629,7 @@ function CandidateActions({
   if (needsCategoryAnswer(candidate)) {
     return (
       <ReviewQueueCandidateActions
-        buttonLabel="Agregar al historial"
+        buttonLabel="Confirm category"
         categories={categoryOptions}
         mode={
           candidate.classification === 'needsManualReview'
@@ -542,7 +647,7 @@ function CandidateActions({
     if (changeCategory || !category) {
       return (
         <ReviewQueueCandidateActions
-          buttonLabel="Confirmar y agregar al historial"
+          buttonLabel="Confirm category"
           categories={categoryOptions}
           mode="athReview"
           onSkip={onSkip}
@@ -556,8 +661,8 @@ function CandidateActions({
         <ReviewQueueCandidateActions
           buttonLabel={
             candidate.financialIdentity.identityType === 'person_transfer'
-              ? 'Confirmar como transferencia interna'
-              : 'Confirmar y agregar al historial'
+              ? 'Confirm as internal transfer'
+              : 'Confirm category'
           }
           mode="athReview"
           plaidImportId={candidate.transaction.id}
@@ -568,10 +673,10 @@ function CandidateActions({
           onClick={() => setChangeCategory(true)}
           type="button"
         >
-          Cambiar categoría
+          Change category
         </button>
         <button className="border rounded px-3 py-2 text-sm" onClick={onSkip} type="button">
-          Revisar después
+          Review later
         </button>
       </div>
     )
@@ -580,7 +685,7 @@ function CandidateActions({
   if (candidate.financialIdentity.identityType === 'person_transfer') {
     return (
       <ReviewQueueCandidateActions
-        buttonLabel="Confirmar como transferencia interna"
+        buttonLabel="Confirm as internal transfer"
         mode="readyToConfirm"
         onSkip={onSkip}
         plaidImportId={candidate.transaction.id}
@@ -592,7 +697,7 @@ function CandidateActions({
   if (candidate.classification === 'readyToConfirm') {
     return (
       <ReviewQueueCandidateActions
-        buttonLabel="Agregar al historial"
+        buttonLabel="Confirm and add"
         mode="readyToConfirm"
         onSkip={onSkip}
         plaidImportId={candidate.transaction.id}
@@ -602,7 +707,7 @@ function CandidateActions({
 
   return (
     <button className="border rounded px-3 py-2 text-sm" onClick={onSkip} type="button">
-      Revisar después
+      Review later
     </button>
   )
 }
@@ -619,6 +724,10 @@ function CandidateCard({
   const candidate = group.primary
   const happens = whatHappens(candidate)
   const [showTechnicalDetails, setShowTechnicalDetails] = useState(false)
+  const confidence = confidenceExplanation(candidate.confidence)
+  const duplicateDecision = isPossibleDuplicate(candidate)
+  const categoryDecision =
+    needsCategoryAnswer(candidate) || candidate.classification === 'athReview'
 
   return (
     <div className="border rounded p-4 space-y-4">
@@ -632,8 +741,22 @@ function CandidateCard({
             </p>
           )}
         </div>
-        <p className="text-sm">{percent(candidate.confidence)} confianza</p>
+        <div className="max-w-xs text-right text-sm">
+          <p className="font-semibold">{confidence.label}</p>
+          <p className="opacity-70">{confidence.helper}</p>
+        </div>
       </div>
+
+      {(duplicateDecision || categoryDecision) && (
+        <div className="rounded border p-3 text-sm">
+          <p className="font-semibold">Decision needed</p>
+          <p>
+            {duplicateDecision
+              ? 'Is this the same transaction or a separate purchase?'
+              : 'Should this movement be added with this suggested category?'}
+          </p>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 md:grid-cols-6 gap-3 text-sm">
         <div className="md:col-span-2">
@@ -653,11 +776,15 @@ function CandidateCard({
           <p>{accountLabel(candidate.transaction)}</p>
         </div>
         <div className="md:col-span-2">
-          <p className="font-semibold">Por qué aparece?</p>
+          <p className="font-semibold">What did we detect?</p>
+          <p>{whatIsThis(candidate)}</p>
+        </div>
+        <div className="md:col-span-2">
+          <p className="font-semibold">Why do we need your help?</p>
           <p>{whyIsItHere(candidate)}</p>
         </div>
         <div className="md:col-span-2">
-          <p className="font-semibold">Qué debo hacer?</p>
+          <p className="font-semibold">What decision should you make?</p>
           <p>{whatShouldIDo(candidate)}</p>
         </div>
         <div className="md:col-span-2">
@@ -752,16 +879,16 @@ export function ReviewQueueClient({
   )
   const tabs: { id: ReviewTab; label: string; count: number }[] = [
     { id: 'toReview', label: 'Por revisar', count: toReview.length },
-    { id: 'ready', label: 'Listos', count: readyToConfirm.length },
-    { id: 'duplicates', label: 'Parecidas', count: possibleDuplicates.length },
-    { id: 'ath', label: 'ATH', count: athReview.length },
+    { id: 'ready', label: 'Listos para confirmar', count: readyToConfirm.length },
+    { id: 'duplicates', label: 'Posibles duplicados', count: possibleDuplicates.length },
+    { id: 'ath', label: 'ATH por interpretar', count: athReview.length },
     { id: 'all', label: 'Todo', count: visibleCandidates.length },
   ]
   const summaryCards = [
     { label: 'Por revisar', value: toReview.length },
-    { label: 'Listos', value: readyToConfirm.length },
-    { label: 'Parecidas', value: possibleDuplicates.length },
-    { label: 'ATH', value: athReview.length },
+    { label: 'Listos para confirmar', value: readyToConfirm.length },
+    { label: 'Posibles duplicados', value: possibleDuplicates.length },
+    { label: 'ATH por interpretar', value: athReview.length },
     { label: 'Todo visible', value: visibleCandidates.length },
     { label: 'Diagnóstico exacto', value: exactDuplicates.length },
   ]

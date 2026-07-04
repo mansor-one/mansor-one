@@ -5,6 +5,7 @@ import {
   type LedgerSummaryTransaction,
 } from './ledger-summary'
 import { getPortfolioSummary } from './portfolio'
+import { buildIncomePlanningSummary } from './income'
 import {
   buildReconciliationMatches,
   type ReconciliationMatch,
@@ -101,10 +102,14 @@ async function getActiveScheduledPayments(supabase: FinancialSupabaseClient) {
   return (data || []) as ScheduledPayment[]
 }
 
-async function getActiveIncomeSchedule(supabase: FinancialSupabaseClient) {
+async function getActiveIncomeSchedule(
+  supabase: FinancialSupabaseClient,
+  userId: string
+) {
   const { data, error } = await supabase
     .from('income_schedule')
     .select('*')
+    .eq('user_id', userId)
     .eq('is_active', true)
 
   if (error) throw error
@@ -690,7 +695,7 @@ export async function getLiquiditySummary(
     getCurrentMonthPayments(supabase, now),
     getPaymentInstances(supabase),
     getActiveScheduledPayments(supabase),
-    getActiveIncomeSchedule(supabase),
+    getActiveIncomeSchedule(supabase, userId),
     getLedgerSummary(supabase, userId),
     getObligationLifecyclePaymentItems(supabase, userId),
   ])
@@ -779,26 +784,9 @@ export async function getLiquiditySummary(
     0
   )
 
-  const today = new Date()
-  today.setHours(0, 0, 0, 0)
-
-  const confirmedIncome = incomeSchedule
-    .filter((income) => {
-      if (!income.amount || !income.next_expected_date) return false
-
-      const incomeDate = new Date(`${income.next_expected_date}T00:00:00`)
-      return incomeDate >= today
-    })
-    .sort(
-      (a, b) =>
-        new Date(`${a.next_expected_date}T00:00:00`).getTime() -
-        new Date(`${b.next_expected_date}T00:00:00`).getTime()
-    )
-
-  const totalConfirmedIncome = confirmedIncome.reduce(
-    (sum, income) => sum + Number(income.amount || 0),
-    0
-  )
+  const income = buildIncomePlanningSummary(incomeSchedule, now)
+  const confirmedIncome = income.projectedIncome
+  const totalConfirmedIncome = income.totalProjectedIncome
 
   const connectedCreditDebt = plaidCredit.reduce(
     (sum, account) => sum + Number(account.current_balance || 0),
@@ -843,12 +831,19 @@ export async function getLiquiditySummary(
     initiatedPayments,
     committedPayments,
     pendingPayments: committedPayments,
+    income,
     confirmedIncome,
+    projectedIncome: income.projectedIncome,
+    expectedIncome: income.expectedIncome,
+    receivedIncome: income.receivedIncome,
+    missedIncome: income.missedIncome,
+    cancelledIncome: income.cancelledIncome,
     pendingActionPaymentTotal,
     initiatedPaymentsTotal,
     committedPaymentsTotal,
     totalPendingPayments: committedPaymentsTotal,
     totalConfirmedIncome,
+    totalProjectedIncome: income.totalProjectedIncome,
     resultToday: cashAvailableTotal - committedPaymentsTotal,
     resultAfterIncome:
       cashAvailableTotal + totalConfirmedIncome - committedPaymentsTotal,

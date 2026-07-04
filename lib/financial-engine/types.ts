@@ -318,10 +318,35 @@ export type ScheduledPayment = {
 
 export type IncomeSchedule = {
   id?: string
+  user_id?: string | null
   name?: string | null
   amount?: number | null
   next_expected_date?: string | null
   is_active?: boolean | null
+  income_type?: 'one_time' | 'recurring' | string | null
+  category_code?: string | null
+  amount_is_estimated?: boolean | null
+  confidence?: 'estimated' | 'likely' | 'confirmed' | string | null
+  owner?: string | null
+  owner_scope?: 'household' | 'manuel' | 'soraya' | 'business' | string | null
+  destination_account_id?: string | null
+  destination_account_source?: 'manual' | 'plaid' | string | null
+  cadence?: 'one_time' | 'weekly' | 'biweekly' | 'monthly' | 'irregular' | string | null
+  status?: 'expected' | 'received' | 'missed' | 'cancelled' | string | null
+  received_at?: string | null
+  notes?: string | null
+  created_at?: string | null
+  updated_at?: string | null
+}
+
+export type IncomePlanningSummary = {
+  allIncome: IncomeSchedule[]
+  expectedIncome: IncomeSchedule[]
+  receivedIncome: IncomeSchedule[]
+  missedIncome: IncomeSchedule[]
+  cancelledIncome: IncomeSchedule[]
+  projectedIncome: IncomeSchedule[]
+  totalProjectedIncome: number
 }
 
 export type PlanningItem = {
@@ -364,12 +389,19 @@ export type LiquiditySummary = AccountsSummary & {
   initiatedPayments: PaymentInstance[]
   committedPayments: PaymentInstance[]
   pendingPayments: PaymentInstance[]
+  income: IncomePlanningSummary
   confirmedIncome: IncomeSchedule[]
+  projectedIncome: IncomeSchedule[]
+  expectedIncome: IncomeSchedule[]
+  receivedIncome: IncomeSchedule[]
+  missedIncome: IncomeSchedule[]
+  cancelledIncome: IncomeSchedule[]
   pendingActionPaymentTotal: number
   initiatedPaymentsTotal: number
   committedPaymentsTotal: number
   totalPendingPayments: number
   totalConfirmedIncome: number
+  totalProjectedIncome: number
   resultToday: number
   resultAfterIncome: number
 }

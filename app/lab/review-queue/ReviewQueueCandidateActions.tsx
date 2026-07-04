@@ -85,7 +85,7 @@ export function ReviewQueueCandidateActions({
       }
 
       setMessage(
-        isDuplicateAction ? 'Marcado como ya importado' : 'Agregado al historial'
+        isDuplicateAction ? 'Marked as duplicate' : 'Added to history'
       )
       startTransition(() => {
         router.refresh()
@@ -146,7 +146,7 @@ export function ReviewQueueCandidateActions({
           onChange={(event) => setSelectedCategoryState(event.target.value)}
           value={selectedCategoryState}
         >
-          <option value="">Seleccionar categoría</option>
+          <option value="">Choose category</option>
           {Object.entries(groupedCategories).map(([kind, options]) => (
             <optgroup key={kind} label={categoryKindLabels[kind] || kind}>
               {options.map((category, index) => (
@@ -169,7 +169,7 @@ export function ReviewQueueCandidateActions({
               onClick={postAction}
               type="button"
             >
-              {disabled ? 'Agregando...' : buttonLabel || 'Agregar al historial'}
+              {disabled ? 'Confirming...' : buttonLabel || 'Confirm and add'}
             </button>
           )}
 
@@ -180,7 +180,7 @@ export function ReviewQueueCandidateActions({
               onClick={onSkip}
               type="button"
             >
-              Revisar después
+              Review later
             </button>
           )}
 
@@ -201,8 +201,8 @@ export function ReviewQueueCandidateActions({
         {disabled
           ? 'Working...'
           : mode === 'possibleDuplicate'
-            ? buttonLabel || 'Marcar como ya importado'
-            : buttonLabel || 'Agregar al historial'}
+            ? buttonLabel || 'Mark as duplicate'
+            : buttonLabel || 'Confirm and add'}
       </button>
 
       {onSkip && (
@@ -212,7 +212,7 @@ export function ReviewQueueCandidateActions({
           onClick={onSkip}
           type="button"
         >
-          Revisar después
+          Review later
         </button>
       )}
 
