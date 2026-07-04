@@ -8,12 +8,21 @@ export type ConnectedAccount = {
   connection_id?: string | null
   institution_name?: string | null
   name?: string | null
+  display_name?: string | null
   type?: string | null
   subtype?: string | null
   available_balance?: number | null
   current_balance?: number | null
   currency?: string | null
   updated_at?: string | null
+  owner_scope?: string | null
+  account_status?: 'active' | 'hidden' | 'archived' | string | null
+  is_hidden?: boolean | null
+  include_in_dashboard?: boolean | null
+  hidden_at?: string | null
+  archived_at?: string | null
+  archive_reason?: string | null
+  portfolio_updated_at?: string | null
 }
 
 export type ResolvedConnectedAccount = ConnectedAccount & {
@@ -41,10 +50,20 @@ export type ManualAccount = {
   id?: string
   name?: string | null
   account_type?: string | null
+  owner_id?: string | null
+  owner_scope?: string | null
   currency?: string | null
   balance?: number | null
   is_active?: boolean | null
   is_spendable?: boolean | null
+  account_status?: 'active' | 'hidden' | 'archived' | string | null
+  is_hidden?: boolean | null
+  hidden_at?: string | null
+  archived_at?: string | null
+  archive_reason?: string | null
+  replacement_account_id?: string | null
+  created_at?: string | null
+  updated_at?: string | null
 }
 
 export type AssetSource = 'plaid' | 'manual'
@@ -237,8 +256,11 @@ export type PaymentInstance = {
   amount?: number | null
   status?: string | null
   owner?: string | null
+  due_date?: string | null
   expected_date?: string | null
   effective_due_date?: string | null
+  grace_until?: string | null
+  grace_days?: number | null
   grace_due_date?: string | null
   updated_at?: string | null
   notes?: string | null

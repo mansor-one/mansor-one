@@ -7,16 +7,26 @@ const INTERNAL_NOTE_PATTERNS = [
 ]
 
 export function lifecyclePaymentDueDate(payment: PaymentInstance) {
-  return payment.expected_date || payment.effective_due_date || null
+  return (
+    payment.due_date || payment.expected_date || payment.effective_due_date || null
+  )
 }
 
 export function lifecyclePaymentGraceUntilDate(payment: PaymentInstance) {
   const dueDate = lifecyclePaymentDueDate(payment)
-  const graceDate = payment.grace_due_date || payment.effective_due_date || null
+  const graceDate =
+    payment.grace_until ||
+    payment.grace_due_date ||
+    payment.effective_due_date ||
+    null
 
   if (!dueDate || !graceDate || dueDate === graceDate) return null
 
   return graceDate
+}
+
+export function lifecyclePaymentGraceDays(payment: PaymentInstance) {
+  return Number(payment.grace_days || 0)
 }
 
 export function friendlyLifecyclePaymentNotes(payment: PaymentInstance) {

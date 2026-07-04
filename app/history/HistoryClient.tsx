@@ -1,10 +1,13 @@
 'use client'
 
 import Link from 'next/link'
-import { useMemo, useState } from 'react'
+import { useRouter } from 'next/navigation'
+import { useMemo, useState, useTransition } from 'react'
 
 export type HistoryMovement = {
   id: string
+  sourceTable: string
+  quickEntryId: string | null
   date: string
   merchant: string
   rawMerchant: string
@@ -19,7 +22,14 @@ export type HistoryMovement = {
   identity: string
 }
 
+type CategoryOption = {
+  value: string
+  label: string
+  kind: string
+}
+
 type HistoryClientProps = {
+  categoryOptions: CategoryOption[]
   movements: HistoryMovement[]
 }
 
@@ -133,7 +143,18 @@ function previousPeriod() {
   }
 }
 
-export default function HistoryClient({ movements }: HistoryClientProps) {
+type SaveState = {
+  id: string
+  tone: 'success' | 'error'
+  message: string
+} | null
+
+export default function HistoryClient({
+  categoryOptions,
+  movements,
+}: HistoryClientProps) {
+  const router = useRouter()
+  const [isPending, startTransition] = useTransition()
   const [search, setSearch] = useState('')
   const [category, setCategory] = useState('all')
   const [bankAccount, setBankAccount] = useState('all')
@@ -142,6 +163,10 @@ export default function HistoryClient({ movements }: HistoryClientProps) {
   const [year, setYear] = useState('all')
   const [minAmount, setMinAmount] = useState('')
   const [maxAmount, setMaxAmount] = useState('')
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [selectedCategory, setSelectedCategory] = useState('')
+  const [savingId, setSavingId] = useState<string | null>(null)
+  const [saveState, setSaveState] = useState<SaveState>(null)
 
   const categories = useMemo(
     () => uniqueSorted(movements.map((movement) => movement.category)),
@@ -246,6 +271,75 @@ export default function HistoryClient({ movements }: HistoryClientProps) {
     setYear('all')
     setMinAmount('')
     setMaxAmount('')
+  }
+
+  function startEditing(movement: HistoryMovement) {
+    setEditingId(movement.id)
+    setSelectedCategory(
+      categoryOptions.some((option) => option.value === movement.category)
+        ? movement.category
+        : ''
+    )
+    setSaveState(null)
+  }
+
+  function cancelEditing() {
+    setEditingId(null)
+    setSelectedCategory('')
+  }
+
+  async function saveCategory(movement: HistoryMovement) {
+    if (!movement.quickEntryId) {
+      setSaveState({
+        id: movement.id,
+        tone: 'error',
+        message: 'Solo se pueden editar movimientos confirmados.',
+      })
+      return
+    }
+
+    setSavingId(movement.id)
+    setSaveState(null)
+
+    try {
+      const response = await fetch('/api/ledger/update-category', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          quickEntryId: movement.quickEntryId,
+          category: selectedCategory,
+        }),
+      })
+      const data = await response.json()
+
+      if (!response.ok || data.error) {
+        setSaveState({
+          id: movement.id,
+          tone: 'error',
+          message: data.error || 'No se pudo actualizar la categoría.',
+        })
+        return
+      }
+
+      setSaveState({
+        id: movement.id,
+        tone: 'success',
+        message: 'Categoría actualizada.',
+      })
+      setEditingId(null)
+      setSelectedCategory('')
+      startTransition(() => {
+        router.refresh()
+      })
+    } catch {
+      setSaveState({
+        id: movement.id,
+        tone: 'error',
+        message: 'No se pudo actualizar la categoría.',
+      })
+    } finally {
+      setSavingId(null)
+    }
   }
 
   return (
@@ -464,19 +558,20 @@ export default function HistoryClient({ movements }: HistoryClientProps) {
         </section>
       ) : (
         <section className="overflow-hidden rounded border">
-          <div className="hidden grid-cols-6 gap-3 border-b p-3 text-sm font-semibold opacity-70 md:grid">
+          <div className="hidden grid-cols-7 gap-3 border-b p-3 text-sm font-semibold opacity-70 md:grid">
             <span>Fecha</span>
             <span>Comercio / persona</span>
             <span>Monto</span>
             <span>Categoría</span>
             <span>Banco / cuenta</span>
             <span>Método</span>
+            <span>Acciones</span>
           </div>
 
           <div className="divide-y">
             {filteredMovements.map((movement) => (
               <div
-                className="grid grid-cols-1 gap-2 p-3 md:grid-cols-6 md:items-center"
+                className="grid grid-cols-1 gap-2 p-3 md:grid-cols-7 md:items-center"
                 key={movement.id}
               >
                 <span className="text-sm opacity-80">
@@ -484,13 +579,84 @@ export default function HistoryClient({ movements }: HistoryClientProps) {
                 </span>
                 <span className="font-medium">{movement.merchant}</span>
                 <strong>{money(movement.amount)}</strong>
-                <span>{movement.category}</span>
+                <div className="space-y-2">
+                  <span>{movement.category}</span>
+                  {editingId === movement.id && (
+                    <div className="space-y-2">
+                      <select
+                        className="w-full rounded border bg-transparent px-3 py-2 text-sm"
+                        disabled={savingId === movement.id || isPending}
+                        onChange={(event) =>
+                          setSelectedCategory(event.target.value)
+                        }
+                        value={selectedCategory}
+                      >
+                        <option value="">Seleccionar categoría</option>
+                        {categoryOptions.map((categoryOption) => (
+                          <option
+                            key={categoryOption.value}
+                            value={categoryOption.value}
+                          >
+                            {categoryOption.label}
+                          </option>
+                        ))}
+                      </select>
+                      <div className="flex flex-wrap gap-2">
+                        <button
+                          className="rounded border px-3 py-2 text-sm disabled:opacity-60"
+                          disabled={
+                            savingId === movement.id ||
+                            isPending ||
+                            !selectedCategory
+                          }
+                          onClick={() => saveCategory(movement)}
+                          type="button"
+                        >
+                          {savingId === movement.id ? 'Guardando...' : 'Guardar'}
+                        </button>
+                        <button
+                          className="rounded border px-3 py-2 text-sm"
+                          disabled={savingId === movement.id || isPending}
+                          onClick={cancelEditing}
+                          type="button"
+                        >
+                          Cancelar
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                  {saveState?.id === movement.id && (
+                    <p
+                      className={`text-sm ${
+                        saveState.tone === 'error'
+                          ? 'text-red-600'
+                          : 'text-green-600'
+                      }`}
+                    >
+                      {saveState.message}
+                    </p>
+                  )}
+                </div>
                 <span className="text-sm">
                   {movement.institution}
                   <br />
                   <span className="opacity-70">{movement.account}</span>
                 </span>
                 <span>{movement.paymentMethod}</span>
+                <span>
+                  {movement.quickEntryId ? (
+                    <button
+                      className="rounded border px-3 py-2 text-sm"
+                      disabled={savingId === movement.id || isPending}
+                      onClick={() => startEditing(movement)}
+                      type="button"
+                    >
+                      Editar categoría
+                    </button>
+                  ) : (
+                    <span className="text-sm opacity-60">No editable</span>
+                  )}
+                </span>
               </div>
             ))}
           </div>

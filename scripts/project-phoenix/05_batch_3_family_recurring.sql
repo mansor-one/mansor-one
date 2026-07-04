@@ -1,17 +1,17 @@
--- Project Phoenix Batch 2: utilities and services.
+-- Project Phoenix Batch 3: family recurring obligations.
 --
--- Executable when Manuel approves Batch 2 execution. Do not run before then.
+-- Executable when Manuel approves Batch 3 execution. Do not run before then.
 --
 -- Scope:
--- - Migrate now: Internet, Agua / AAA, Luz / LUMA, SunRun.
--- - Defer: Grama, Celulares, Barbero.
+-- - Migrate now: Colegio Gaby, Tutorias Gaby.
+-- - Defer: Unas Gaby, Unas Soraya, Seguro Casa, Plan Dental Soraya,
+--   Fumigador/Fumigacion.
 -- - Do not delete, archive, or update legacy scheduled_payments rows.
 --
--- This script writes public.obligations, public.obligation_providers and
--- public.obligation_instances only. It intentionally keeps the legacy
--- scheduled_payments rows intact while adding Project Phoenix source metadata
--- to obligation notes so the Financial Engine lifecycle bridge can suppress
--- duplicate scheduled_payments pressure.
+-- This script writes public.obligations and public.obligation_instances only.
+-- It intentionally keeps the legacy scheduled_payments rows intact while
+-- adding Project Phoenix source metadata to obligation notes so the Financial
+-- Engine lifecycle bridge can suppress duplicate scheduled_payments pressure.
 --
 -- Live compatibility:
 -- The live obligations table still has legacy columns such as person, title,
@@ -21,10 +21,10 @@
 
 begin;
 
-drop table if exists pg_temp.phoenix_batch_2_scope;
-drop table if exists pg_temp.phoenix_batch_2_seed;
+drop table if exists pg_temp.phoenix_batch_3_scope;
+drop table if exists pg_temp.phoenix_batch_3_seed;
 
-create temp table phoenix_batch_2_scope (
+create temp table phoenix_batch_3_scope (
   legacy_scheduled_payment_id uuid primary key,
   expected_legacy_name text not null,
   canonical_name text not null,
@@ -34,17 +34,14 @@ create temp table phoenix_batch_2_scope (
   obligation_type text not null,
   frequency text not null,
   payment_method text,
-  provider_name text,
-  provider_phone text,
-  provider_payment_method text,
   amount_is_estimated boolean not null,
-  migrate_now boolean not null,
-  deferral_reason text,
+  active_month_numbers integer[] not null,
+  active_months_note text not null,
   description text not null,
   notes_prefix text not null
 ) on commit preserve rows;
 
-insert into phoenix_batch_2_scope (
+insert into phoenix_batch_3_scope (
   legacy_scheduled_payment_id,
   expected_legacy_name,
   canonical_name,
@@ -54,148 +51,44 @@ insert into phoenix_batch_2_scope (
   obligation_type,
   frequency,
   payment_method,
-  provider_name,
-  provider_phone,
-  provider_payment_method,
   amount_is_estimated,
-  migrate_now,
-  deferral_reason,
+  active_month_numbers,
+  active_months_note,
   description,
   notes_prefix
 )
 values
   (
-    '406f0a86-34da-4c31-b174-93388ea8dc2e',
-    'Internet',
-    'Internet',
-    array['internet', 'liberty/internet', 'liberty internet'],
-    'utilities_internet',
-    'household',
-    'utility',
-    'monthly',
-    null,
-    null,
-    null,
-    null,
-    false,
-    true,
-    null,
-    'Household internet service.',
-    'Project Phoenix Batch 2. Migrated from scheduled_payments.406f0a86-34da-4c31-b174-93388ea8dc2e Internet. Provider not confirmed in legacy mapping; possible Liberty/internet.'
-  ),
-  (
-    'ef7ee92b-2b22-4f60-8b82-3acaec42930c',
-    'Agua / AAA',
-    'Agua / AAA',
-    array['agua / aaa', 'agua', 'aaa', 'prasa'],
-    'utilities_water',
-    'household',
-    'utility',
-    'monthly',
-    null,
-    'AAA',
-    null,
-    null,
-    false,
-    true,
-    null,
-    'Household water utility.',
-    'Project Phoenix Batch 2. Migrated from scheduled_payments.ef7ee92b-2b22-4f60-8b82-3acaec42930c Agua / AAA.'
-  ),
-  (
-    '81071b2b-5f16-41ca-8838-3a359dc595ad',
-    'Luz / LUMA',
-    'Luz / LUMA',
-    array['luz / luma', 'luz', 'luma'],
-    'utilities_electricity',
-    'household',
-    'utility',
-    'monthly',
-    null,
-    'LUMA',
-    null,
-    null,
-    false,
-    true,
-    null,
-    'Household electricity utility.',
-    'Project Phoenix Batch 2. Migrated from scheduled_payments.81071b2b-5f16-41ca-8838-3a359dc595ad Luz / LUMA.'
-  ),
-  (
-    '9ae616f7-6746-4214-810a-eb16c5959425',
-    'SunRun',
-    'SunRun',
-    array['sunrun', 'sun run', 'solar'],
-    'utilities_electricity',
-    'household',
-    'utility',
-    'monthly',
-    'autopay',
-    'SunRun',
-    null,
-    'autopay',
-    false,
-    true,
-    null,
-    'Household solar service.',
-    'Project Phoenix Batch 2. Migrated from scheduled_payments.9ae616f7-6746-4214-810a-eb16c5959425 SunRun. Payment lifecycle docs describe SunRun as expected/autopay/confirmed by transaction, with no separate special code path found.'
-  ),
-  (
-    '8b7a4374-c882-433b-ac15-5a6818ae1bcb',
-    'Grama',
-    'Grama',
-    array['grama', 'recorte de grama', 'lawn service'],
-    'housing_yard_maintenance',
+    'deb493fa-8dec-40d9-8a18-29495edf87dc',
+    'Colegio Gaby',
+    'Colegio Gaby',
+    array['colegio gaby', 'colegio', 'school gaby'],
+    'education_school',
     'household',
     'service',
     'monthly',
-    'ATH Movil',
-    'Figueroa Guardia',
-    '787-906-2129',
-    'ATH Movil',
+    null,
     false,
-    false,
-    'Deferred: legacy due_day is null; migrate in a later manual-service obligation batch after Manuel confirms the service/payment day.',
-    'Household lawn service.',
-    'Project Phoenix Batch 2 deferred. Source scheduled_payments.8b7a4374-c882-433b-ac15-5a6818ae1bcb Grama. Provider template only: Figueroa Guardia, phone 787-906-2129, ATH Movil. Migrate later after Manuel confirms service/payment day.'
+    array[1, 2, 3, 4, 5, 8, 9, 10, 11, 12],
+    'Active school months exclude June and July; August is active.',
+    'Gaby school recurring payment.',
+    'Project Phoenix Batch 3. Migrated from scheduled_payments.deb493fa-8dec-40d9-8a18-29495edf87dc Colegio Gaby. Active months exclude summer except August.'
   ),
   (
-    '6653e7dd-30a4-4e8b-b863-efae0f9da49d',
-    'Celulares',
-    'Celulares',
-    array['celulares', 'cell phones', 'phone'],
-    'utilities_phone',
-    'household',
-    'utility',
-    'monthly',
-    null,
-    null,
-    null,
-    null,
-    false,
-    false,
-    'Deferred: shared/family bill details and due-day behavior are unclear in the legacy mapping.',
-    'Household phone service.',
-    'Project Phoenix Batch 2 deferred. Source scheduled_payments.6653e7dd-30a4-4e8b-b863-efae0f9da49d Celulares.'
-  ),
-  (
-    '187b90d1-c545-4b5e-ac42-0857784578cc',
-    'Barbero',
-    'Barbero',
-    array['barbero', 'barber'],
-    'health_beauty_personal_care',
+    '6da31c21-9632-4c34-b98f-7d66f18fee61',
+    'Tutorias Gaby',
+    'Tutorias Gaby',
+    array['tutorias gaby', 'tutorías gaby', 'tutorias', 'tutorías', 'tutoria gaby', 'tutoría gaby'],
+    'education_tutoring',
     'household',
     'service',
-    'custom',
-    'ATH Movil',
+    'monthly',
     null,
-    null,
-    'ATH Movil',
     false,
-    false,
-    'Deferred: legacy mapping says this follows payday; current obligation_instances can model monthly dates but not a payday-based cadence safely.',
-    'Household barber service.',
-    'Project Phoenix Batch 2 deferred. Source scheduled_payments.187b90d1-c545-4b5e-ac42-0857784578cc Barbero.'
+    array[1, 2, 3, 4, 8, 9, 10, 11, 12],
+    'Active tutoring months are January through April and August through December.',
+    'Gaby tutoring recurring payment.',
+    'Project Phoenix Batch 3. Migrated from scheduled_payments.6da31c21-9632-4c34-b98f-7d66f18fee61 Tutorias Gaby. Active months Jan-Apr and Aug-Dec.'
   );
 
 do $$
@@ -205,6 +98,7 @@ declare
   changed_row record;
   alias_conflict record;
   missing_due_day record;
+  invalid_month record;
 begin
   if not exists (
     select 1
@@ -216,13 +110,13 @@ begin
 
   select count(*)
   into missing_count
-  from phoenix_batch_2_scope scope
+  from phoenix_batch_3_scope scope
   left join public.scheduled_payments legacy
     on legacy.id = scope.legacy_scheduled_payment_id
   where legacy.id is null;
 
   if missing_count > 0 then
-    raise exception 'Project Phoenix Batch 2 expected % scheduled_payments rows that were not found.', missing_count;
+    raise exception 'Project Phoenix Batch 3 expected % scheduled_payments rows that were not found.', missing_count;
   end if;
 
   select
@@ -231,7 +125,7 @@ begin
     legacy.name as actual_legacy_name,
     scope.legacy_scheduled_payment_id
   into changed_row
-  from phoenix_batch_2_scope scope
+  from phoenix_batch_3_scope scope
   join public.scheduled_payments legacy
     on legacy.id = scope.legacy_scheduled_payment_id
   where lower(legacy.name) <> all(scope.name_match)
@@ -240,7 +134,7 @@ begin
 
   if found then
     raise exception
-      'Project Phoenix Batch 2 expected scheduled_payments.% to be named one of %, but found %.',
+      'Project Phoenix Batch 3 expected scheduled_payments.% to be named one of %, but found %.',
       changed_row.legacy_scheduled_payment_id,
       changed_row.name_match,
       changed_row.actual_legacy_name;
@@ -250,7 +144,7 @@ begin
     lower(alias_value) as duplicated_alias,
     array_agg(distinct canonical_name order by canonical_name) as canonical_names
   into alias_conflict
-  from phoenix_batch_2_scope
+  from phoenix_batch_3_scope
   cross join unnest(name_match || array[lower(canonical_name)]) as alias_value
   group by lower(alias_value)
   having count(distinct canonical_name) > 1
@@ -259,7 +153,7 @@ begin
 
   if found then
     raise exception
-      'Project Phoenix Batch 2 alias % maps to multiple canonical obligations: %. Fix aliases before running.',
+      'Project Phoenix Batch 3 alias % maps to multiple canonical obligations: %. Fix aliases before running.',
       alias_conflict.duplicated_alias,
       alias_conflict.canonical_names;
   end if;
@@ -268,23 +162,40 @@ begin
     scope.canonical_name,
     scope.legacy_scheduled_payment_id
   into missing_due_day
-  from phoenix_batch_2_scope scope
+  from phoenix_batch_3_scope scope
   join public.scheduled_payments legacy
     on legacy.id = scope.legacy_scheduled_payment_id
-  where scope.migrate_now
-    and legacy.due_day is null
+  where legacy.due_day is null
   order by scope.canonical_name
   limit 1;
 
   if found then
     raise exception
-      'Project Phoenix Batch 2 cannot migrate % from scheduled_payments.% because due_day is null. Confirm due day or defer it.',
+      'Project Phoenix Batch 3 cannot migrate % from scheduled_payments.% because due_day is null. Confirm due day or defer it.',
       missing_due_day.canonical_name,
       missing_due_day.legacy_scheduled_payment_id;
   end if;
+
+  select
+    scope.canonical_name,
+    bad_month.month_number
+  into invalid_month
+  from phoenix_batch_3_scope scope
+  cross join unnest(scope.active_month_numbers) as bad_month(month_number)
+  where bad_month.month_number < 1
+     or bad_month.month_number > 12
+  order by scope.canonical_name, bad_month.month_number
+  limit 1;
+
+  if found then
+    raise exception
+      'Project Phoenix Batch 3 has invalid active month % for %. Fix active_month_numbers before running.',
+      invalid_month.month_number,
+      invalid_month.canonical_name;
+  end if;
 end $$;
 
-create temp table phoenix_batch_2_seed as
+create temp table phoenix_batch_3_seed as
 with target_user as (
   select '376aeb27-8cbb-46c4-89b5-9da0a59e5364'::uuid as user_id
 ),
@@ -301,7 +212,7 @@ legacy_rows as (
     legacy.active_months as legacy_active_months,
     legacy.notes as legacy_notes,
     legacy.created_at as legacy_created_at
-  from phoenix_batch_2_scope scope
+  from phoenix_batch_3_scope scope
   join public.scheduled_payments legacy
     on legacy.id = scope.legacy_scheduled_payment_id
 )
@@ -316,12 +227,9 @@ select
   legacy_rows.obligation_type,
   legacy_rows.frequency,
   legacy_rows.payment_method,
-  legacy_rows.provider_name,
-  legacy_rows.provider_phone,
-  legacy_rows.provider_payment_method,
   legacy_rows.amount_is_estimated,
-  legacy_rows.migrate_now,
-  legacy_rows.deferral_reason,
+  legacy_rows.active_month_numbers,
+  legacy_rows.active_months_note,
   legacy_rows.description,
   legacy_rows.legacy_amount::numeric as default_amount,
   legacy_rows.legacy_due_day as due_day,
@@ -335,20 +243,18 @@ select
   legacy_rows.owner as legacy_person,
   legacy_rows.canonical_name as legacy_title,
   legacy_rows.legacy_amount::numeric as legacy_amount,
-  case
-    when legacy_rows.legacy_due_day is null then null::date
-    else make_date(
-      2026,
-      7,
-      least(legacy_rows.legacy_due_day, extract(day from date '2026-07-31')::integer)
-    )
-  end as legacy_due_date,
+  make_date(
+    2026,
+    8,
+    least(legacy_rows.legacy_due_day, extract(day from date '2026-08-31')::integer)
+  ) as legacy_due_date,
   legacy_rows.frequency as legacy_recurrence,
   2::integer as legacy_priority,
   true as legacy_active,
   concat_ws(
     ' ',
     legacy_rows.notes_prefix,
+    legacy_rows.active_months_note,
     case
       when legacy_rows.legacy_notes is not null
         then concat('Legacy notes:', legacy_rows.legacy_notes)
@@ -359,16 +265,10 @@ select
       'Legacy source:',
       'scheduled_payments.',
       legacy_rows.legacy_scheduled_payment_id
-    ),
-    case
-      when not legacy_rows.migrate_now
-        then concat('Deferred reason:', legacy_rows.deferral_reason)
-      else null
-    end
+    )
   ) as notes
 from target_user
-cross join legacy_rows
-where legacy_rows.migrate_now;
+cross join legacy_rows;
 
 do $$
 declare
@@ -378,7 +278,7 @@ begin
     select
       seed.canonical_name,
       count(*) as matching_obligations
-    from phoenix_batch_2_seed seed
+    from phoenix_batch_3_seed seed
     join public.obligations obligation
       on obligation.user_id = seed.user_id
      and lower(obligation.name) = any(seed.name_match || array[lower(seed.canonical_name)])
@@ -393,7 +293,7 @@ begin
 
   if found then
     raise exception
-      'Project Phoenix Batch 2 found % pre-existing obligations matching %. Resolve duplicates manually before running.',
+      'Project Phoenix Batch 3 found % pre-existing obligations matching %. Resolve duplicates manually before running.',
       duplicate_match.matching_obligations,
       duplicate_match.canonical_name;
   end if;
@@ -408,7 +308,7 @@ begin
       seed.canonical_name,
       obligation.id,
       obligation.name
-    from phoenix_batch_2_seed seed
+    from phoenix_batch_3_seed seed
     join public.obligations obligation
       on obligation.user_id = seed.user_id
      and lower(obligation.name) = any(seed.name_match || array[lower(seed.canonical_name)])
@@ -426,7 +326,7 @@ begin
 
   if found then
     raise exception
-      'Project Phoenix Batch 2 found ambiguous existing obligations for %: %. Resolve duplicate aliases before running.',
+      'Project Phoenix Batch 3 found ambiguous existing obligations for %: %. Resolve duplicate aliases before running.',
       duplicate_alias_match.canonical_name,
       duplicate_alias_match.matching_names;
   end if;
@@ -436,7 +336,7 @@ with matched_existing as (
   select distinct on (seed.canonical_name)
     seed.canonical_name,
     obligation.id as obligation_id
-  from phoenix_batch_2_seed seed
+  from phoenix_batch_3_seed seed
   join public.obligations obligation
     on obligation.user_id = seed.user_id
    and lower(obligation.name) = any(seed.name_match || array[lower(seed.canonical_name)])
@@ -466,7 +366,7 @@ updated as (
     active = seed.legacy_active,
     notes = seed.notes,
     updated_at = now()
-  from phoenix_batch_2_seed seed
+  from phoenix_batch_3_seed seed
   join matched_existing existing
     on existing.canonical_name = seed.canonical_name
   where obligation.id = existing.obligation_id
@@ -517,7 +417,7 @@ select
   seed.legacy_priority,
   seed.legacy_active,
   seed.notes
-from phoenix_batch_2_seed seed
+from phoenix_batch_3_seed seed
 where not exists (
   select 1
   from matched_existing existing
@@ -528,83 +428,16 @@ with target_obligations as (
   select
     seed.*,
     obligation.id as obligation_id
-  from phoenix_batch_2_seed seed
+  from phoenix_batch_3_seed seed
   join public.obligations obligation
     on obligation.user_id = seed.user_id
    and lower(obligation.name) = lower(seed.canonical_name)
-),
-provider_seed as (
-  select
-    target_obligations.user_id,
-    target_obligations.obligation_id,
-    target_obligations.provider_name,
-    target_obligations.provider_phone as phone,
-    target_obligations.provider_payment_method as payment_method,
-    date '2026-07-01' as active_from,
-    null::date as active_until,
-    concat(
-      'Project Phoenix Batch 2 provider seed for ',
-      target_obligations.canonical_name,
-      ' from scheduled_payments.',
-      target_obligations.legacy_scheduled_payment_id
-    ) as notes
-  from target_obligations
-  where target_obligations.migrate_now
-    and target_obligations.provider_name is not null
-)
-insert into public.obligation_providers (
-  user_id,
-  obligation_id,
-  provider_name,
-  phone,
-  payment_method,
-  active_from,
-  active_until,
-  notes
-)
-select
-  provider_seed.user_id,
-  provider_seed.obligation_id,
-  provider_seed.provider_name,
-  provider_seed.phone,
-  provider_seed.payment_method,
-  provider_seed.active_from,
-  provider_seed.active_until,
-  provider_seed.notes
-from provider_seed
-where not exists (
-  select 1
-  from public.obligation_providers existing
-  where existing.user_id = provider_seed.user_id
-    and existing.obligation_id = provider_seed.obligation_id
-    and lower(existing.provider_name) = lower(provider_seed.provider_name)
-    and existing.active_from is not distinct from provider_seed.active_from
-);
-
-with target_obligations as (
-  select
-    seed.*,
-    obligation.id as obligation_id
-  from phoenix_batch_2_seed seed
-  join public.obligations obligation
-    on obligation.user_id = seed.user_id
-   and lower(obligation.name) = lower(seed.canonical_name)
-),
-current_providers as (
-  select distinct on (provider.obligation_id)
-    provider.obligation_id,
-    provider.id as provider_id
-  from public.obligation_providers provider
-  join target_obligations obligation
-    on obligation.obligation_id = provider.obligation_id
-  where provider.active_until is null
-  order by provider.obligation_id, provider.active_from desc nulls last, provider.created_at desc
 ),
 expected_instances as (
   select
     target_obligations.user_id,
     target_obligations.obligation_id,
-    current_providers.provider_id,
+    null::uuid as provider_id,
     make_date(
       extract(year from cycle.cycle_month)::integer,
       extract(month from cycle.cycle_month)::integer,
@@ -632,20 +465,21 @@ expected_instances as (
     'pending'::text as status,
     'generated'::text as source,
     concat(
-      'Project Phoenix Batch 2 generated July/August 2026 utility/service cycle. Source scheduled_payments.',
+      'Project Phoenix Batch 3 generated July/August 2026 family recurring cycle only when the cycle is an active school month. Source scheduled_payments.',
       target_obligations.legacy_scheduled_payment_id,
       '. Legacy source: scheduled_payments.',
-      target_obligations.legacy_scheduled_payment_id
+      target_obligations.legacy_scheduled_payment_id,
+      '. ',
+      target_obligations.active_months_note
     ) as notes
   from target_obligations
-  left join current_providers
-    on current_providers.obligation_id = target_obligations.obligation_id
   cross join (
     values
       (date '2026-07-01'),
       (date '2026-08-01')
   ) as cycle(cycle_month)
   where target_obligations.due_day is not null
+    and extract(month from cycle.cycle_month)::integer = any(target_obligations.active_month_numbers)
 ),
 updated_instances as (
   update public.obligation_instances instance
@@ -661,7 +495,7 @@ updated_instances as (
   where instance.user_id = expected.user_id
     and instance.obligation_id = expected.obligation_id
     and instance.expected_date = expected.expected_date
-    and instance.status <> 'cancelled'
+    and instance.status = 'pending'
     and instance.source = 'generated'
   returning instance.id
 )
@@ -701,25 +535,41 @@ do $$
 declare
   duplicate_instance record;
 begin
-  with duplicate_instances as (
+  with expected_instance_dates as (
     select
+      seed.user_id,
+      obligation.id as obligation_id,
       obligation.name,
-      instance.expected_date,
-      count(*) as instance_count
-    from phoenix_batch_2_seed seed
+      make_date(
+        2026,
+        expected_month.month_number,
+        least(
+          seed.due_day,
+          extract(day from (
+            date_trunc('month', make_date(2026, expected_month.month_number, 1))::date
+            + interval '1 month - 1 day'
+          ))::integer
+        )
+      ) as expected_date
+    from phoenix_batch_3_seed seed
     join public.obligations obligation
       on obligation.user_id = seed.user_id
      and lower(obligation.name) = lower(seed.canonical_name)
+    cross join unnest(array[7, 8]) as expected_month(month_number)
+    where expected_month.month_number = any(seed.active_month_numbers)
+  ),
+  duplicate_instances as (
+    select
+      expected_instance_dates.name,
+      instance.expected_date,
+      count(*) as instance_count
+    from expected_instance_dates
     join public.obligation_instances instance
-      on instance.user_id = seed.user_id
-     and instance.obligation_id = obligation.id
+      on instance.user_id = expected_instance_dates.user_id
+     and instance.obligation_id = expected_instance_dates.obligation_id
      and instance.status <> 'cancelled'
-     and instance.expected_date in (
-        make_date(2026, 7, seed.due_day),
-        make_date(2026, 8, seed.due_day)
-     )
-    where seed.due_day is not null
-    group by obligation.name, instance.expected_date
+     and instance.expected_date = expected_instance_dates.expected_date
+    group by expected_instance_dates.name, instance.expected_date
     having count(*) > 1
   )
   select *
@@ -730,7 +580,7 @@ begin
 
   if found then
     raise exception
-      'Project Phoenix Batch 2 found % active instances for % on %. Resolve duplicates before relying on lifecycle output.',
+      'Project Phoenix Batch 3 found % active instances for % on %. Resolve duplicates before relying on lifecycle output.',
       duplicate_instance.instance_count,
       duplicate_instance.name,
       duplicate_instance.expected_date;
@@ -740,94 +590,30 @@ end $$;
 commit;
 
 -- Parity report.
--- Run after the transaction to verify Batch 2 without changing legacy rows.
+-- Run after the transaction to verify Batch 3 without changing legacy rows.
 with scope as (
   select *
   from (
     values
       (
-        '406f0a86-34da-4c31-b174-93388ea8dc2e'::uuid,
-        'Internet',
-        'Internet',
-        array['internet', 'liberty/internet', 'liberty internet'],
-        'utilities_internet',
+        'deb493fa-8dec-40d9-8a18-29495edf87dc'::uuid,
+        'Colegio Gaby',
+        'Colegio Gaby',
+        array['colegio gaby', 'colegio', 'school gaby'],
+        'education_school',
         'household',
-        null::text,
-        null::text,
-        true,
-        null::text
+        array[1, 2, 3, 4, 5, 8, 9, 10, 11, 12],
+        true
       ),
       (
-        'ef7ee92b-2b22-4f60-8b82-3acaec42930c'::uuid,
-        'Agua / AAA',
-        'Agua / AAA',
-        array['agua / aaa', 'agua', 'aaa', 'prasa'],
-        'utilities_water',
+        '6da31c21-9632-4c34-b98f-7d66f18fee61'::uuid,
+        'Tutorias Gaby',
+        'Tutorias Gaby',
+        array['tutorias gaby', 'tutorías gaby', 'tutorias', 'tutorías', 'tutoria gaby', 'tutoría gaby'],
+        'education_tutoring',
         'household',
-        null::text,
-        'AAA',
-        true,
-        null::text
-      ),
-      (
-        '81071b2b-5f16-41ca-8838-3a359dc595ad'::uuid,
-        'Luz / LUMA',
-        'Luz / LUMA',
-        array['luz / luma', 'luz', 'luma'],
-        'utilities_electricity',
-        'household',
-        null::text,
-        'LUMA',
-        true,
-        null::text
-      ),
-      (
-        '9ae616f7-6746-4214-810a-eb16c5959425'::uuid,
-        'SunRun',
-        'SunRun',
-        array['sunrun', 'sun run', 'solar'],
-        'utilities_electricity',
-        'household',
-        'autopay',
-        'SunRun',
-        true,
-        null::text
-      ),
-      (
-        '8b7a4374-c882-433b-ac15-5a6818ae1bcb'::uuid,
-        'Grama',
-        'Grama',
-        array['grama', 'recorte de grama', 'lawn service'],
-        'housing_yard_maintenance',
-        'household',
-        'ATH Movil',
-        'Figueroa Guardia',
-        false,
-        'deferred_manual_service_due_day'
-      ),
-      (
-        '6653e7dd-30a4-4e8b-b863-efae0f9da49d'::uuid,
-        'Celulares',
-        'Celulares',
-        array['celulares', 'cell phones', 'phone'],
-        'utilities_phone',
-        'household',
-        null::text,
-        null::text,
-        false,
-        'deferred_unclear_family_bill'
-      ),
-      (
-        '187b90d1-c545-4b5e-ac42-0857784578cc'::uuid,
-        'Barbero',
-        'Barbero',
-        array['barbero', 'barber'],
-        'health_beauty_personal_care',
-        'household',
-        'ATH Movil',
-        null::text,
-        false,
-        'deferred_payday_based'
+        array[1, 2, 3, 4, 8, 9, 10, 11, 12],
+        true
       )
   ) as row(
     legacy_scheduled_payment_id,
@@ -836,10 +622,8 @@ with scope as (
     allowed_legacy_names,
     expected_category_code,
     expected_owner,
-    expected_payment_method,
-    expected_provider_name,
-    migrate_now,
-    deferral_code
+    active_month_numbers,
+    migrate_now
   )
 ),
 legacy_rows as (
@@ -860,14 +644,28 @@ actual_obligations as (
   from public.obligations obligation
   where obligation.user_id = '376aeb27-8cbb-46c4-89b5-9da0a59e5364'
     and lower(obligation.name) in (
-      'internet',
-      'agua / aaa',
-      'luz / luma',
-      'sunrun',
-      'grama',
-      'celulares',
-      'barbero'
+      'colegio gaby',
+      'tutorias gaby'
     )
+),
+expected_months as (
+  select *
+  from (
+    values
+      (7),
+      (8)
+  ) as row(month_number)
+),
+expected_instance_counts as (
+  select
+    legacy_rows.canonical_name,
+    count(*) filter (
+      where legacy_rows.legacy_due_day is not null
+        and expected_months.month_number = any(legacy_rows.active_month_numbers)
+    ) as expected_july_august_instance_count
+  from legacy_rows
+  cross join expected_months
+  group by legacy_rows.canonical_name
 ),
 instance_counts as (
   select
@@ -875,35 +673,23 @@ instance_counts as (
     count(*) filter (where instance.status <> 'cancelled') as active_instance_count,
     count(*) filter (
       where instance.status <> 'cancelled'
-        and instance.expected_date in (date '2026-07-01', date '2026-08-01')
-    ) as first_day_instance_count,
+        and instance.expected_date >= date '2026-07-01'
+        and instance.expected_date < date '2026-09-01'
+    ) as july_august_instance_count,
     count(*) filter (
       where instance.status <> 'cancelled'
         and instance.expected_date >= date '2026-07-01'
+        and instance.expected_date < date '2026-08-01'
+    ) as july_instance_count,
+    count(*) filter (
+      where instance.status <> 'cancelled'
+        and instance.expected_date >= date '2026-08-01'
         and instance.expected_date < date '2026-09-01'
-    ) as july_august_instance_count
+    ) as august_instance_count
   from actual_obligations obligation
   left join public.obligation_instances instance
     on instance.obligation_id = obligation.id
   group by obligation.name
-),
-provider_counts as (
-  select
-    obligation.name,
-    count(*) filter (
-      where provider.id is not null
-    ) as provider_count,
-    count(*) filter (
-      where provider.id is not null
-        and lower(provider.provider_name) = lower(legacy_rows.expected_provider_name)
-        and provider.active_until is null
-    ) as matching_active_provider_count
-  from legacy_rows
-  join actual_obligations obligation
-    on lower(obligation.name) = lower(legacy_rows.canonical_name)
-  left join public.obligation_providers provider
-    on provider.obligation_id = obligation.id
-  group by obligation.name, legacy_rows.expected_provider_name
 )
 select
   legacy_rows.canonical_name,
@@ -913,41 +699,36 @@ select
   legacy_rows.legacy_due_day,
   legacy_rows.legacy_grace_day,
   legacy_rows.migrate_now,
-  legacy_rows.deferral_code,
   actual_obligations.id as obligation_id,
   actual_obligations.default_amount as obligation_amount,
   actual_obligations.due_day as obligation_due_day,
   actual_obligations.grace_period_days,
   actual_obligations.category_code,
   actual_obligations.owner,
-  actual_obligations.payment_method,
-  legacy_rows.expected_provider_name,
-  coalesce(provider_counts.matching_active_provider_count, 0) as matching_active_provider_count,
-  coalesce(instance_counts.july_august_instance_count, 0) as july_august_instance_count,
+  coalesce(expected_instance_counts.expected_july_august_instance_count, 0)
+    as expected_july_august_instance_count,
+  coalesce(instance_counts.july_instance_count, 0) as july_instance_count,
+  coalesce(instance_counts.august_instance_count, 0) as august_instance_count,
+  coalesce(instance_counts.july_august_instance_count, 0) as actual_july_august_instance_count,
   case
     when legacy_rows.legacy_id is null then 'missing_legacy_row'
     when lower(legacy_rows.legacy_name) <> all(legacy_rows.allowed_legacy_names) then 'legacy_name_mismatch'
-    when legacy_rows.migrate_now = false and actual_obligations.id is null then 'deferred_ok'
-    when legacy_rows.migrate_now = false and actual_obligations.id is not null then 'deferred_but_obligation_exists'
+    when legacy_rows.legacy_due_day is null then 'missing_due_day'
     when actual_obligations.id is null then 'missing_obligation'
     when actual_obligations.default_amount <> legacy_rows.legacy_amount then 'amount_mismatch'
     when actual_obligations.owner <> legacy_rows.expected_owner then 'owner_mismatch'
     when actual_obligations.category_code <> legacy_rows.expected_category_code then 'category_mismatch'
-    when actual_obligations.payment_method is distinct from legacy_rows.expected_payment_method then 'payment_method_mismatch'
-    when legacy_rows.expected_provider_name is not null
-      and coalesce(provider_counts.matching_active_provider_count, 0) <> 1 then 'provider_mismatch'
     when actual_obligations.due_day is distinct from legacy_rows.legacy_due_day then 'due_day_mismatch'
-    when coalesce(instance_counts.july_august_instance_count, 0) <> 2 and legacy_rows.legacy_due_day is not null then 'instance_count_mismatch'
-    when coalesce(instance_counts.july_august_instance_count, 0) <> 0 and legacy_rows.legacy_due_day is null then 'unexpected_instances_without_due_day'
+    when coalesce(instance_counts.july_instance_count, 0) <> 0 then 'unexpected_july_instance'
+    when coalesce(instance_counts.july_august_instance_count, 0)
+      <> coalesce(expected_instance_counts.expected_july_august_instance_count, 0) then 'instance_count_mismatch'
     else 'ok'
   end as parity_status
 from legacy_rows
 left join actual_obligations
   on lower(actual_obligations.name) = lower(legacy_rows.canonical_name)
+left join expected_instance_counts
+  on lower(expected_instance_counts.canonical_name) = lower(legacy_rows.canonical_name)
 left join instance_counts
   on lower(instance_counts.name) = lower(legacy_rows.canonical_name)
-left join provider_counts
-  on lower(provider_counts.name) = lower(legacy_rows.canonical_name)
-order by
-  legacy_rows.migrate_now desc,
-  legacy_rows.canonical_name;
+order by legacy_rows.canonical_name;

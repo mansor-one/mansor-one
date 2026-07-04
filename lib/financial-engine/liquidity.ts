@@ -206,24 +206,50 @@ function dateForScheduledPayment(
   month: number,
   year: number
 ) {
+  return scheduledPaymentDateWindow(scheduledPayment, month, year).graceUntilDate
+}
+
+function scheduledPaymentDateWindow(
+  scheduledPayment: ScheduledPayment,
+  month: number,
+  year: number
+) {
   const dueDay = Number(scheduledPayment.due_day || 0)
   const graceValue = Number(scheduledPayment.grace_day || 0)
-  const day = graceValue || dueDay
-  if (!day) return null
-
-  if (graceValue && dueDay && graceValue !== dueDay && graceValue < dueDay) {
-    const dueDate = new Date(year, month - 1, dueDay)
-    dueDate.setDate(dueDate.getDate() + graceValue)
-
-    return dueDate.toISOString().slice(0, 10)
+  if (!dueDay) {
+    return {
+      dueDate: null,
+      graceUntilDate: null,
+      graceDays: 0,
+    }
   }
 
   const lastDay = new Date(year, month, 0).getDate()
-  const safeDay = Math.min(day, lastDay)
+  const safeDueDay = Math.min(dueDay, lastDay)
   const paddedMonth = String(month).padStart(2, '0')
-  const paddedDay = String(safeDay).padStart(2, '0')
+  const paddedDueDay = String(safeDueDay).padStart(2, '0')
+  const dueDate = `${year}-${paddedMonth}-${paddedDueDay}`
 
-  return `${year}-${paddedMonth}-${paddedDay}`
+  if (graceValue && dueDay && graceValue !== dueDay && graceValue < dueDay) {
+    const graceDate = new Date(year, month - 1, safeDueDay)
+    graceDate.setDate(graceDate.getDate() + graceValue)
+
+    return {
+      dueDate,
+      graceUntilDate: graceDate.toISOString().slice(0, 10),
+      graceDays: graceValue,
+    }
+  }
+
+  const graceDay = graceValue ? Math.min(graceValue, lastDay) : safeDueDay
+  const paddedGraceDay = String(graceDay).padStart(2, '0')
+  const graceUntilDate = `${year}-${paddedMonth}-${paddedGraceDay}`
+
+  return {
+    dueDate,
+    graceUntilDate,
+    graceDays: Math.max(0, graceDay - safeDueDay),
+  }
 }
 
 function scheduleExistedByCycleDueDate(
@@ -326,14 +352,24 @@ function withLifecycle(
     hasDetectedTransaction: detectedTransactionMatch,
     hasConfirmedLedgerEntry: Boolean(confirmedLedgerMatch),
   })
+  const dueDate = payment.due_date || payment.expected_date || null
+  const graceUntil = payment.grace_until || payment.grace_due_date || null
+  const isInGracePeriod =
+    snapshot.isOpen &&
+    Boolean(dueDate && graceUntil) &&
+    String(dueDate) < today &&
+    String(graceUntil) >= today
 
   return {
     ...payment,
+    due_date: dueDate,
+    grace_until: graceUntil,
     lifecycleState: snapshot.state,
     lifecycleLabel: snapshot.label,
     lifecycleIsOpen: snapshot.isOpen,
     lifecycleIsClosed: snapshot.state === 'closed',
     isOverdue: snapshot.state === 'overdue',
+    isInGracePeriod,
     daysFromDueDate: snapshot.daysFromDueDate,
     lifecycleReasons: snapshot.reasons,
     lifecycleReconciliationConfidence: match?.confidence ?? null,
@@ -427,8 +463,6 @@ function migratedObligationMatchesLegacyPayment(
 ) {
   if (obligationPayment.source !== 'obligation') return false
   if (legacyPayment.source === 'obligation') return false
-  if (!paymentAmountMatches(legacyPayment, obligationPayment)) return false
-  if (!paymentCycleDateMatches(legacyPayment, obligationPayment)) return false
 
   const legacyScheduledIds = legacyScheduledIdsFromPayment(obligationPayment)
 
@@ -441,6 +475,9 @@ function migratedObligationMatchesLegacyPayment(
       paymentCycleDateMatches(legacyPayment, obligationPayment)
     )
   }
+
+  if (!paymentAmountMatches(legacyPayment, obligationPayment)) return false
+  if (!paymentCycleDateMatches(legacyPayment, obligationPayment)) return false
 
   return paymentNameMatchesMigratedAlias(legacyPayment, obligationPayment)
 }
@@ -482,8 +519,8 @@ function expectedScheduledPayment(
   today: string,
   amount: number | null = null
 ): PaymentInstance | null {
-  const effectiveDueDate = dateForScheduledPayment(scheduledPayment, month, year)
-  if (!effectiveDueDate) return null
+  const dateWindow = scheduledPaymentDateWindow(scheduledPayment, month, year)
+  if (!dateWindow.dueDate || !dateWindow.graceUntilDate) return null
 
   return withLifecycle(
     {
@@ -491,7 +528,12 @@ function expectedScheduledPayment(
       name: scheduledPayment.name,
       amount: Number(amount ?? scheduledPayment.amount ?? 0),
       status: 'pending',
-      effective_due_date: effectiveDueDate,
+      due_date: dateWindow.dueDate,
+      expected_date: dateWindow.dueDate,
+      effective_due_date: dateWindow.graceUntilDate,
+      grace_until: dateWindow.graceUntilDate,
+      grace_days: dateWindow.graceDays,
+      grace_due_date: dateWindow.graceUntilDate,
       payment_month: month,
       payment_year: year,
       scheduled_payment_id: scheduledPayment.id,
@@ -530,9 +572,32 @@ export function buildPaymentLifecycleView({
     const schedule = payment.scheduled_payment_id
       ? scheduledPaymentById.get(payment.scheduled_payment_id)
       : null
+    const dateWindow =
+      schedule && payment.payment_month && payment.payment_year
+        ? scheduledPaymentDateWindow(
+            schedule,
+            Number(payment.payment_month),
+            Number(payment.payment_year)
+          )
+        : null
 
     return {
       ...payment,
+      due_date:
+        payment.due_date || payment.expected_date || dateWindow?.dueDate || null,
+      expected_date:
+        payment.expected_date || payment.due_date || dateWindow?.dueDate || null,
+      grace_until:
+        payment.grace_until ||
+        payment.grace_due_date ||
+        dateWindow?.graceUntilDate ||
+        null,
+      grace_days: payment.grace_days ?? dateWindow?.graceDays ?? null,
+      grace_due_date:
+        payment.grace_due_date ||
+        payment.grace_until ||
+        dateWindow?.graceUntilDate ||
+        null,
       source: 'payment_instance' as const,
       lifecycleItemType: schedule?.credit_card_id
         ? 'card_payment' as const

@@ -9,6 +9,7 @@ export default function Nav() {
       <Link href="/spending">📊 Gastos</Link>
       <Link href="/history">📜 Movimientos</Link>
       <Link href="/planning">🎯 Planning</Link>
+      <Link href="/portfolio">🏦 Portfolio</Link>
       <Link href="/timeline">📅 Timeline</Link>
       <Link href="/cards">💳 Tarjetas</Link>
       <Link href="/plaid">🔗 🏦 Bancos conectados</Link>

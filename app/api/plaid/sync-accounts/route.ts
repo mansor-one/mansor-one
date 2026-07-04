@@ -65,7 +65,9 @@ export async function POST() {
         'id, user_id, institution_name, encrypted_access_token, token_iv, token_auth_tag, created_at'
       )
       .eq('user_id', user.id)
+      .eq('status', 'active')
       .not('encrypted_access_token', 'is', null)
+      .is('archived_at', null)
       .order('created_at', { ascending: false })
 
     if (connectionError) {
@@ -134,8 +136,40 @@ export async function POST() {
         }
 
         syncedAccounts += accounts.length
+
+        const { error: syncMetadataError } = await supabase
+          .from('plaid_connections')
+          .update({
+            last_sync_at: new Date().toISOString(),
+            last_sync_error: null,
+          })
+          .eq('id', connection.id)
+          .eq('user_id', user.id)
+
+        if (syncMetadataError) {
+          console.error('Plaid connection sync metadata error:', {
+            connection_id: connection.id,
+            message: syncMetadataError.message,
+          })
+        }
       } catch (error: unknown) {
         const details = plaidErrorDetails(error)
+
+        const { error: syncMetadataError } = await supabase
+          .from('plaid_connections')
+          .update({
+            last_sync_at: new Date().toISOString(),
+            last_sync_error: `${details.error_code}: ${details.error_message}`,
+          })
+          .eq('id', connection.id)
+          .eq('user_id', user.id)
+
+        if (syncMetadataError) {
+          console.error('Plaid connection sync metadata error:', {
+            connection_id: connection.id,
+            message: syncMetadataError.message,
+          })
+        }
 
         failedConnections.push({
           id: connection.id,

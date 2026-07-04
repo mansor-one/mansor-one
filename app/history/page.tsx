@@ -3,6 +3,7 @@ import {
   canonicalCategoryCodeForText,
   commonMerchantDefaultCategoryCode,
   getCategoryByCode,
+  getSystemCategories,
   getLedgerSummary,
   type LedgerSummaryTransaction,
   transactionContext,
@@ -67,6 +68,23 @@ function displayPaymentMethod(value: string) {
   return hasKnownValue(value) ? value : 'Método no identificado'
 }
 
+function uniqueCategoryOptions() {
+  const seen = new Set<string>()
+
+  return getSystemCategories()
+    .filter((category) => {
+      const value = category.displayName.trim()
+      if (seen.has(value)) return false
+      seen.add(value)
+      return true
+    })
+    .map((category) => ({
+      value: category.displayName,
+      label: category.displayName,
+      kind: category.kind,
+    }))
+}
+
 function movementFromTransaction(
   transaction: LedgerSummaryTransaction
 ): HistoryMovement | null {
@@ -78,6 +96,9 @@ function movementFromTransaction(
 
   return {
     id: `${transaction.sourceTable}:${transaction.id}`,
+    sourceTable: transaction.sourceTable,
+    quickEntryId:
+      transaction.sourceTable === 'quick_entries' ? transaction.id : null,
     date: transaction.date,
     merchant: context.normalizedMerchant || context.rawMerchant,
     rawMerchant: context.rawMerchant,
@@ -104,6 +125,7 @@ export default async function HistoryPage() {
     .map(movementFromTransaction)
     .filter((movement): movement is HistoryMovement => movement !== null)
     .sort((a, b) => b.date.localeCompare(a.date))
+  const categoryOptions = uniqueCategoryOptions()
 
   return (
     <main className="space-y-6 p-4 md:p-8">
@@ -117,7 +139,7 @@ export default async function HistoryPage() {
 
       <Nav />
 
-      <HistoryClient movements={movements} />
+      <HistoryClient categoryOptions={categoryOptions} movements={movements} />
     </main>
   )
 }

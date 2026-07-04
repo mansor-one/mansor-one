@@ -245,7 +245,9 @@ export async function POST() {
         .from('plaid_connections')
         .select('*')
         .eq('user_id', user.id)
+        .eq('status', 'active')
         .not('encrypted_access_token', 'is', null)
+        .is('archived_at', null)
         .order('created_at', { ascending: false })
 
     if (connectionsError || !connections || connections.length === 0) {
@@ -276,6 +278,22 @@ export async function POST() {
         })
       } catch (error: unknown) {
         const errorCode = plaidErrorDetails(error) || 'UNKNOWN_ERROR'
+
+        const { error: syncMetadataError } = await supabaseAdmin
+          .from('plaid_connections')
+          .update({
+            last_sync_at: new Date().toISOString(),
+            last_sync_error: errorCode,
+          })
+          .eq('id', connection.id)
+          .eq('user_id', user.id)
+
+        if (syncMetadataError) {
+          console.error('Plaid connection sync metadata error:', {
+            connection_id: connection.id,
+            message: syncMetadataError.message,
+          })
+        }
 
         console.error(
           'Plaid connection skipped:',
@@ -376,6 +394,22 @@ export async function POST() {
             { status: 500 }
           )
         }
+      }
+
+      const { error: syncMetadataError } = await supabaseAdmin
+        .from('plaid_connections')
+        .update({
+          last_sync_at: new Date().toISOString(),
+          last_sync_error: null,
+        })
+        .eq('id', connection.id)
+        .eq('user_id', user.id)
+
+      if (syncMetadataError) {
+        console.error('Plaid connection sync metadata error:', {
+          connection_id: connection.id,
+          message: syncMetadataError.message,
+        })
       }
     }
 

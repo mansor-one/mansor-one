@@ -1,9 +1,4 @@
 import { requireUser } from '@/lib/auth/requireUser'
-import {
-  friendlyLifecyclePaymentNotes,
-  lifecyclePaymentDueDate,
-  lifecyclePaymentGraceUntilDate,
-} from '@/lib/finance/lifecycleDisplay'
 import type { Metadata } from 'next'
 import {
   canonicalCategoryCodeForText,
@@ -21,6 +16,7 @@ import {
 import Link from 'next/link'
 import InstitutionLogo from './components/InstitutionLogo'
 import Nav from './components/Nav'
+import PaymentScheduleView from './components/PaymentScheduleView'
 
 export const dynamic = 'force-dynamic'
 
@@ -722,9 +718,10 @@ export default async function Home() {
             detail="Pagos y transferencias"
           />
           <SummaryCard
-            label="Próximos pagos"
+            label="Pagos abiertos"
             value={money(liquidity.committedPaymentsTotal)}
-            detail={`${liquidity.committedPayments.length} abiertos`}
+            detail={`${liquidity.committedPayments.length} compromisos abiertos`}
+            helper="Incluye obligaciones y pagos legacy del ciclo actual/próximo."
           />
         </section>
 
@@ -981,54 +978,7 @@ export default async function Home() {
           </section>
         </div>
 
-        {upcomingPaymentCards.length > 0 && (
-          <section className="rounded-lg border border-neutral-800 bg-neutral-900 p-4">
-            <h2 className="mb-4 text-xl font-bold">Próximos pagos</h2>
-            <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
-              {upcomingPaymentCards.map((item) => (
-                <div
-                  className={`rounded border p-3 ${toneClasses(item.tone)}`}
-                  key={item.payment.id}
-                >
-                  <p className="font-medium">
-                    {toneDot(item.tone)} {item.payment.name || 'Pago'}
-                  </p>
-                  {(() => {
-                    const dueDate = lifecyclePaymentDueDate(item.payment)
-                    const graceUntilDate = lifecyclePaymentGraceUntilDate(
-                      item.payment
-                    )
-                    const notes = friendlyLifecyclePaymentNotes(item.payment)
-
-                    return (
-                      <>
-                        <p className="text-sm text-neutral-400">
-                          Vence: {dueDate || 'Sin fecha'}
-                        </p>
-                        {graceUntilDate && (
-                          <p className="text-sm text-neutral-400">
-                            Gracia hasta: {graceUntilDate}
-                          </p>
-                        )}
-                        {notes && (
-                          <p className="text-sm text-neutral-300">
-                            {notes}
-                          </p>
-                        )}
-                      </>
-                    )
-                  })()}
-                  <p className="text-sm text-neutral-400">
-                    {item.label}
-                  </p>
-                  <p className="mt-2 text-lg font-bold">
-                    Monto: {money(item.payment.amount)}
-                  </p>
-                </div>
-              ))}
-            </div>
-          </section>
-        )}
+        <PaymentScheduleView payments={upcomingPayments} today={today} />
       </div>
     </main>
   )
@@ -1038,16 +988,21 @@ function SummaryCard({
   label,
   value,
   detail,
+  helper,
 }: {
   label: string
   value: string | number
   detail: string
+  helper?: string
 }) {
   return (
     <div className="rounded-lg border border-neutral-800 bg-neutral-900 p-4">
       <p className="text-sm text-neutral-400">{label}</p>
       <p className="mt-2 text-2xl font-bold">{value}</p>
       <p className="mt-1 text-xs text-neutral-500">{detail}</p>
+      {helper ? (
+        <p className="mt-2 text-xs text-neutral-500">{helper}</p>
+      ) : null}
     </div>
   )
 }
