@@ -88,7 +88,7 @@ export default async function TimelinePage() {
         </p>
       </section>
 
-      <section className="grid grid-cols-1 gap-4 md:grid-cols-3">
+      <section id="projection" className="grid grid-cols-1 gap-4 md:grid-cols-3">
         <div className="rounded border p-4">
           <h2 className="font-semibold">Dinero inicial disponible</h2>
           <p className="text-3xl font-bold">
@@ -116,7 +116,7 @@ export default async function TimelinePage() {
       </section>
 
       <section className="grid grid-cols-1 gap-4 xl:grid-cols-3">
-        <div className="space-y-3 rounded border p-4">
+        <div id="lowest-point" className="space-y-3 rounded border p-4">
           <h2 className="text-xl font-bold">Initial Available Cash</h2>
           <p className="text-2xl font-bold">
             {money(explanation.initialCash.balance)}
@@ -176,7 +176,7 @@ export default async function TimelinePage() {
         </div>
       </section>
 
-      <section className="space-y-4">
+      <section id="payments" className="space-y-4">
         {projection.events.map((event, index) => (
           <div className="rounded border p-4" key={`${event.date}:${event.title}:${index}`}>
             <h2 className="text-xl font-bold">

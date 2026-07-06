@@ -209,6 +209,7 @@ export default async function PlanningPage({ searchParams }: PlanningPageProps) 
       </section>
 
       <PlanningSection
+        id="funds"
         items={critical}
         movementsByFund={movementsByFund}
         title="Critical"
@@ -265,17 +266,19 @@ function PrioritySelect({
 
 function PlanningSection({
   archiveOnly = false,
+  id,
   title,
   items,
   movementsByFund,
 }: {
   archiveOnly?: boolean
+  id?: string
   title: string
   items: PlanningFund[]
   movementsByFund: Record<string, PlanningFundMovement[]>
 }) {
   return (
-    <section className="space-y-4">
+    <section className="space-y-4" id={id}>
       <h2 className="text-2xl font-bold">{title}</h2>
 
       {items.length === 0 && (

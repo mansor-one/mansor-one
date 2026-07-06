@@ -417,16 +417,18 @@ function IncomeRow({
 function IncomeSection({
   destinations,
   emptyText,
+  id,
   items,
   title,
 }: {
   destinations: IncomeDestinationOption[]
   emptyText: string
+  id?: string
   items: IncomeSchedule[]
   title: string
 }) {
   return (
-    <section className="space-y-4">
+    <section className="space-y-4" id={id}>
       <h2 className="text-2xl font-bold">{title}</h2>
       {items.length === 0 && (
         <div className="rounded border p-4 text-sm opacity-70">{emptyText}</div>
@@ -508,6 +510,7 @@ export default async function IncomePage({ searchParams }: IncomePageProps) {
       <IncomeSection
         destinations={destinations}
         emptyText="No expected income is currently projected."
+        id="expected-income"
         items={summary.expectedIncome}
         title="Expected Income"
       />

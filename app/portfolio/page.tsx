@@ -699,7 +699,10 @@ export default async function PortfolioPage({
           <Nav />
         </header>
 
-        <section className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <section
+          className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4"
+          id="net-worth"
+        >
           {saved && (
             <div className="rounded border border-emerald-800 bg-emerald-950/40 p-3 text-sm text-emerald-100 sm:col-span-2 xl:col-span-4">
               Account saved.
@@ -732,7 +735,7 @@ export default async function PortfolioPage({
           />
         </section>
 
-        <section className="space-y-3">
+        <section className="space-y-3" id="cash">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
             <div>
               <h2 className="text-2xl font-bold">Cash</h2>
@@ -773,7 +776,7 @@ export default async function PortfolioPage({
           </div>
         </section>
 
-        <section className="space-y-3">
+        <section className="space-y-3" id="manual-accounts">
           <div>
             <h2 className="text-2xl font-bold">Manual Accounts</h2>
             <p className="text-sm text-neutral-400">
@@ -827,7 +830,7 @@ export default async function PortfolioPage({
           </section>
         )}
 
-        <section className="space-y-3">
+        <section className="space-y-3" id="plaid-accounts">
           <div>
             <h2 className="text-2xl font-bold">Plaid Accounts</h2>
             <p className="text-sm text-neutral-400">
@@ -892,7 +895,7 @@ export default async function PortfolioPage({
           </section>
         )}
 
-        <section className="space-y-3">
+        <section className="space-y-3" id="plaid-connections">
           <div>
             <h2 className="text-2xl font-bold">Plaid Connections</h2>
             <p className="text-sm text-neutral-400">

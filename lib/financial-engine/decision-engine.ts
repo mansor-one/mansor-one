@@ -221,6 +221,12 @@ export async function getDecisionEngineResult(
   userId: string
 ): Promise<DecisionEngineResult> {
   const summary = await getFinancialSummary(supabase, userId)
+  return buildDecisionEngineResultFromSummary(summary)
+}
+
+export function buildDecisionEngineResultFromSummary(
+  summary: FinancialSummary
+): DecisionEngineResult {
   const decisions = buildDecisionQueue(summary)
 
   return {

@@ -25,16 +25,18 @@ export default async function LabReviewQueuePage() {
         </p>
       </div>
 
-      <ReviewQueueClient
-        athReview={queue.athReview}
-        candidates={queue.candidates}
-        categoryOptions={categoryOptions}
-        needsCategory={queue.needsCategory}
-        needsManualReview={queue.needsManualReview}
-        paymentConfirmation={queue.paymentConfirmation}
-        possibleDuplicate={queue.possibleDuplicate}
-        readyToConfirm={queue.readyToConfirm}
-      />
+      <section id="queue">
+        <ReviewQueueClient
+          athReview={queue.athReview}
+          candidates={queue.candidates}
+          categoryOptions={categoryOptions}
+          needsCategory={queue.needsCategory}
+          needsManualReview={queue.needsManualReview}
+          paymentConfirmation={queue.paymentConfirmation}
+          possibleDuplicate={queue.possibleDuplicate}
+          readyToConfirm={queue.readyToConfirm}
+        />
+      </section>
     </main>
   )
 }

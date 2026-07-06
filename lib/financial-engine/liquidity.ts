@@ -24,6 +24,7 @@ import type {
   InstitutionBalance,
   LiquiditySummary,
   PaymentInstance,
+  PortfolioSummary,
   ScheduledPayment,
 } from './types'
 
@@ -672,7 +673,8 @@ export function buildPaymentLifecycleView({
 
 export async function getLiquiditySummary(
   supabase: FinancialSupabaseClient,
-  userId: string
+  userId: string,
+  portfolioInput?: PortfolioSummary | Promise<PortfolioSummary>
 ): Promise<LiquiditySummary> {
   const now = new Date()
 
@@ -688,7 +690,7 @@ export async function getLiquiditySummary(
     ledgerSummary,
     obligationLifecyclePayments,
   ] = await Promise.all([
-    getPortfolioSummary(supabase, userId),
+    portfolioInput ?? getPortfolioSummary(supabase, userId),
     getConnectedAssets(supabase, userId),
     getManualAccounts(supabase, userId),
     getCreditCards(supabase, userId),

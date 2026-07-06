@@ -7,6 +7,7 @@ import { getDashboardSummary } from './dashboard'
 import type {
   FinancialSupabaseClient,
   IncomeSchedule,
+  LiquiditySummary,
   PaymentInstance,
 } from './types'
 
@@ -53,54 +54,16 @@ export type TimelineProjectionSummary = {
   }
 }
 
-function incomeEvent(income: IncomeSchedule) {
-  if (!income.next_expected_date || !income.amount) return null
-
-  return {
-    date: income.next_expected_date,
-    title: income.name || 'Ingreso',
-    amount: Number(income.amount || 0),
-    type: 'income' as const,
-    status: 'confirmed',
-    notes: '',
-    dueDate: income.next_expected_date,
-    graceUntilDate: null,
-    isInGracePeriod: false,
-  }
-}
-
-function paymentEvent(payment: PaymentInstance) {
-  if (payment.lifecycleIsOpen === false || !payment.effective_due_date) {
-    return null
-  }
-
-  return {
-    date: payment.effective_due_date,
-    title: payment.name || 'Pago',
-    amount: -Number(payment.amount || 0),
-    type: 'payment' as const,
-    status: payment.lifecycleLabel || payment.status || 'pending',
-    notes: friendlyLifecyclePaymentNotes(payment) || '',
-    dueDate:
-      lifecyclePaymentDueDate(payment) || payment.effective_due_date,
-    graceUntilDate: lifecyclePaymentGraceUntilDate(payment),
-    isInGracePeriod: payment.isInGracePeriod === true,
-  }
-}
-
-function sortEvents(
-  left: Omit<TimelineProjectionEvent, 'balanceAfter'>,
-  right: Omit<TimelineProjectionEvent, 'balanceAfter'>
-) {
-  if (left.date === right.date) return right.amount - left.amount
-  return left.date.localeCompare(right.date)
-}
-
-export async function getTimelineProjection(
-  supabase: FinancialSupabaseClient,
-  userId: string
-): Promise<TimelineProjectionSummary> {
-  const { liquidity } = await getDashboardSummary(supabase, userId)
+export function buildTimelineProjectionFromLiquidity(
+  liquidity: Pick<
+    LiquiditySummary,
+    | 'cashAvailableTotal'
+    | 'cashAvailablePlaid'
+    | 'cashAvailableManual'
+    | 'projectedIncome'
+    | 'lifecyclePayments'
+  >
+): TimelineProjectionSummary {
   const startingCash = liquidity.cashAvailableTotal
   const rawEvents = [
     ...(liquidity.projectedIncome || [])
@@ -184,4 +147,55 @@ export async function getTimelineProjection(
       },
     },
   }
+}
+
+function incomeEvent(income: IncomeSchedule) {
+  if (!income.next_expected_date || !income.amount) return null
+
+  return {
+    date: income.next_expected_date,
+    title: income.name || 'Ingreso',
+    amount: Number(income.amount || 0),
+    type: 'income' as const,
+    status: 'confirmed',
+    notes: '',
+    dueDate: income.next_expected_date,
+    graceUntilDate: null,
+    isInGracePeriod: false,
+  }
+}
+
+function paymentEvent(payment: PaymentInstance) {
+  if (payment.lifecycleIsOpen === false || !payment.effective_due_date) {
+    return null
+  }
+
+  return {
+    date: payment.effective_due_date,
+    title: payment.name || 'Pago',
+    amount: -Number(payment.amount || 0),
+    type: 'payment' as const,
+    status: payment.lifecycleLabel || payment.status || 'pending',
+    notes: friendlyLifecyclePaymentNotes(payment) || '',
+    dueDate:
+      lifecyclePaymentDueDate(payment) || payment.effective_due_date,
+    graceUntilDate: lifecyclePaymentGraceUntilDate(payment),
+    isInGracePeriod: payment.isInGracePeriod === true,
+  }
+}
+
+function sortEvents(
+  left: Omit<TimelineProjectionEvent, 'balanceAfter'>,
+  right: Omit<TimelineProjectionEvent, 'balanceAfter'>
+) {
+  if (left.date === right.date) return right.amount - left.amount
+  return left.date.localeCompare(right.date)
+}
+
+export async function getTimelineProjection(
+  supabase: FinancialSupabaseClient,
+  userId: string
+): Promise<TimelineProjectionSummary> {
+  const { liquidity } = await getDashboardSummary(supabase, userId)
+  return buildTimelineProjectionFromLiquidity(liquidity)
 }
