@@ -20,6 +20,8 @@ Do not commit secret values. This file inventories names only.
 | `GOOGLE_CLIENT_SECRET` | Server-only secret | Preview, Production if Gmail enabled | Google OAuth/Gmail | OAuth client secret. |
 | `GOOGLE_REDIRECT_URI` | Server-only config | Stable Preview, Production | Google OAuth callback | Must exactly match Google Cloud authorized redirect URI. |
 | `GOOGLE_REFRESH_TOKEN` | Server-only secret | Preview/Production only if Gmail import enabled | Gmail import/test routes | High sensitivity; gives mailbox access for configured scopes. |
+| `MANSOR_INTERNAL_ADMIN_EMAILS` | Server-only config | Preview, optional Production | Internal tool allowlist | Comma-separated authenticated email allowlist for `/dev`, `/lab`, `/api/dev`, and Gmail diagnostics. If absent in Preview, any authenticated user can use internal tools. Required if enabling `/lab` in Production. |
+| `MANSOR_ENABLE_LAB_IN_PRODUCTION` | Server-only config | Production only | Optional lab access | Defaults to disabled. Set to `true` only with a non-empty `MANSOR_INTERNAL_ADMIN_EMAILS` allowlist. |
 
 ## Local / Development-Only Variables
 
@@ -40,6 +42,9 @@ These are expected public Supabase values.
 
 No server-only secrets were found in Client Components. Server-only secrets are
 used in route handlers or server libraries.
+
+Internal access variables are server-only. Do not prefix them with
+`NEXT_PUBLIC_`.
 
 ## Vercel Environment Setup
 

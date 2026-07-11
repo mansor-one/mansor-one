@@ -6,16 +6,31 @@ Scope: audit only. No deployment, no secret changes, no production writes.
 
 ## Summary
 
-Mansor One is close to Vercel Preview readiness, but not Production ready.
+Mansor One is closer to Vercel Preview readiness after Security Gate v1, but
+not Production ready.
 
-- Preview readiness score: 72/100
-- Production readiness score: 48/100
+- Preview readiness score: 82/100
+- Production readiness score: 66/100
 
 The application is a standard Next.js 16 App Router project with Node-compatible
 server routes and a Next `proxy.ts` auth boundary. No local filesystem
 persistence assumptions were found in app/lib runtime code. The main deployment
-risks are environment configuration, OAuth callback registration, exposed dev
-surfaces, and a few routes that are too permissive for Production.
+risks are environment configuration, OAuth callback registration, provider
+setup, and remaining decisions about operational tooling in Production.
+
+Security Gate v1 added a centralized internal-tool access policy:
+
+| Surface | Development | Preview | Production |
+| --- | --- | --- | --- |
+| `/dev/*` | Authenticated users | Authenticated users, or admin allowlist when configured | Blocked by default |
+| `/api/dev/*` | Authenticated users | Authenticated users, or admin allowlist when configured | Blocked by default |
+| `/lab/*` | Authenticated users | Authenticated users, or admin allowlist when configured | Blocked by default |
+| `/api/gmail/test` | Authenticated internal diagnostic | Authenticated internal diagnostic, or admin allowlist when configured | Blocked |
+| `/api/gmail/ath-parse` | Authenticated internal diagnostic | Authenticated internal diagnostic, or admin allowlist when configured | Blocked |
+
+`/lab/*` can be enabled in Production only with
+`MANSOR_ENABLE_LAB_IN_PRODUCTION=true` and a non-empty
+`MANSOR_INTERNAL_ADMIN_EMAILS` allowlist.
 
 ## Files Reviewed
 
@@ -49,7 +64,7 @@ Good:
 - No `output: 'export'`; server routes and Proxy are compatible with a Node
   deployment target.
 - `proxy.ts` uses the current Next Proxy convention rather than deprecated
-  `middleware.ts`.
+  `middleware.ts`, and now enforces the internal-tool page policy.
 - No app/lib runtime use of `fs`, `/tmp`, or durable local files was found.
 - No explicit Edge runtime was found; Plaid, crypto, and Supabase admin code can
   stay on Node.js runtime.
@@ -78,46 +93,31 @@ Needs decision:
    cannot use wildcards. Use a stable Preview URL or skip Google OAuth testing in
    ephemeral previews.
 
-4. `/api/gmail/test` and `/api/gmail/ath-parse` are unauthenticated and can read
-   Gmail through `GOOGLE_REFRESH_TOKEN` if production env vars are present.
-   These should be disabled, authenticated, or moved behind dev-only protection
-   before any shared Preview.
+4. `/api/gmail/test` and `/api/gmail/ath-parse` now require authenticated
+   internal diagnostic access. For shared Preview, configure
+   `MANSOR_INTERNAL_ADMIN_EMAILS` if access should be limited to specific users.
 
-5. `app/api/auth/google/callback/route.ts` logs the full token payload. Do not
-   use this route with real credentials in Preview or Production until token
-   logging is removed.
+5. Google OAuth callback token payload logging has been removed.
 
 ## Production Blockers
 
-1. Disable or protect all `/dev/*` routes.
-   Current dev routes expose operational diagnostics and admin workflows. Auth
-   proxy protects pages, but Production should explicitly deny or feature-gate
-   `/dev`.
-
-2. Disable or protect `/api/dev/*`.
-   These routes are authenticated, but they mutate or generate suggestions and
-   should not be production-public unless intentionally promoted.
-
-3. Fix Gmail routes before Production:
-   - Remove token logging from Google OAuth callback.
-   - Authenticate or remove `/api/gmail/test`.
-   - Authenticate or remove `/api/gmail/ath-parse`.
-   - Decide whether Gmail import is an admin-only manual route or a scheduled
-     job.
-
-4. Register final Production URLs in external providers:
+1. Register final Production URLs in external providers:
    - Supabase Site URL and redirects.
    - Google OAuth authorized redirect URI.
    - Plaid allowed redirect URI if OAuth institutions are used.
    - Plaid webhook URL if webhooks are enabled.
 
-5. Split Preview and Production secrets.
+2. Split Preview and Production secrets.
    Production must not reuse local/Preview refresh tokens, Plaid sandbox
    credentials, or encryption keys by accident.
 
-6. Add a Production route policy for `/lab/*`.
-   `/lab/review-queue` appears closer to operational tooling than public app UI.
-   Decide whether it remains available to authenticated users in Production.
+3. Decide whether Gmail import is an admin-only manual route or a scheduled job.
+   Diagnostic Gmail routes are blocked in Production, but
+   `app/api/gmail/ath-import/route.ts` remains an authenticated operational
+   route.
+
+4. Decide whether `/lab/*` should stay Production-blocked or be explicitly
+   enabled for allowlisted admins through `MANSOR_ENABLE_LAB_IN_PRODUCTION`.
 
 ## Warnings
 
@@ -146,8 +146,10 @@ Recommended Production policy:
 - Public unauthenticated: `/login`, static assets only.
 - Authenticated app: main dashboard, Robototina, spending, history, portfolio,
   timeline, income, planning, cards.
-- Authenticated but admin-only or disabled: `/dev/*`, `/lab/*`,
-  `/api/dev/*`, duplicate/category admin workflows.
+- Authenticated internal in Development/Preview and blocked by default in
+  Production: `/dev/*`, `/lab/*`, `/api/dev/*`.
+- Authenticated diagnostics in Development/Preview and blocked in Production:
+  `/api/gmail/test`, `/api/gmail/ath-parse`.
 - Retired compatibility: `/advisor` redirects to `/robototina`,
   `/pablo-chat` redirects to `/robototina`,
   `/api/pablo/answer` returns `410 Gone`.
@@ -169,10 +171,10 @@ Recommended Production policy:
 
 ## Recommendation
 
-Proceed to a private Vercel Preview only after configuring Preview env vars and
-either disabling Gmail test routes or ensuring Preview is access-controlled. Do
-not proceed to Production until dev surfaces, Google token logging, Gmail test
-routes, OAuth callback URLs, and Plaid Production settings are resolved.
+Proceed to a private Vercel Preview after configuring Preview env vars and
+provider redirects. Do not proceed to Production until external provider URLs,
+secret separation, Gmail import treatment, and Plaid Production settings are
+resolved.
 
 ## Validation Results
 

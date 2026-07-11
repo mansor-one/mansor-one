@@ -1,5 +1,9 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
+import {
+  evaluateInternalToolAccess,
+  internalToolSurfaceForPath,
+} from '@/lib/auth/internal-tools'
 import { getSafeRedirectPath } from '@/lib/auth/redirects'
 import { getSupabasePublishableKey, getSupabaseUrl } from './config'
 
@@ -42,6 +46,7 @@ export async function updateSession(request: NextRequest) {
   const { data: claims } = await supabase.auth.getClaims()
 
   const pathname = request.nextUrl.pathname
+  const internalSurface = internalToolSurfaceForPath(pathname)
 
   if (!claims && !isPublicRoute(pathname)) {
     const redirectUrl = request.nextUrl.clone()
@@ -51,6 +56,21 @@ export async function updateSession(request: NextRequest) {
       `${request.nextUrl.pathname}${request.nextUrl.search}`
     )
     return NextResponse.redirect(redirectUrl)
+  }
+
+  if (claims && internalSurface) {
+    const {
+      data: { user },
+    } = await supabase.auth.getUser()
+
+    const decision = evaluateInternalToolAccess({
+      surface: internalSurface,
+      userEmail: user?.email,
+    })
+
+    if (!decision.allowed) {
+      return new NextResponse('Not found', { status: decision.status })
+    }
   }
 
   if (claims && pathname === '/login') {

@@ -14,6 +14,10 @@ A holistic financial operating system where:
 3. Never execute destructive SQL without approval
 4. Always audit SQL/migrations
 5. Preserve legacy data integrity
+6. Internal dev/lab/Gmail diagnostic surfaces must use the centralized
+   internal-tool access guard and fail closed in Production.
+7. OAuth callbacks and provider routes must never log token payloads, refresh
+   tokens, access tokens, service-role keys, or email bodies.
 
 ## Core Principles
 - **Financial Engine**: Pure calculation layer (no UI)

@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { requireInternalToolAccess } from '@/lib/auth/internal-tools'
 import { categorizeTransaction } from '@/lib/financial-engine/categorizeTransaction'
 import { createServerSupabase } from '@/lib/supabase/server'
 
@@ -30,14 +31,9 @@ function confidenceScore(category: string) {
 export async function POST() {
   const { supabase } = await createServerSupabase()
 
-  const {
-    data: { user },
-    error: authError,
-  } = await supabase.auth.getUser()
-
-  if (authError || !user) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
+  const auth = await requireInternalToolAccess(supabase, 'dev')
+  if (!auth.ok) return auth.response
+  const { user } = auth
 
   const { data: suggestionsData, error: suggestionsError } = await supabase
     .from('transaction_suggestions')

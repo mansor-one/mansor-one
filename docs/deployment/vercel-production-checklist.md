@@ -8,7 +8,7 @@ Last updated: 2026-07-11
 - [ ] Confirm Supabase redirect URLs include Vercel preview wildcard.
 - [ ] Decide whether Google OAuth is disabled in ephemeral Preview or uses a
   stable Preview URL.
-- [ ] Disable, protect, or accept risk for unauthenticated Gmail test routes.
+- [x] Protect Gmail diagnostic routes with authenticated internal access.
 - [ ] Run `npm run build`.
 - [ ] Run `npx tsc --noEmit`.
 - [ ] Run `git diff --check`.
@@ -16,13 +16,17 @@ Last updated: 2026-07-11
 
 ## Before Production
 
-- [ ] Remove Google OAuth token logging from
+- [x] Remove Google OAuth token logging from
   `app/api/auth/google/callback/route.ts`.
-- [ ] Authenticate or remove `app/api/gmail/test/route.ts`.
-- [ ] Authenticate or remove `app/api/gmail/ath-parse/route.ts`.
-- [ ] Decide Production access policy for `/dev/*`.
-- [ ] Decide Production access policy for `/lab/*`.
-- [ ] Decide Production access policy for `/api/dev/*`.
+- [x] Authenticate or remove `app/api/gmail/test/route.ts`.
+- [x] Authenticate or remove `app/api/gmail/ath-parse/route.ts`.
+- [x] Decide Production access policy for `/dev/*`.
+- [x] Decide Production access policy for `/lab/*`.
+- [x] Decide Production access policy for `/api/dev/*`.
+- [ ] Configure `MANSOR_INTERNAL_ADMIN_EMAILS` for shared Preview if internal
+  routes should be limited to specific users.
+- [ ] Keep `MANSOR_ENABLE_LAB_IN_PRODUCTION` unset unless Production lab access
+  is explicitly approved for allowlisted admins.
 - [ ] Configure Production Supabase Site URL.
 - [ ] Configure Production Supabase redirect URLs.
 - [ ] Configure Google OAuth Production authorized redirect URI.
@@ -48,6 +52,11 @@ Last updated: 2026-07-11
 - [ ] `/api/pablo/answer` returns `410 Gone`.
 - [ ] `/api/robototina/answer` returns `401` when unauthenticated and a normal
   Q&A response when authenticated.
+- [ ] `/dev/*` redirects unauthenticated users to `/login` in Preview.
+- [ ] `/api/dev/*` returns `401` when unauthenticated in Preview.
+- [ ] `/api/gmail/test` and `/api/gmail/ath-parse` return `401` when
+  unauthenticated in Preview.
+- [ ] Production `/dev/*`, `/api/dev/*`, and `/lab/*` fail closed.
 - [ ] Supabase session refresh works after reload.
 - [ ] Plaid create-link-token works in Preview environment.
 - [ ] Plaid exchange-public-token stores encrypted token.
