@@ -16,6 +16,10 @@ Esta carpeta documenta las decisiones actuales de producto y arquitectura.
 - `architecture/payment-lifecycle.md`: estados canonicos futuros para pagos y reconciliacion.
 - `architecture/sprint-log.md`: progreso de Sprint 1 y Sprint 2.
 - `architecture/architecture-decisions.md`: ADRs vigentes.
+- `deployment/vercel-readiness.md`: auditoria de preparacion para Vercel Preview y Production.
+- `deployment/vercel-environment-variables.md`: inventario de variables de entorno para Vercel.
+- `deployment/vercel-production-checklist.md`: checklist de salida a Production.
+- `deployment/rollback-plan.md`: plan de rollback para despliegues Vercel.
 
 ## Sprint Review
 
