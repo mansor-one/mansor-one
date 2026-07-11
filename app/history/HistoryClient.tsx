@@ -31,6 +31,7 @@ type CategoryOption = {
 type HistoryClientProps = {
   categoryOptions: CategoryOption[]
   movements: HistoryMovement[]
+  resolvedDuplicateMovements: HistoryMovement[]
 }
 
 const monthNames = [
@@ -152,6 +153,7 @@ type SaveState = {
 export default function HistoryClient({
   categoryOptions,
   movements,
+  resolvedDuplicateMovements,
 }: HistoryClientProps) {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
@@ -357,11 +359,49 @@ export default function HistoryClient({
         </div>
         <div className="rounded border p-4">
           <h2 className="text-sm font-semibold opacity-70">
-            Pendientes excluidos
+            Duplicados resueltos
           </h2>
-          <p className="text-3xl font-bold">Sí</p>
+          <p className="text-3xl font-bold">
+            {resolvedDuplicateMovements.length}
+          </p>
         </div>
       </section>
+
+      {resolvedDuplicateMovements.length > 0 && (
+        <section className="rounded border border-amber-200 bg-amber-50 p-4">
+          <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+            <div>
+              <h2 className="text-xl font-bold">
+                Movimientos preservados como duplicados
+              </h2>
+              <p className="mt-1 text-sm opacity-70">
+                Estos quick_entries siguen guardados para auditoría, pero no
+                cuentan en los totales activos.
+              </p>
+            </div>
+            <Link
+              className="rounded border border-amber-300 bg-white px-3 py-2 text-sm"
+              href="/dev/confirmed-ledger-duplicates"
+            >
+              Revisar resoluciones
+            </Link>
+          </div>
+          <div className="mt-3 divide-y divide-amber-200">
+            {resolvedDuplicateMovements.slice(0, 5).map((movement) => (
+              <div
+                className="grid grid-cols-1 gap-2 py-2 text-sm md:grid-cols-5"
+                key={movement.id}
+              >
+                <span>{displayDate(movement.date)}</span>
+                <span className="font-medium">{movement.merchant}</span>
+                <strong>{money(movement.amount)}</strong>
+                <span>{movement.category}</span>
+                <span>{movement.bankAccount}</span>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
 
       <section className="rounded border p-4">
         <div className="flex flex-col gap-4">

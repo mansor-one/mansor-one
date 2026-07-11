@@ -1,5 +1,5 @@
 import { buildDashboardSummaryFromParts } from './dashboard'
-import { buildDecisionEngineResultFromSummary } from './decision-engine'
+import { buildMansorDecisionsV1FromSnapshot } from './decision-engine-v1'
 import { buildFinancialSummaryFromParts } from './financial-summary'
 import { getLiquiditySummary } from './liquidity'
 import { getPlanningSummary } from './planning'
@@ -8,7 +8,6 @@ import { getReviewQueue, type ReviewQueueStatistics } from './review-queue'
 import { buildTimelineProjectionFromLiquidity } from './timeline'
 import type {
   DashboardSummary,
-  DecisionEngineResult,
   FinancialSummary,
   FinancialSupabaseClient,
   IncomeSchedule,
@@ -17,6 +16,7 @@ import type {
   PlanningSummary,
   PortfolioSummary,
 } from './types'
+import type { MansorDecision } from './decision-engine-v1'
 import type { TimelineProjectionSummary } from './timeline'
 
 export type FinancialEngineReviewQueueSummary = {
@@ -39,7 +39,7 @@ export type FinancialEngineSnapshot = {
   portfolio: PortfolioSummary
   planning: PlanningSummary
   financialSummary: FinancialSummary
-  decisionEngineResult: DecisionEngineResult
+  decisionEngineV1: MansorDecision[]
   reviewQueue: FinancialEngineReviewQueueSummary
 }
 
@@ -63,10 +63,8 @@ export async function getFinancialEngineSnapshot(
     dashboard,
     planning,
   })
-  const decisionEngineResult =
-    buildDecisionEngineResultFromSummary(financialSummary)
 
-  return {
+  const snapshotWithoutDecisions = {
     generatedAt: financialSummary.generatedAt,
     dashboard,
     liquidity,
@@ -76,7 +74,6 @@ export async function getFinancialEngineSnapshot(
     portfolio,
     planning,
     financialSummary,
-    decisionEngineResult,
     reviewQueue: {
       statistics: reviewQueue.statistics,
       readyToConfirmCount: reviewQueue.readyToConfirm.length,
@@ -87,4 +84,13 @@ export async function getFinancialEngineSnapshot(
       needsManualReviewCount: reviewQueue.needsManualReview.length,
     },
   }
+
+  const snapshot: FinancialEngineSnapshot = {
+    ...snapshotWithoutDecisions,
+    decisionEngineV1: [],
+  }
+
+  snapshot.decisionEngineV1 = buildMansorDecisionsV1FromSnapshot(snapshot)
+
+  return snapshot
 }

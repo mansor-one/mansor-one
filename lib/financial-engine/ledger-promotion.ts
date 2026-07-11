@@ -1,5 +1,11 @@
 import { reconcileMovement } from '@/lib/finance/reconcileMovement'
 import type { FinancialSupabaseClient } from './types'
+import {
+  confirmedLedgerEntriesMatchExactly,
+  getConfirmedLedgerDuplicateResolutions,
+  isDuplicateResolved,
+} from './confirmed-ledger-duplicates'
+import type { LedgerSummaryTransaction } from './ledger-summary'
 
 export type PromotePlaidImportInput = {
   plaidImportId: string
@@ -44,12 +50,19 @@ export class LedgerPromotionError extends Error {
 type PlaidImportRow = {
   id: string
   user_id: string
+  plaid_account_id?: string | null
   transaction_date: string | null
   merchant: string | null
   amount: number | string | null
   suggested_category: string | null
+  plaid_category?: string | null
   plaid_transaction_id: string | null
   imported?: boolean | null
+  institution_name?: string | null
+  account_name?: string | null
+  account_mask?: string | null
+  account_type?: string | null
+  account_subtype?: string | null
 }
 
 type QuickEntryRow = {
@@ -63,7 +76,79 @@ type QuickEntryRow = {
   owner?: string | null
   source?: string | null
   plaid_transaction_id?: string | null
+  account_name?: string | null
+  created_at?: string | null
   user_id?: string | null
+}
+
+function numberValue(value: number | string | null | undefined) {
+  const parsed = Number(value || 0)
+  return Number.isFinite(parsed) ? parsed : 0
+}
+
+function plaidImportTransaction(row: PlaidImportRow): LedgerSummaryTransaction {
+  return {
+    id: row.id,
+    sourceTable: 'plaid_imports',
+    date: row.transaction_date || null,
+    description: row.merchant || row.plaid_category || null,
+    amount: numberValue(row.amount),
+    category: row.suggested_category || row.plaid_category || null,
+    imported: row.imported ?? false,
+    source: 'plaid',
+    plaidTransactionId: row.plaid_transaction_id || null,
+    metadata: {
+      institutionName: row.institution_name || null,
+      accountName: row.account_name || null,
+      accountMask: row.account_mask || null,
+      plaidAccountId: row.plaid_account_id || null,
+      accountType: row.account_type || null,
+      accountSubtype: row.account_subtype || null,
+    },
+  }
+}
+
+function quickEntryTransaction(
+  row: QuickEntryRow,
+  plaidImportByTransactionId: Map<string, LedgerSummaryTransaction>
+): LedgerSummaryTransaction {
+  const matchingPlaidImport = row.plaid_transaction_id
+    ? plaidImportByTransactionId.get(row.plaid_transaction_id)
+    : null
+
+  return {
+    id: row.id,
+    sourceTable: 'quick_entries',
+    date: row.entry_date || row.created_at?.slice(0, 10) || null,
+    description: row.description || null,
+    amount: numberValue(row.amount),
+    category: row.category || null,
+    imported: null,
+    source: row.source || null,
+    plaidTransactionId: row.plaid_transaction_id || null,
+    metadata: {
+      entryType: row.entry_type || null,
+      owner: row.owner || null,
+      createdAt: row.created_at || null,
+      accountName:
+        row.account_name ||
+        (matchingPlaidImport?.metadata.accountName as string | null) ||
+        null,
+      institutionName:
+        (matchingPlaidImport?.metadata.institutionName as string | null) ||
+        null,
+      accountMask:
+        (matchingPlaidImport?.metadata.accountMask as string | null) || null,
+      plaidAccountId:
+        (matchingPlaidImport?.metadata.plaidAccountId as string | null) ||
+        null,
+      accountType:
+        (matchingPlaidImport?.metadata.accountType as string | null) || null,
+      accountSubtype:
+        (matchingPlaidImport?.metadata.accountSubtype as string | null) ||
+        null,
+    },
+  }
 }
 
 function normalizedCategory(plaidImport: PlaidImportRow, selectedCategory?: string | null) {
@@ -84,6 +169,8 @@ async function findExistingQuickEntry(
   userId: string,
   plaidImport: PlaidImportRow
 ) {
+  let directMatch: QuickEntryRow | null = null
+
   if (plaidImport.plaid_transaction_id) {
     const { data, error } = await supabase
       .from('quick_entries')
@@ -100,24 +187,24 @@ async function findExistingQuickEntry(
       )
     }
 
-    return (data as QuickEntryRow | null) || null
+    directMatch = (data as QuickEntryRow | null) || null
+
+    if (directMatch) return directMatch
   }
 
   let query = supabase
     .from('quick_entries')
-    .select('*')
+    .select(
+      'id, entry_date, created_at, description, amount, category, entry_type, owner, source, plaid_transaction_id, account_name, user_id'
+    )
     .eq('user_id', userId)
     .eq('source', 'plaid')
     .eq('amount', Number(plaidImport.amount || 0))
-    .limit(1)
+    .limit(50)
 
   query = plaidImport.transaction_date
     ? query.eq('entry_date', plaidImport.transaction_date)
     : query.is('entry_date', null)
-
-  query = plaidImport.merchant
-    ? query.eq('description', plaidImport.merchant)
-    : query.is('description', null)
 
   const { data, error } = await query
 
@@ -129,7 +216,65 @@ async function findExistingQuickEntry(
     )
   }
 
-  return ((data as QuickEntryRow[] | null) || [])[0] || null
+  const candidateRows = (data as QuickEntryRow[] | null) || []
+
+  if (candidateRows.length === 0) return null
+
+  const transactionIds = [
+    plaidImport.plaid_transaction_id,
+    ...candidateRows.map((row) => row.plaid_transaction_id),
+  ].filter((value): value is string => Boolean(value))
+  const plaidImportsByTransactionId = new Map<string, LedgerSummaryTransaction>()
+
+  if (transactionIds.length > 0) {
+    const { data: sourceRows, error: sourceError } = await supabase
+      .from('plaid_imports')
+      .select(
+        'id, plaid_transaction_id, plaid_account_id, transaction_date, merchant, amount, suggested_category, plaid_category, imported, institution_name, account_name, account_mask, account_type, account_subtype'
+      )
+      .eq('user_id', userId)
+      .in('plaid_transaction_id', transactionIds)
+
+    if (sourceError) {
+      throw new LedgerPromotionError(
+        'duplicate_check_failed',
+        'Could not load Plaid source rows for duplicate check',
+        sourceError
+      )
+    }
+
+    ;((sourceRows || []) as PlaidImportRow[]).forEach((sourceRow) => {
+      const transaction = plaidImportTransaction(sourceRow)
+      if (transaction.plaidTransactionId) {
+        plaidImportsByTransactionId.set(
+          transaction.plaidTransactionId,
+          transaction
+        )
+      }
+    })
+  }
+
+  const incomingTransaction = plaidImportTransaction(plaidImport)
+  const resolutions = await getConfirmedLedgerDuplicateResolutions(
+    supabase,
+    userId
+  )
+
+  return (
+    candidateRows.find((row) => {
+      const candidateTransaction = quickEntryTransaction(
+        row,
+        plaidImportsByTransactionId
+      )
+
+      if (isDuplicateResolved(candidateTransaction, resolutions)) return false
+
+      return confirmedLedgerEntriesMatchExactly(
+        incomingTransaction,
+        candidateTransaction
+      )
+    }) || null
+  )
 }
 
 async function markPlaidImportImported(

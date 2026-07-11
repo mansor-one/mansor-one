@@ -211,92 +211,6 @@ function displayPaymentMethod(context: TransactionContext) {
     : 'Método no identificado'
 }
 
-function contextRichnessScore(context: TransactionContext) {
-  let score = 0
-
-  if (hasKnownValue(context.institution)) score += 4
-  if (hasKnownValue(context.accountName)) score += 4
-  if (hasKnownValue(context.accountMask)) score += 2
-  if (hasKnownValue(context.paymentMethod)) score += 3
-  if (hasKnownValue(context.accountOwner)) score += 1
-  if (hasKnownValue(context.source)) score += 1
-
-  return score
-}
-
-function observationRank(entry: SpendingEntry) {
-  if (entry.sourceTable === 'quick_entries') return 300
-
-  return contextRichnessScore(entry.context) > 0 ? 200 : 100
-}
-
-function entryQualityScore(entry: SpendingEntry) {
-  return observationRank(entry) + contextRichnessScore(entry.context)
-}
-
-function baseLogicalTransactionKey(entry: SpendingEntry) {
-  if (entry.plaidTransactionId) {
-    return `plaid:${entry.plaidTransactionId}`
-  }
-
-  const amountInCents = Math.round(Math.abs(entry.amount) * 100)
-
-  return [
-    'logical',
-    entry.context.normalizedMerchant || entry.description,
-    entry.date,
-    amountInCents,
-    entry.categoryCode || 'pending-review',
-  ].join(':')
-}
-
-function dedupeLogicalEntries(entries: SpendingEntry[]) {
-  const groupedByBaseKey = new Map<string, SpendingEntry[]>()
-
-  entries.forEach((entry) => {
-    const key = baseLogicalTransactionKey(entry)
-    const group = groupedByBaseKey.get(key) || []
-
-    group.push(entry)
-    groupedByBaseKey.set(key, group)
-  })
-
-  const dedupedEntries = [...groupedByBaseKey.values()].flatMap((group) => {
-    const knownInstitutions = new Set(
-      group
-        .map((entry) => entry.context.institution)
-        .filter((institution) => hasKnownValue(institution))
-    )
-
-    if (knownInstitutions.size <= 1) {
-      return [
-        group.reduce((best, entry) =>
-          entryQualityScore(entry) > entryQualityScore(best) ? entry : best
-        ),
-      ]
-    }
-
-    const byInstitution = new Map<string, SpendingEntry>()
-
-    group.forEach((entry) => {
-      const institution = hasKnownValue(entry.context.institution)
-        ? entry.context.institution
-        : 'Unknown'
-      const current = byInstitution.get(institution)
-
-      if (!current || entryQualityScore(entry) > entryQualityScore(current)) {
-        byInstitution.set(institution, entry)
-      }
-    })
-
-    return [...byInstitution.values()]
-  })
-
-  return dedupedEntries.sort((a, b) =>
-    b.date.localeCompare(a.date)
-  )
-}
-
 export default async function SpendingPage({ searchParams }: PageProps) {
   const { supabase, user } = await requireUser()
   const params = await searchParams
@@ -315,18 +229,17 @@ export default async function SpendingPage({ searchParams }: PageProps) {
   // until promoted into quick_entries.
   // TODO: ATH/Gmail enrichment belongs in Review Queue and History detail,
   // not in this monthly spending summary.
-  const displayEntries = dedupeLogicalEntries(
-    ledgerSummary.confirmedLedgerEntries
-      .filter(
-        (transaction) =>
-          transaction.date &&
-          transaction.date >= period.startDate &&
-          transaction.date <= period.endDate
-      )
-      .map(spendingEntry)
-      .filter((entry): entry is SpendingEntry => entry !== null)
-      .filter((entry) => entry.amount > 0)
-  )
+  const displayEntries = ledgerSummary.confirmedLedgerEntries
+    .filter(
+      (transaction) =>
+        transaction.date &&
+        transaction.date >= period.startDate &&
+        transaction.date <= period.endDate
+    )
+    .map(spendingEntry)
+    .filter((entry): entry is SpendingEntry => entry !== null)
+    .filter((entry) => entry.amount > 0)
+    .sort((a, b) => b.date.localeCompare(a.date))
   const entries = displayEntries.filter((entry) => {
     const category = categoryFromCode(entry.categoryCode)
 

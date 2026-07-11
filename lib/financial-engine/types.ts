@@ -353,7 +353,9 @@ export type PlanningItem = {
   id: string
   name?: string | null
   target_amount?: number | null
+  current_amount?: number | null
   due_date?: string | null
+  item_type?: string | null
   is_archived?: boolean | null
   is_completed?: boolean | null
 }
@@ -540,35 +542,4 @@ export type FinancialSummary = {
     planning: PlanningSummary
     dashboard: DashboardSummary
   }
-}
-
-export type OverallFinancialState = 'calm' | 'watch' | 'pressure' | 'critical'
-
-export type FinancialDecisionSeverity = 'info' | 'warning' | 'critical'
-
-export type FinancialDecisionType =
-  | 'upcoming_payment'
-  | 'initiated_payment_followup'
-  | 'transaction_review'
-  | 'negative_cashflow'
-  | 'planning_pressure'
-
-export type FinancialDecision = {
-  id: string
-  priority: number
-  impactScore: number
-  severity: FinancialDecisionSeverity
-  type: FinancialDecisionType
-  title: string
-  explanation: string
-  recommendation: string
-  confidence: number
-  actionUrl: string
-  generatedAt: string
-}
-
-export type DecisionEngineResult = {
-  overallFinancialState: OverallFinancialState
-  decisions: FinancialDecision[]
-  source: FinancialSummary
 }

@@ -212,21 +212,24 @@ Consumers:
 Robototina and Atlas may interpret this summary, but they must not bypass it to
 recalculate the same money values from tables.
 
-### Future Decision Context
+### Decision Engine v1
 
-Current entry point: `getDecisionEngineResult(supabase, userId)`
+Entry point: `buildMansorDecisionsV1FromSnapshot(snapshot)`
 
-Returns: `DecisionEngineResult`
+Snapshot field: `decisionEngineV1`
+
+Returns: `MansorDecision[]`
 
 Contract:
 
-- Uses `getFinancialSummary()` as its source.
-- Builds prioritized decision candidates from summary facts.
-- Returns decision queue, overall financial state and the source summary.
+- Consumes only the Financial Engine snapshot and official engine outputs.
+- Produces normalized, prioritized advisor decisions.
+- Returns decision type, severity, title, recommendation, explanation,
+  evidence, confidence and action target.
+- Sorts actionable decisions ahead of generic summaries.
 
-This layer is the beginning of the official future decision context for Atlas
-and Robototina. It should evolve as a Financial Engine/Decision Engine boundary,
-not as UI logic.
+Decision Engine v1 is the official recommendation source for Robototina and
+future Atlas. Decision Engine v0 and `getDecisionEngineResult()` are retired.
 
 ## React Consumption Rules
 
@@ -237,7 +240,7 @@ React can consume:
 - `PortfolioSummary`
 - `PlanningSummary`
 - `FinancialSummary`
-- `DecisionEngineResult`
+- `MansorDecision[]` from `decisionEngineV1`
 - typed rows or management data returned by explicit engine helpers
 
 React can:
@@ -266,7 +269,10 @@ Robototina and Atlas can consume:
 
 - `getDashboardSummary()`
 - `getFinancialSummary()`
-- `getDecisionEngineResult()`
+- `getFinancialEngineSnapshot()`
+- Decision Engine v1 decisions
+- `getRobototinaContext()`
+- `answerRobototinaQuestion()` for rules-based advisor Q&A
 - selected summaries from Portfolio, Liquidity and Planning when narrower
   context is required
 

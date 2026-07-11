@@ -4,7 +4,7 @@
 A holistic financial operating system where:
 - Financial Engine calculates truth
 - React presents insights clearly
-- Robototina interprets context
+- Robototina interprets context and answers advisor Q&A
 - Atlas simulates futures
 - Phoenix migrates legacy safely
 
@@ -37,6 +37,13 @@ A holistic financial operating system where:
 6. Review Queue (v1 complete)
 7. Robototina (core operational)
 8. Phoenix (migration in progress)
+
+## Advisor Architecture
+- Robototina is the official financial advisor.
+- Decision Engine v1 is the official recommendation source.
+- Robototina Q&A must use `getRobototinaContext()` and rules-based adapters such
+  as `answerRobototinaQuestion()`.
+- Pablo and Decision Engine v0 are retired and must not gain new consumers.
 
 ## Next Priorities
 1. Phoenix final validation

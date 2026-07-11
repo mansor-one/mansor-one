@@ -125,6 +125,10 @@ export default async function HistoryPage() {
     .map(movementFromTransaction)
     .filter((movement): movement is HistoryMovement => movement !== null)
     .sort((a, b) => b.date.localeCompare(a.date))
+  const resolvedDuplicateMovements = ledgerSummary.duplicateResolvedLedgerEntries
+    .map(movementFromTransaction)
+    .filter((movement): movement is HistoryMovement => movement !== null)
+    .sort((a, b) => b.date.localeCompare(a.date))
   const categoryOptions = uniqueCategoryOptions()
 
   return (
@@ -139,7 +143,11 @@ export default async function HistoryPage() {
 
       <Nav />
 
-      <HistoryClient categoryOptions={categoryOptions} movements={movements} />
+      <HistoryClient
+        categoryOptions={categoryOptions}
+        movements={movements}
+        resolvedDuplicateMovements={resolvedDuplicateMovements}
+      />
     </main>
   )
 }

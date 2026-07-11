@@ -1,4 +1,13 @@
 import type { FinancialSupabaseClient } from './types'
+import {
+  activeConfirmedLedgerEntries,
+  buildConfirmedLedgerDuplicateGroups,
+  confirmedLedgerAccountIdentityMatches,
+  getConfirmedLedgerDuplicateResolutions,
+  isDuplicateResolved,
+  type ConfirmedLedgerDuplicateGroup,
+  type ConfirmedLedgerDuplicateResolution,
+} from './confirmed-ledger-duplicates'
 
 export type LedgerSourceTable = 'plaid_imports' | 'quick_entries'
 
@@ -36,6 +45,10 @@ export type LedgerDuplicateCandidate = {
 
 export type LedgerSummary = {
   confirmedLedgerEntries: LedgerSummaryTransaction[]
+  allConfirmedLedgerEntries: LedgerSummaryTransaction[]
+  duplicateResolvedLedgerEntries: LedgerSummaryTransaction[]
+  confirmedLedgerDuplicateResolutions: ConfirmedLedgerDuplicateResolution[]
+  confirmedLedgerDuplicateGroups: ConfirmedLedgerDuplicateGroup[]
   manualLedgerEntries: LedgerSummaryTransaction[]
   plaidLedgerEntries: LedgerSummaryTransaction[]
   importCandidates: LedgerSummaryTransaction[]
@@ -211,6 +224,7 @@ function quickEntryTransaction(
     metadata: {
       entryType: row.entry_type || null,
       owner: row.owner || null,
+      createdAt: row.created_at || null,
       accountName:
         row.account_name ||
         (matchingPlaidImport?.metadata.accountName as string | null) ||
@@ -264,47 +278,11 @@ function directPlaidTransactionMatch(
   }
 }
 
-function metadataText(transaction: LedgerSummaryTransaction, key: string) {
-  const value = transaction.metadata[key]
-  return typeof value === 'string' && value.trim() ? value.trim() : null
-}
-
-function normalizedMetadataText(
-  transaction: LedgerSummaryTransaction,
-  key: string
-) {
-  return normalizeDescription(metadataText(transaction, key))
-}
-
 function duplicateAccountIdentityMatches(
   importCandidate: LedgerSummaryTransaction,
   ledgerEntry: LedgerSummaryTransaction
 ) {
-  const importPlaidAccountId = metadataText(importCandidate, 'plaidAccountId')
-  const ledgerPlaidAccountId = metadataText(ledgerEntry, 'plaidAccountId')
-
-  if (importPlaidAccountId && ledgerPlaidAccountId) {
-    return importPlaidAccountId === ledgerPlaidAccountId
-  }
-
-  const importInstitution = normalizedMetadataText(
-    importCandidate,
-    'institutionName'
-  )
-  const ledgerInstitution = normalizedMetadataText(ledgerEntry, 'institutionName')
-  const importAccount = normalizedMetadataText(importCandidate, 'accountName')
-  const ledgerAccount = normalizedMetadataText(ledgerEntry, 'accountName')
-  const importMask = metadataText(importCandidate, 'accountMask')
-  const ledgerMask = metadataText(ledgerEntry, 'accountMask')
-
-  if (!importInstitution || !ledgerInstitution) return false
-  if (!importAccount || !ledgerAccount) return false
-  if (importInstitution !== ledgerInstitution) return false
-  if (importAccount !== ledgerAccount) return false
-
-  if (importMask || ledgerMask) return importMask === ledgerMask
-
-  return true
+  return confirmedLedgerAccountIdentityMatches(importCandidate, ledgerEntry)
 }
 
 function heuristicDuplicateMatch(
@@ -424,7 +402,11 @@ export async function getLedgerSummary(
   supabase: FinancialSupabaseClient,
   userId: string
 ): Promise<LedgerSummary> {
-  const [plaidImportsResult, quickEntriesResult] = await Promise.all([
+  const [
+    plaidImportsResult,
+    quickEntriesResult,
+    confirmedLedgerDuplicateResolutions,
+  ] = await Promise.all([
     supabase
       .from('plaid_imports')
       .select(
@@ -439,6 +421,7 @@ export async function getLedgerSummary(
       )
       .eq('user_id', userId)
       .order('entry_date', { ascending: false }),
+    getConfirmedLedgerDuplicateResolutions(supabase, userId),
   ])
 
   if (plaidImportsResult.error) throw plaidImportsResult.error
@@ -451,9 +434,21 @@ export async function getLedgerSummary(
       .filter((transaction) => transaction.plaidTransactionId)
       .map((transaction) => [transaction.plaidTransactionId as string, transaction])
   )
-  const confirmedLedgerEntries =
+  const allConfirmedLedgerEntries =
     ((quickEntriesResult.data || []) as QuickEntryRow[])
       .map((row) => quickEntryTransaction(row, plaidImportByTransactionId))
+  const confirmedLedgerEntries = activeConfirmedLedgerEntries(
+    allConfirmedLedgerEntries,
+    confirmedLedgerDuplicateResolutions
+  )
+  const duplicateResolvedLedgerEntries = allConfirmedLedgerEntries.filter(
+    (transaction) =>
+      isDuplicateResolved(transaction, confirmedLedgerDuplicateResolutions)
+  )
+  const confirmedLedgerDuplicateGroups = buildConfirmedLedgerDuplicateGroups(
+    allConfirmedLedgerEntries,
+    confirmedLedgerDuplicateResolutions
+  )
   const plaidLedgerEntries = confirmedLedgerEntries.filter(isPlaidLedgerEntry)
   const manualLedgerEntries = confirmedLedgerEntries.filter(
     (transaction) => !isPlaidLedgerEntry(transaction)
@@ -477,6 +472,10 @@ export async function getLedgerSummary(
 
   return {
     confirmedLedgerEntries,
+    allConfirmedLedgerEntries,
+    duplicateResolvedLedgerEntries,
+    confirmedLedgerDuplicateResolutions,
+    confirmedLedgerDuplicateGroups,
     manualLedgerEntries,
     plaidLedgerEntries,
     importCandidates,
