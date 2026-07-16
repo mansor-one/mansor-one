@@ -5,7 +5,7 @@ import {
 } from '@/lib/financial-engine'
 import { createServerSupabase } from '@/lib/supabase/server'
 import type { Metadata } from 'next'
-import Nav from '../components/Nav'
+import AppShell from '../components/AppShell'
 
 export const dynamic = 'force-dynamic'
 
@@ -76,11 +76,14 @@ export default async function TimelinePage() {
   const { explanation } = projection
 
   return (
-    <main className="space-y-6 p-8">
-      <h1 className="text-4xl font-bold">Timeline</h1>
-
-      <Nav />
-
+    <AppShell
+      header={{
+        eyebrow: 'Calendario de efectivo',
+        title: 'Pagos',
+        subtitle:
+          'Proyección de pagos e ingresos cargados. Es una vista de planificación, no el balance exacto del banco.',
+      }}
+    >
       <section className="rounded border p-4 text-sm">
         <p className="font-semibold">This is a projection, not your bank balance.</p>
         <p className="opacity-70">
@@ -209,6 +212,6 @@ export default async function TimelinePage() {
           </div>
         ))}
       </section>
-    </main>
+    </AppShell>
   )
 }

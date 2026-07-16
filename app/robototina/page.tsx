@@ -1,4 +1,5 @@
 import { requireUser } from '@/lib/auth/requireUser'
+import AppShell from '@/app/components/AppShell'
 import { getRobototinaContext } from '@/lib/financial-engine'
 import { createServerSupabase } from '@/lib/supabase/server'
 import type { MansorDecision } from '@/lib/financial-engine'
@@ -125,26 +126,19 @@ export default async function RobototinaPage() {
   const groupedDecisions = decisionGroups(context.decisions)
 
   return (
-    <main className="min-h-screen bg-slate-50 px-4 py-6 text-slate-950 md:px-8">
-      <section className="mx-auto max-w-7xl space-y-6">
-        <div className="flex flex-col gap-4 rounded border border-slate-200 bg-white p-5 shadow-sm md:flex-row md:items-end md:justify-between">
-          <div className="space-y-2">
-            <p className="text-sm font-medium text-slate-500">
-              Mansor One advisor
-            </p>
-            <h1 className="text-3xl font-semibold tracking-normal md:text-4xl">
-              Robototina
-            </h1>
-            <p className="max-w-3xl text-sm leading-6 text-slate-600 md:text-base">
-              Here is the calm read on today: what needs attention, what can
-              wait, and what is worth planning next.
-            </p>
+    <AppShell
+      header={{
+        eyebrow: 'Asesora familiar',
+        title: 'Robototina',
+        subtitle:
+          'La lectura tranquila de hoy: qué atender, qué puede esperar y qué conviene planificar.',
+        secondaryAction: (
+          <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600">
+            Actualizado {new Date(context.generatedAt).toLocaleString('es-PR')}
           </div>
-          <div className="rounded border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600">
-            Updated {new Date(context.generatedAt).toLocaleString()}
-          </div>
-        </div>
-      </section>
+        ),
+      }}
+    >
 
       <section className="mx-auto mt-5 grid max-w-7xl grid-cols-1 gap-3 md:grid-cols-4">
         <KpiCard
@@ -359,7 +353,7 @@ export default async function RobototinaPage() {
           </div>
         </section>
       )}
-    </main>
+    </AppShell>
   )
 }
 
@@ -407,7 +401,7 @@ function AdvisorCard({ decision }: { decision: MansorDecision }) {
         </span>
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
-            <span className="text-xs font-medium uppercase tracking-wide text-slate-500">
+            <span className="text-xs font-medium uppercase tracking-normal text-slate-500">
               {decisionLabel(decision.type)}
             </span>
             <span
@@ -420,7 +414,7 @@ function AdvisorCard({ decision }: { decision: MansorDecision }) {
             {advisorTitle(decision)}
           </h4>
           <div className="mt-4 rounded border border-slate-200 bg-slate-50 p-3">
-            <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
+            <p className="text-xs font-medium uppercase tracking-normal text-slate-500">
               Recommended action
             </p>
             <p className="mt-1 text-sm leading-6 text-slate-800">

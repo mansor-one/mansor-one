@@ -10,7 +10,7 @@ import {
 } from '@/lib/financial-engine'
 import Link from 'next/link'
 import type { Metadata } from 'next'
-import Nav from '../components/Nav'
+import AppShell from '../components/AppShell'
 
 export const dynamic = 'force-dynamic'
 
@@ -300,11 +300,14 @@ export default async function SpendingPage({ searchParams }: PageProps) {
     ledgerSummary.athReviewCandidates.length > 0
 
   return (
-    <main className="p-8 space-y-6">
-      <h1 className="text-4xl font-bold">📊 Spending</h1>
-
-      <Nav />
-
+    <AppShell
+      header={{
+        eyebrow: 'Gastos confirmados',
+        title: 'Gastos',
+        subtitle:
+          'Resumen de gastos confirmados. Los movimientos pendientes y no-gasto se muestran aparte.',
+      }}
+    >
       <section className="border rounded p-4 space-y-3">
         <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
           <div>
@@ -486,6 +489,6 @@ export default async function SpendingPage({ searchParams }: PageProps) {
           </div>
         </section>
       )}
-    </main>
+    </AppShell>
   )
 }

@@ -13,7 +13,7 @@ import {
 } from '@/lib/financial-engine'
 import type { IncomeSchedule } from '@/lib/financial-engine'
 import type { Metadata } from 'next'
-import Nav from '../components/Nav'
+import AppShell from '../components/AppShell'
 import { createIncomeAction, updateIncomeAction } from './actions'
 
 export const dynamic = 'force-dynamic'
@@ -282,7 +282,7 @@ function IncomeEditForm({
       <input name="incomeId" type="hidden" value={income.id || ''} />
 
       <label className="space-y-1 md:col-span-2">
-        <span className="text-xs font-medium uppercase tracking-wide opacity-60">Name</span>
+        <span className="text-xs font-medium uppercase tracking-normal opacity-60">Name</span>
         <input
           className={fieldClass()}
           defaultValue={textValue(income.name)}
@@ -292,7 +292,7 @@ function IncomeEditForm({
       </label>
 
       <label className="space-y-1">
-        <span className="text-xs font-medium uppercase tracking-wide opacity-60">Amount</span>
+        <span className="text-xs font-medium uppercase tracking-normal opacity-60">Amount</span>
         <input
           className={fieldClass()}
           defaultValue={numberValue(income.amount)}
@@ -305,7 +305,7 @@ function IncomeEditForm({
       </label>
 
       <label className="space-y-1">
-        <span className="text-xs font-medium uppercase tracking-wide opacity-60">Expected</span>
+        <span className="text-xs font-medium uppercase tracking-normal opacity-60">Expected</span>
         <input
           className={fieldClass()}
           defaultValue={textValue(income.next_expected_date)}
@@ -316,32 +316,32 @@ function IncomeEditForm({
       </label>
 
       <label className="space-y-1">
-        <span className="text-xs font-medium uppercase tracking-wide opacity-60">Status</span>
+        <span className="text-xs font-medium uppercase tracking-normal opacity-60">Status</span>
         <StatusSelect defaultValue={income.status} />
       </label>
 
       <label className="space-y-1">
-        <span className="text-xs font-medium uppercase tracking-wide opacity-60">Owner</span>
+        <span className="text-xs font-medium uppercase tracking-normal opacity-60">Owner</span>
         <OwnerScopeSelect defaultValue={income.owner_scope} />
       </label>
 
       <label className="space-y-1">
-        <span className="text-xs font-medium uppercase tracking-wide opacity-60">Type</span>
+        <span className="text-xs font-medium uppercase tracking-normal opacity-60">Type</span>
         <IncomeTypeSelect defaultValue={income.income_type} />
       </label>
 
       <label className="space-y-1">
-        <span className="text-xs font-medium uppercase tracking-wide opacity-60">Category</span>
+        <span className="text-xs font-medium uppercase tracking-normal opacity-60">Category</span>
         <CategorySelect defaultValue={income.category_code} />
       </label>
 
       <label className="space-y-1">
-        <span className="text-xs font-medium uppercase tracking-wide opacity-60">Cadence</span>
+        <span className="text-xs font-medium uppercase tracking-normal opacity-60">Cadence</span>
         <CadenceSelect defaultValue={income.cadence} />
       </label>
 
       <label className="space-y-1">
-        <span className="text-xs font-medium uppercase tracking-wide opacity-60">Confidence</span>
+        <span className="text-xs font-medium uppercase tracking-normal opacity-60">Confidence</span>
         <ConfidenceSelect defaultValue={income.confidence} />
       </label>
 
@@ -355,7 +355,7 @@ function IncomeEditForm({
       </label>
 
       <label className="space-y-1 md:col-span-2">
-        <span className="text-xs font-medium uppercase tracking-wide opacity-60">Destination</span>
+        <span className="text-xs font-medium uppercase tracking-normal opacity-60">Destination</span>
         <DestinationSelect
           defaultValue={destinationValue(income)}
           destinations={destinations}
@@ -363,7 +363,7 @@ function IncomeEditForm({
       </label>
 
       <label className="space-y-1 md:col-span-5">
-        <span className="text-xs font-medium uppercase tracking-wide opacity-60">Notes</span>
+        <span className="text-xs font-medium uppercase tracking-normal opacity-60">Notes</span>
         <textarea
           className={fieldClass()}
           defaultValue={textValue(income.notes)}
@@ -404,7 +404,7 @@ function IncomeRow({
         <div className="text-right">
           <p className="text-xl font-bold">{money(income.amount)}</p>
           {income.amount_is_estimated && (
-            <p className="text-xs uppercase tracking-wide opacity-60">Estimated</p>
+            <p className="text-xs uppercase tracking-normal opacity-60">Estimated</p>
           )}
         </div>
       </div>
@@ -460,17 +460,14 @@ export default async function IncomePage({ searchParams }: IncomePageProps) {
   )
 
   return (
-    <main className="space-y-8 p-8">
-      <div className="space-y-3">
-        <h1 className="text-4xl font-bold">Income Planning</h1>
-        <p className="max-w-3xl opacity-75">
-          Expected income is used for projections until it is received,
-          missed, or cancelled.
-        </p>
-      </div>
-
-      <Nav />
-
+    <AppShell
+      header={{
+        eyebrow: 'Ingresos esperados',
+        title: 'Ingresos',
+        subtitle:
+          'Ingresos esperados para proyecciones hasta que se reciban, se pierdan o se cancelen.',
+      }}
+    >
       {params.saved && savedMessages[params.saved] && (
         <div className="rounded border border-green-500/40 bg-green-500/10 p-4 text-sm">
           {savedMessages[params.saved]}
@@ -528,7 +525,7 @@ export default async function IncomePage({ searchParams }: IncomePageProps) {
         items={[...summary.missedIncome, ...summary.cancelledIncome]}
         title="Missed / Cancelled"
       />
-    </main>
+    </AppShell>
   )
 }
 

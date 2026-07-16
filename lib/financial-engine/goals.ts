@@ -1,3 +1,5 @@
+import type { FinancialSupabaseClient } from './types'
+
 export type GoalType =
   | 'emergency_fund'
   | 'debt_reduction'
@@ -122,6 +124,82 @@ export type GoalSummary = {
   health: GoalHealth
   confidence: GoalConfidence
   estimatedCompletionDate: string | null
+}
+
+export type LegacyFinancialGoalRow = {
+  id: string
+  name: string | null
+  goal_type: string | null
+  target_amount: number | null
+  current_amount: number | null
+  target_date: string | null
+  priority: number | null
+  notes: string | null
+}
+
+export type LegacyFinancialGoalInput = {
+  name: string
+  goalType: string
+  targetAmount: number
+  currentAmount: number
+  targetDate: string | null
+  priority: number
+  notes: string
+}
+
+export async function getLegacyFinancialGoals(
+  supabase: FinancialSupabaseClient
+) {
+  const { data, error } = await supabase
+    .from('financial_goals')
+    .select(
+      'id, name, goal_type, target_amount, current_amount, target_date, priority, notes'
+    )
+    .eq('is_active', true)
+    .order('priority', { ascending: true })
+
+  if (error) throw error
+
+  return ((data || []) as unknown[]) as LegacyFinancialGoalRow[]
+}
+
+export async function createLegacyFinancialGoal(
+  supabase: FinancialSupabaseClient,
+  input: LegacyFinancialGoalInput
+) {
+  const { error } = await supabase.from('financial_goals').insert({
+    name: input.name,
+    goal_type: input.goalType,
+    target_amount: input.targetAmount,
+    current_amount: input.currentAmount,
+    target_date: input.targetDate,
+    priority: input.priority,
+    notes: input.notes,
+    is_active: true,
+  })
+
+  if (error) throw error
+}
+
+export async function updateLegacyFinancialGoal(
+  supabase: FinancialSupabaseClient,
+  goalId: string,
+  input: LegacyFinancialGoalInput
+) {
+  const { error } = await supabase
+    .from('financial_goals')
+    .update({
+      name: input.name,
+      goal_type: input.goalType,
+      target_amount: input.targetAmount,
+      current_amount: input.currentAmount,
+      target_date: input.targetDate,
+      priority: input.priority,
+      notes: input.notes,
+    })
+    .eq('id', goalId)
+
+  if (error) throw error
 }
 
 const PRIORITY_ORDER: Record<GoalPriority, number> = {

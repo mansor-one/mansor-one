@@ -1,4 +1,30 @@
-export async function reconcileMovement(supabase: any, movement: any) {
+import type { FinancialSupabaseClient } from '@/lib/financial-engine'
+
+type Movement = {
+  description?: string | null
+  amount?: number | string | null
+  entry_date?: string | null
+  transaction_date?: string | null
+}
+
+type PaymentInstanceRow = {
+  id: string
+  name?: string | null
+  amount?: number | string | null
+  notes?: string | null
+}
+
+type FutureObligationRow = {
+  id: string
+  name?: string | null
+  estimated_amount?: number | string | null
+  notes?: string | null
+}
+
+export async function reconcileMovement(
+  supabase: FinancialSupabaseClient,
+  movement: Movement
+) {
   const description = String(movement.description || '').toLowerCase()
   const amount = Math.abs(Number(movement.amount || 0))
   const date = movement.entry_date || movement.transaction_date || new Date().toISOString().slice(0, 10)
@@ -10,7 +36,8 @@ export async function reconcileMovement(supabase: any, movement: any) {
     .select('*')
     .neq('status', 'paid')
 
-  const matchedPayment = payments?.find((payment: any) => {
+  const paymentRows = ((payments || []) as unknown[]) as PaymentInstanceRow[]
+  const matchedPayment = paymentRows.find((payment) => {
     const paymentAmount = Math.abs(Number(payment.amount || 0))
     const name = String(payment.name || '').toLowerCase()
 
@@ -46,7 +73,8 @@ export async function reconcileMovement(supabase: any, movement: any) {
     .select('*')
     .neq('status', 'paid')
 
-  const matchedObligation = obligations?.find((item: any) => {
+  const obligationRows = ((obligations || []) as unknown[]) as FutureObligationRow[]
+  const matchedObligation = obligationRows.find((item) => {
     const itemAmount = Math.abs(Number(item.estimated_amount || 0))
     const name = String(item.name || '').toLowerCase()
 

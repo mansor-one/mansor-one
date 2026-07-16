@@ -15,7 +15,7 @@ import {
 import { createServerSupabase } from '@/lib/supabase/server'
 import type { Metadata } from 'next'
 import Link from 'next/link'
-import Nav from '../components/Nav'
+import AppShell from '../components/AppShell'
 import {
   revokePlaidConnectionAction,
   updateManualAccountAction,
@@ -128,7 +128,7 @@ function ManualAccountCard({
       <input type="hidden" name="accountId" value={account.id || ''} />
       <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <p className="text-xs uppercase tracking-wide text-neutral-500">
+          <p className="text-xs uppercase tracking-normal text-neutral-500">
             Manual account
           </p>
           <h3 className="text-lg font-semibold">
@@ -250,7 +250,7 @@ function HistoricalPlaidAccountCard({
     <div className="space-y-3 rounded border border-neutral-800 bg-neutral-900 p-4">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <p className="text-xs uppercase tracking-wide text-neutral-500">
+          <p className="text-xs uppercase tracking-normal text-neutral-500">
             Historical account
           </p>
           <h3 className="text-lg font-semibold">
@@ -302,7 +302,7 @@ function PlaidAccountCard({ account }: { account: ConnectedAccount }) {
       <input type="hidden" name="plaidAccountId" value={account.id || ''} />
       <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <p className="text-xs uppercase tracking-wide text-neutral-500">
+          <p className="text-xs uppercase tracking-normal text-neutral-500">
             Plaid account
           </p>
           <h3 className="text-lg font-semibold">
@@ -411,7 +411,7 @@ function PlaidConnectionCard({
     <div className="space-y-3 rounded border border-neutral-800 bg-neutral-900 p-4">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <p className="text-xs uppercase tracking-wide text-neutral-500">
+          <p className="text-xs uppercase tracking-normal text-neutral-500">
             Plaid connection
           </p>
           <h3 className="text-lg font-semibold">
@@ -551,7 +551,7 @@ function RevokedPlaidConnectionCard({
     <div className="space-y-3 rounded border border-neutral-800 bg-neutral-900 p-4">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <p className="text-xs uppercase tracking-wide text-neutral-500">
+          <p className="text-xs uppercase tracking-normal text-neutral-500">
             Revoked Plaid connection
           </p>
           <h3 className="text-lg font-semibold">
@@ -685,19 +685,14 @@ export default async function PortfolioPage({
   ])
 
   return (
-    <main className="min-h-screen bg-neutral-950 px-4 py-6 text-neutral-100 md:px-8">
-      <div className="mx-auto flex max-w-7xl flex-col gap-6">
-        <header className="space-y-4">
-          <div>
-            <p className="text-sm text-neutral-400">Portfolio foundation</p>
-            <h1 className="text-3xl font-bold md:text-5xl">Portfolio</h1>
-            <p className="mt-2 max-w-3xl text-sm leading-6 text-neutral-400">
-              Central view for cash, manual accounts, connected accounts, debt,
-              assets, and net worth. Manual account changes preserve history.
-            </p>
-          </div>
-          <Nav />
-        </header>
+    <AppShell
+      header={{
+        eyebrow: 'Patrimonio familiar',
+        title: 'Patrimonio',
+        subtitle:
+          'Cuentas, efectivo, deudas y valor neto. Los cambios manuales preservan el historial.',
+      }}
+    >
 
         <section
           className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4"
@@ -1011,7 +1006,6 @@ export default async function PortfolioPage({
             business cash/asset reporting.
           </p>
         </section>
-      </div>
-    </main>
+    </AppShell>
   )
 }

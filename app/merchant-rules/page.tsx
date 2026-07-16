@@ -1,104 +1,52 @@
-'use client'
-
-import { useEffect, useState } from 'react'
-import { supabase } from '@/lib/supabase'
+import { requireUser } from '@/lib/auth/requireUser'
 import Nav from '../components/Nav'
+import RuleCard, { type MerchantRule } from './RuleCard'
 
-export default function MerchantRulesPage() {
-  const [rules, setRules] = useState<any[]>([])
-  const [message, setMessage] = useState('')
+export const dynamic = 'force-dynamic'
 
-  async function loadRules() {
-    const { data, error } = await supabase
-      .from('merchant_rules')
-      .select('*')
-      .order('merchant_keyword')
+type MerchantRulesPageProps = {
+  searchParams?: Promise<{
+    error?: string
+    saved?: string
+  }>
+}
 
-    if (error) {
-      setMessage(error.message)
-      return
-    }
+export default async function MerchantRulesPage({
+  searchParams,
+}: MerchantRulesPageProps) {
+  const params = (await searchParams) || {}
+  const { supabase } = await requireUser()
+  const { data: rules, error } = await supabase
+    .from('merchant_rules')
+    .select(
+      'id, merchant_keyword, suggested_category, default_transaction_type, confidence_score, notes'
+    )
+    .order('merchant_keyword')
 
-    setRules(data || [])
-  }
-
-  async function updateRule(id: string, suggested_category: string) {
-    setMessage('Guardando regla...')
-
-    const { error } = await supabase
-      .from('merchant_rules')
-      .update({ suggested_category })
-      .eq('id', id)
-
-    if (error) {
-      setMessage(error.message)
-      return
-    }
-
-    setMessage('Regla actualizada ✅')
-    loadRules()
-  }
-
-  useEffect(() => {
-    loadRules()
-  }, [])
+  const items = ((rules || []) as MerchantRule[])
 
   return (
-    <main className="p-8 space-y-6">
-      <h1 className="text-4xl font-bold">🧠 Merchant Rules</h1>
+    <main className="space-y-6 p-8">
+      <h1 className="text-4xl font-bold">Merchant Rules</h1>
 
       <Nav />
-      <p>Total reglas: {rules.length}</p>
+      <p>Total reglas: {items.length}</p>
 
-      {message && (
-        <div className="border rounded p-4">
-          {message}
+      {params.saved === 'updated' && (
+        <div className="rounded border p-4">Regla actualizada</div>
+      )}
+
+      {(params.error || error) && (
+        <div className="rounded border p-4 text-red-400">
+          {params.error || error?.message}
         </div>
       )}
 
       <section className="space-y-3">
-        {rules.map((rule) => (
-          <RuleCard
-            key={rule.id}
-            rule={rule}
-            onSave={updateRule}
-          />
+        {items.map((rule) => (
+          <RuleCard key={rule.id} rule={rule} />
         ))}
       </section>
     </main>
-  )
-}
-
-function RuleCard({
-  rule,
-  onSave,
-}: {
-  rule: any
-  onSave: (id: string, category: string) => void
-}) {
-  const [category, setCategory] = useState(rule.suggested_category || '')
-
-  return (
-    <div className="border rounded p-4 space-y-2">
-      <h2 className="text-xl font-bold">{rule.merchant_keyword}</h2>
-
-      <p>Tipo: {rule.default_transaction_type}</p>
-      <p>Confianza: {rule.confidence_score}</p>
-      <p>Notas: {rule.notes || 'N/A'}</p>
-
-      <input
-        className="border rounded p-2 w-full"
-        value={category}
-        onChange={(e) => setCategory(e.target.value)}
-        placeholder="Categoría sugerida"
-      />
-
-      <button
-        className="border rounded p-2"
-        onClick={() => onSave(rule.id, category)}
-      >
-        Guardar
-      </button>
-    </div>
   )
 }

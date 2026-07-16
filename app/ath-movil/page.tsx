@@ -3,6 +3,19 @@ import Nav from '../components/Nav'
 
 export const dynamic = 'force-dynamic'
 
+type AthMovilEmail = {
+  id: string
+  subject: string | null
+  counterparty: string | null
+  amount: number | string | null
+  direction: string | null
+  suggested_category: string | null
+  email_date: string | null
+  message: string | null
+  is_internal_transfer: boolean | null
+  exclude_from_spending: boolean | null
+}
+
 export default async function AthMovilPage() {
   const { supabase } = await requireUser()
 
@@ -13,10 +26,10 @@ export default async function AthMovilPage() {
     .order('email_date', { ascending: false })
     .limit(100)
 
-  const items = emails || []
+  const items = ((emails || []) as AthMovilEmail[])
 
   const spendingItems = items.filter(
-  (item: any) =>
+  (item) =>
     !item.is_internal_transfer &&
     !item.exclude_from_spending &&
     item.direction !== 'received' &&
@@ -24,19 +37,19 @@ export default async function AthMovilPage() {
 )
 
   const totalSpending = spendingItems.reduce(
-    (sum: number, item: any) => sum + Number(item.amount || 0),
+    (sum, item) => sum + Number(item.amount || 0),
     0
   )
 
   const reviewCount = items.filter(
-    (item: any) => (item.suggested_category || 'Revisar') === 'Revisar'
+    (item) => (item.suggested_category || 'Revisar') === 'Revisar'
   ).length
 
   const internalTotal = items
-    .filter((item: any) => item.is_internal_transfer)
-    .reduce((sum: number, item: any) => sum + Number(item.amount || 0), 0)
+    .filter((item) => item.is_internal_transfer)
+    .reduce((sum, item) => sum + Number(item.amount || 0), 0)
 
-  const categoryTotals = spendingItems.reduce((acc: Record<string, number>, item: any) => {
+  const categoryTotals = spendingItems.reduce<Record<string, number>>((acc, item) => {
     const category = item.suggested_category || 'Revisar'
     acc[category] = (acc[category] || 0) + Number(item.amount || 0)
     return acc
@@ -87,7 +100,7 @@ export default async function AthMovilPage() {
         <h2 className="text-2xl font-bold mb-4">Correos ATH importados</h2>
 
         <div className="space-y-3">
-          {items.map((item: any) => (
+          {items.map((item) => (
             <div key={item.id} className="border rounded p-4">
               <strong>{item.counterparty || item.subject}</strong>
               <p>Monto: ${Number(item.amount || 0).toLocaleString()}</p>

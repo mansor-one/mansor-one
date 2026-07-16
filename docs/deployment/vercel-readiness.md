@@ -176,6 +176,9 @@ provider redirects. Do not proceed to Production until external provider URLs,
 secret separation, Gmail import treatment, and Plaid Production settings are
 resolved.
 
+For the exact first Preview plan, variable checklist, callback matrix, and smoke
+tests, see [Vercel Private Preview Setup Plan](./vercel-private-preview-plan.md).
+
 ## Validation Results
 
 - `npm run build`: passed with network access. The first sandboxed attempt failed

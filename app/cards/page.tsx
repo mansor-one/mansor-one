@@ -2,7 +2,7 @@ import { requireUser } from '@/lib/auth/requireUser'
 import { getCardsSummary, type CardsSummary } from '@/lib/financial-engine'
 import { createServerSupabase } from '@/lib/supabase/server'
 import type { Metadata } from 'next'
-import Nav from '../components/Nav'
+import AppShell from '../components/AppShell'
 import CardsClient from './CardsClient'
 
 export const dynamic = 'force-dynamic'
@@ -27,26 +27,21 @@ export default async function CardsPage() {
   }
 
   return (
-    <main className="min-h-screen bg-neutral-950 p-4 text-neutral-100 md:p-8">
-      <div className="mx-auto max-w-7xl space-y-8">
-        <header className="space-y-4">
-          <Nav />
-          <div>
-            <p className="text-sm text-neutral-400">
-              Centro de control de crédito
-            </p>
-            <h1 className="text-4xl font-bold">Tarjetas</h1>
-          </div>
-        </header>
+    <AppShell
+      header={{
+        eyebrow: 'Centro de crédito',
+        title: 'Tarjetas',
+        subtitle:
+          'Saldos, límites, pagos mínimos y señales de riesgo de las tarjetas familiares.',
+      }}
+    >
+      {error && (
+        <div className="rounded border border-red-700 bg-red-950/40 p-4 text-sm">
+          {error}
+        </div>
+      )}
 
-        {error && (
-          <div className="rounded border border-red-700 bg-red-950/40 p-4 text-sm">
-            {error}
-          </div>
-        )}
-
-        {summary ? <CardsClient summary={summary} /> : null}
-      </div>
-    </main>
+      {summary ? <CardsClient summary={summary} /> : null}
+    </AppShell>
   )
 }

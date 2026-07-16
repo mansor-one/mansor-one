@@ -1,6 +1,6 @@
 import { requireUser } from '@/lib/auth/requireUser'
 import type { Metadata } from 'next'
-import Nav from '../components/Nav'
+import AppShell from '../components/AppShell'
 import InstitutionLogo from '../components/InstitutionLogo'
 import ConnectPlaidButton from './ConnectPlaidButton'
 import PlaidSyncActions from './PlaidSyncActions'
@@ -217,7 +217,7 @@ export default async function PlaidPage() {
           <div className="flex min-w-0 items-start gap-3">
             <InstitutionLogo institution={institution} />
             <div className="min-w-0">
-              <p className="text-xs uppercase tracking-wide text-neutral-500">
+              <p className="text-xs uppercase tracking-normal text-neutral-500">
                 Institución
               </p>
               <h3 className="mt-1 truncate text-xl font-semibold">
@@ -354,22 +354,15 @@ export default async function PlaidPage() {
   }
 
   return (
-    <main className="min-h-screen bg-neutral-950 px-4 py-6 text-neutral-100 md:px-8">
-      <div className="mx-auto max-w-6xl space-y-8">
-        <header className="space-y-4">
-          <Nav />
-          <div className="space-y-2">
-            <p className="text-sm text-neutral-400">Conexiones seguras</p>
-            <h1 className="text-3xl font-bold md:text-4xl">
-              Bancos conectados
-            </h1>
-            <p className="max-w-2xl text-sm leading-6 text-neutral-400">
-              Conecta bancos y tarjetas para mantener balances y movimientos al
-              día. Mansor One guarda la conexión de forma segura en el servidor.
-            </p>
-          </div>
-        </header>
-
+    <AppShell
+      maxWidth="6xl"
+      header={{
+        eyebrow: 'Conexiones seguras',
+        title: 'Bancos',
+        subtitle:
+          'Conecta bancos y tarjetas para mantener balances y movimientos al día. Mansor One guarda la conexión de forma segura en el servidor.',
+      }}
+    >
         <ConnectPlaidButton />
 
         <PlaidSyncActions
@@ -431,7 +424,6 @@ export default async function PlaidPage() {
             </div>
           </section>
         )}
-      </div>
-    </main>
+    </AppShell>
   )
 }

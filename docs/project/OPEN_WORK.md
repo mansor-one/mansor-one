@@ -1,0 +1,30 @@
+# Mansor One Open Work
+
+Last updated: 2026-07-16
+
+| ID | Area | Trabajo pendiente | Estado | Prioridad | Bloqueador | Dependencias | Archivos relacionados | Criterio de terminado | Sprint recomendado |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| OW-001 | Git | Crear checkpoint limpio del Product Shell y audit docs | Ready | P0 critico | Aprobacion de commit | Validation pass | `app/components/*`, `docs/project/*` | Commit/tag creado sin secretos ni basura | Phase 0 |
+| OW-002 | Quality | Corregir lint global | Complete | P0 critico | None | ESLint config | `app/goals/page.tsx`, `app/ath-movil/page.tsx`, `app/imports/page.tsx`, `app/merchant-rules/page.tsx`, `app/priorities/page.tsx`, `lib/finance/reconcileMovement.ts` | `npm run lint` passes | Phase 0 |
+| OW-003 | Architecture | Retirar o migrar `/goals` client-side writes | Complete | P0 critico | None | Goal Engine contract | `app/goals/page.tsx`, `app/goals/actions.ts`, `lib/financial-engine/goals.ts` | No client Supabase writes remain | Phase 0 |
+| OW-004 | UX | Polish Dashboard content to match dark executive shell | Ready | P1 alto | None | Product Shell | `app/page.tsx` | KPI/cards/lists native to shell, no logic changes | Phase 1 |
+| OW-005 | UX | Polish Robototina v2 visual | Ready | P1 alto | None | Decision Engine v1 | `app/robototina/page.tsx` | Advisor cards and Q&A feel native | Phase 1 |
+| OW-006 | UX | Polish Spending and History tables | Ready | P1 alto | Duplicate/category workflows | Ledger Summary | `app/spending/page.tsx`, `app/history/*` | Clear spending/non-spending/pending/duplicates | Phase 1 |
+| OW-007 | Data | Run authenticated Data Health and export findings | Validation Needed | P1 alto | Authenticated session | Data Health Inspector | `/dev/data-health`, `lib/financial-engine/data-health.ts` | Current live score and unknowns captured | Phase 2 |
+| OW-008 | Data | Complete debt metadata contract implementation | Partial | P1 alto | Missing APR/due/minimum fields | DebtSummary docs | `cards.ts`, `portfolio.ts`, `debt-strategy.ts` | Debt Strategy can state confidence per field | Phase 2 |
+| OW-009 | Data | Transfer ledger/internal transfer contract | Not Started | P1 alto | Schema/contract decision | Ledger Summary | `ledger-summary.ts`, Review Queue | Transfers excluded consistently from spending/income | Phase 2 |
+| OW-010 | Plaid | Add Plaid webhook/callback strategy | Not Started | P1 alto | Provider setup | Stable Preview URL | `app/api/plaid/*`, Vercel docs | Webhook route and provider matrix validated | Phase 4 |
+| OW-011 | Plaid | Institution health and retry model | Partial | P1 alto | Error taxonomy | Plaid sync routes | `/plaid`, `app/api/plaid/*` | Last sync, error, retry status per institution | Phase 4 |
+| OW-012 | Gmail/ATH | Decide Gmail import production mode | Blocked | P1 alto | Product/security decision | Google OAuth | `app/api/gmail/*` | Manual admin-only or scheduled route documented | Phase 4 |
+| OW-013 | Security | Review service-role route ownership predicates | Ready | P1 alto | None | Supabase Auth/RLS | Plaid/Gmail route handlers | Every service-role read/write scoped to auth user | Phase 3 |
+| OW-014 | Security | Add rate limiting/CSRF strategy for mutation APIs | Not Started | P2 medio | Framework decision | Auth routes | API POST routes | Mutation endpoints have explicit abuse controls | Phase 8 |
+| OW-015 | Architecture | Move page view-model calculations out of React pages | Partial | P2 medio | Prioritize pages | Financial Engine contract | `app/page.tsx`, `app/spending/page.tsx`, `app/planning/page.tsx` | React only formats/groups official outputs | Phase 3 |
+| OW-016 | Tests | Add first-party engine fixtures/tests | Not Started | P2 medio | Test framework choice | Engine contracts | `lib/financial-engine/*.fixtures.ts` | CI runs deterministic contract tests | Phase 3 |
+| OW-017 | Docs | Update root README and docs index | Ready | P2 medio | Audit docs accepted | Project docs | `README.md`, `docs/README.md` | Current state and roadmap linked | Phase 0 |
+| OW-018 | Vercel | Configure private Preview env/provider callbacks | Blocked | P1 alto | External provider access | Vercel docs | `docs/deployment/*` | Private Preview smoke checklist passes | Phase 4 |
+| OW-019 | AI | Robototina AI v1 context/prompt contract | Not Started | P2 medio | Data completeness | Robototina context | `robototina-context.ts`, `robototina-qa.ts` | OpenAI receives only official context | Phase 5 |
+| OW-020 | Atlas | Minimal scenario contract | Not Started | P3 bajo | Snapshot stability | Financial Engine | `project-atlas-decision-intelligence.md` | Current Snapshot + Scenario Input = Simulated Snapshot | Phase 6 |
+| OW-021 | MCP | Automation dependency checklist | Not Started | P3 bajo | Atlas and AI not ready | Atlas/Robototina | AI Playbook | MCP never reads tables directly | Phase 7 |
+| OW-022 | Cleanup | Remove accidental root files | Ready | P3 bajo | Approval | Git checkpoint | `1`, `Build`, `next`, `mansor-one@0.1.0` | Files removed or explicitly retained | Phase 0 |
+| OW-023 | Architecture | Migrate remaining client-side Supabase financial pages behind server boundaries | Not Started | P1 alto | Page-by-page risk review | Existing table flows | `app/accounts/page.tsx`, `app/quick-entry/page.tsx`, `app/payment-instances/page.tsx`, `app/imports/page.tsx` | No Client Component imports `@/lib/supabase` or calls financial table writes directly | Phase 3 |
+| OW-024 | Architecture | Migrate remaining server page raw financial reads to official helpers/view models | Not Started | P2 medio | Helper contracts | Financial Engine contract | `app/assets/page.tsx`, `app/priorities/page.tsx`, `app/cashflow/page.tsx`, `app/payments/page.tsx`, `app/future-obligations/page.tsx`, `app/health-score/page.tsx`, `app/ath-movil/page.tsx`, `app/merchant-rules/page.tsx` | Pages consume server helpers/official engine outputs instead of ad hoc table reads | Phase 3 |

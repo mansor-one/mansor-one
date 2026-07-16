@@ -14,8 +14,8 @@ import {
   type TransactionContext,
 } from '@/lib/financial-engine'
 import Link from 'next/link'
+import AppShell from './components/AppShell'
 import InstitutionLogo from './components/InstitutionLogo'
-import Nav from './components/Nav'
 import PaymentScheduleView from './components/PaymentScheduleView'
 
 export const dynamic = 'force-dynamic'
@@ -677,25 +677,19 @@ export default async function Home() {
   // TODO: Household insights.
 
   return (
-    <main className="min-h-screen bg-neutral-950 text-neutral-100">
-      <div className="mx-auto flex w-full max-w-7xl flex-col gap-6 px-4 py-6 md:px-8">
-        <header className="space-y-4">
-          <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
-            <div>
-              <p className="text-sm text-neutral-400">{currentMonth}</p>
-              <h1 className="text-3xl font-bold md:text-5xl">
-                👋 {greeting}, {household}.
-              </h1>
-            </div>
-
-            <div className="text-sm text-neutral-400 md:text-right">
+    <AppShell
+      header={{
+        eyebrow: currentMonth,
+        title: `${greeting}, ${household}.`,
+        subtitle: 'Resumen familiar de efectivo, gastos, pagos y movimientos pendientes.',
+        secondaryAction: (
+          <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600 md:text-right">
               <p>Actualizado: {lastUpdated}</p>
               <p>Movimientos confirmados y pendientes al día.</p>
-            </div>
           </div>
-
-          <Nav />
-        </header>
+        ),
+      }}
+    >
 
         <section className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-6">
           <div
@@ -1013,8 +1007,7 @@ export default async function Home() {
         </div>
 
         <PaymentScheduleView payments={upcomingPayments} today={today} />
-      </div>
-    </main>
+    </AppShell>
   )
 }
 

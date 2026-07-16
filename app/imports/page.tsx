@@ -4,9 +4,24 @@ import { useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import Nav from '../components/Nav'
 
+type MerchantRule = {
+  merchant_keyword: string | null
+  suggested_category: string | null
+  default_transaction_type: string | null
+  confidence_score: number | string | null
+}
+
+type ImportPreviewResult = {
+  amount: string
+  merchant: string
+  category: string
+  transactionType: string
+  confidence: number
+}
+
 export default function ImportsPage() {
   const [emailText, setEmailText] = useState('')
-  const [result, setResult] = useState<any>(null)
+  const [result, setResult] = useState<ImportPreviewResult | null>(null)
   const [message, setMessage] = useState('')
 
   async function analyze() {
@@ -39,12 +54,12 @@ export default function ImportsPage() {
       return
     }
 
-    const matchedRule = rules?.find((rule) =>
+    const matchedRule = ((rules || []) as MerchantRule[]).find((rule) =>
       lower.includes(String(rule.merchant_keyword || '').toLowerCase())
     )
 
     if (matchedRule) {
-      merchant = matchedRule.merchant_keyword
+      merchant = matchedRule.merchant_keyword || 'No detectado'
       category = matchedRule.suggested_category || 'Sin categoría'
       transactionType = matchedRule.default_transaction_type || 'expense'
       confidence = Number(matchedRule.confidence_score || 0)

@@ -7,7 +7,7 @@ import {
   type PlanningFundMovement,
 } from '@/lib/financial-engine/planning-management'
 import type { Metadata } from 'next'
-import Nav from '../components/Nav'
+import AppShell from '../components/AppShell'
 import {
   archivePlanningFundAction,
   createPlanningFundAction,
@@ -102,17 +102,14 @@ export default async function PlanningPage({ searchParams }: PlanningPageProps) 
   const remaining = Math.max(0, totalTarget - totalAllocated)
 
   return (
-    <main className="space-y-8 p-8">
-      <div className="space-y-3">
-        <h1 className="text-4xl font-bold">Priorities & Funds</h1>
-        <p className="max-w-3xl opacity-75">
-          Planning funds are goals and reserved money, separate from bills and
-          payment obligations.
-        </p>
-      </div>
-
-      <Nav />
-
+    <AppShell
+      header={{
+        eyebrow: 'Fondos familiares',
+        title: 'Metas',
+        subtitle:
+          'Dinero reservado para metas y prioridades, separado de pagos y obligaciones.',
+      }}
+    >
       {params.saved && savedMessages[params.saved] && (
         <div className="rounded border border-green-500/40 bg-green-500/10 p-4 text-sm">
           {savedMessages[params.saved]}
@@ -231,7 +228,7 @@ export default async function PlanningPage({ searchParams }: PlanningPageProps) 
         items={archived}
         movementsByFund={movementsByFund}
       />
-    </main>
+    </AppShell>
   )
 }
 

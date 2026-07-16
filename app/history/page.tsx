@@ -9,7 +9,7 @@ import {
   transactionContext,
 } from '@/lib/financial-engine'
 import type { Metadata } from 'next'
-import Nav from '../components/Nav'
+import AppShell from '../components/AppShell'
 import HistoryClient, { type HistoryMovement } from './HistoryClient'
 
 export const dynamic = 'force-dynamic'
@@ -132,22 +132,19 @@ export default async function HistoryPage() {
   const categoryOptions = uniqueCategoryOptions()
 
   return (
-    <main className="space-y-6 p-4 md:p-8">
-      <div className="space-y-2">
-        <h1 className="text-3xl font-bold">Historial</h1>
-        <p className="max-w-3xl text-sm opacity-70">
-          Movimientos confirmados para buscar, filtrar y auditar tu actividad.
-          Los pendientes por clasificar se revisan aparte.
-        </p>
-      </div>
-
-      <Nav />
-
+    <AppShell
+      header={{
+        eyebrow: 'Historial financiero',
+        title: 'Movimientos',
+        subtitle:
+          'Movimientos confirmados para buscar, filtrar y auditar. Los pendientes por clasificar se revisan aparte.',
+      }}
+    >
       <HistoryClient
         categoryOptions={categoryOptions}
         movements={movements}
         resolvedDuplicateMovements={resolvedDuplicateMovements}
       />
-    </main>
+    </AppShell>
   )
 }
