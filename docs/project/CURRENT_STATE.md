@@ -32,6 +32,18 @@ Plaid.
 - Phase 1 Legacy Surface Containment: `/accounts`, `/quick-entry`,
   `/payment-instances` e `/imports` ya no leen Supabase desde Client
   Components.
+- Phase 2 also removed remaining financial browser-client Supabase imports from
+  `/assets` and `/priorities`; remaining direct reads are server-side legacy
+  surfaces.
+- Phase 3 Health Center exists at `/health-center` and presents live
+  authenticated Data Health as operational financial integrity, readiness gates
+  and repair backlog classifications. It does not repair data silently.
+- Phase 4 Repair Center exists at `/repair-center` and turns Health Center
+  findings into reviewable repair items with status, impact, suggested action
+  and links to explicit workflows. It does not apply automatic repairs.
+- Phase 2 Financial Integrity coverage expanded Data Health for card metadata,
+  income ownership/frequency, Plaid health, ATH/transfer ambiguity, planning
+  identity signals and Snapshot readiness. Live data repair is still pending.
 
 ## Que esta funcional pero incompleto
 
@@ -50,6 +62,11 @@ Plaid.
   como APR, due date, minimum payment y ownership.
 - Data Health Inspector: cubre muchas tablas y health checks, pero aun no
   reemplaza una validacion viva de datos con usuario autenticado.
+- Health Center: operational surface exists, but live findings still need user
+  review in an authenticated session before AI/Atlas readiness can be declared.
+- Repair Center: operational queue exists, but persistent repair history and
+  direct metadata editors for every finding require future approved schema or
+  route work.
 
 ## Que quedo a mitad
 
@@ -61,6 +78,8 @@ Plaid.
   cliente; queda como superficie legacy servida por helper/server actions.
 - Transfer ledger: detectado como necesidad, no implementado como contrato
   oficial.
+- Financial Integrity: Data Health coverage improved, but no live financial
+  rows were repaired and no schema changes were made.
 - Atlas: documentado como direccion futura, no implementado.
 - MCP/Automations: documentado como futuro, no implementado.
 
@@ -125,6 +144,7 @@ Plaid.
 | Planning | Partial | `planning.ts`, `planning-management.ts`, UI still internal-like |
 | Robototina | Functional v1 | `robototina-context.ts`, `robototina-qa.ts`, `/robototina` |
 | UX | Shell complete, content partial | `docs/ux/product-shell-v1.md`, migrated main pages |
+| Repair Center | Functional v1 | `/repair-center`, `lib/financial-engine/repair-center.ts`, no automatic repairs |
 | Security | Improved, not production complete | internal tool guard passes; service role and legacy routes remain |
 | Deployment | Preview near-ready | Vercel docs and build pass; provider setup pending |
 | AI | Not started | AI playbook exists; no OpenAI route implemented |

@@ -8,6 +8,10 @@ import {
   type ConfirmedLedgerDuplicateGroup,
   type ConfirmedLedgerDuplicateResolution,
 } from './confirmed-ledger-duplicates'
+import {
+  possiblePostedDuplicateGroups,
+  transactionStatusCountsTowardSpending,
+} from './plaid-transaction-lifecycle'
 
 export type LedgerSourceTable = 'plaid_imports' | 'quick_entries'
 
@@ -62,6 +66,12 @@ export type LedgerSummary = {
   ledgerReviewCandidates: LedgerSummaryTransaction[]
   importReviewCandidates: LedgerSummaryTransaction[]
   athReviewCandidates: LedgerSummaryTransaction[]
+  spendingDiagnostics: {
+    pendingReplacedByPosted: number
+    exactSourceIdDuplicates: number
+    possibleDuplicates: number
+    rowsExcludedFromSpending: number
+  }
 }
 
 type PlaidImportRow = {
@@ -79,6 +89,11 @@ type PlaidImportRow = {
   account_mask?: string | null
   account_type?: string | null
   account_subtype?: string | null
+  pending?: boolean | null
+  pending_transaction_id?: string | null
+  transaction_status?: string | null
+  superseded_by_transaction_id?: string | null
+  removed_at?: string | null
 }
 
 type QuickEntryRow = {
@@ -199,6 +214,11 @@ function plaidImportTransaction(row: PlaidImportRow): LedgerSummaryTransaction {
       accountSubtype: row.account_subtype || null,
       suggestedCategory: row.suggested_category || null,
       plaidCategory: row.plaid_category || null,
+      pending: row.pending === true,
+      pendingTransactionId: row.pending_transaction_id || null,
+      transactionStatus: row.transaction_status || 'active',
+      supersededByTransactionId: row.superseded_by_transaction_id || null,
+      removedAt: row.removed_at || null,
     },
   }
 }
@@ -241,6 +261,17 @@ function quickEntryTransaction(
         (matchingPlaidImport?.metadata.accountType as string | null) || null,
       accountSubtype:
         (matchingPlaidImport?.metadata.accountSubtype as string | null) ||
+        null,
+      plaidTransactionStatus:
+        (matchingPlaidImport?.metadata.transactionStatus as string | null) ||
+        'active',
+      plaidPending:
+        (matchingPlaidImport?.metadata.pending as boolean | null) || false,
+      plaidPendingTransactionId:
+        (matchingPlaidImport?.metadata.pendingTransactionId as string | null) ||
+        null,
+      plaidSupersededByTransactionId:
+        (matchingPlaidImport?.metadata.supersededByTransactionId as string | null) ||
         null,
     },
   }
@@ -398,6 +429,29 @@ function uniqueTransactions(transactions: LedgerSummaryTransaction[]) {
   })
 }
 
+function activePlaidSourceTransaction(transaction: LedgerSummaryTransaction) {
+  if (!transaction.plaidTransactionId) return true
+  return transactionStatusCountsTowardSpending(
+    transaction.metadata.plaidTransactionStatus as string | null,
+    transaction.metadata.plaidPending === true
+  )
+}
+
+function uniqueConfirmedSourceTransactions(transactions: LedgerSummaryTransaction[]) {
+  const seenPlaidIds = new Set<string>()
+  let exactSourceIdDuplicates = 0
+  const rows = transactions.filter((transaction) => {
+    if (!transaction.plaidTransactionId) return true
+    if (seenPlaidIds.has(transaction.plaidTransactionId)) {
+      exactSourceIdDuplicates += 1
+      return false
+    }
+    seenPlaidIds.add(transaction.plaidTransactionId)
+    return true
+  })
+  return { rows, exactSourceIdDuplicates }
+}
+
 export async function getLedgerSummary(
   supabase: FinancialSupabaseClient,
   userId: string
@@ -409,9 +463,7 @@ export async function getLedgerSummary(
   ] = await Promise.all([
     supabase
       .from('plaid_imports')
-      .select(
-        'id, plaid_transaction_id, plaid_account_id, transaction_date, merchant, amount, suggested_category, plaid_category, imported, institution_name, account_name, account_mask, account_type, account_subtype'
-      )
+      .select('*')
       .eq('user_id', userId)
       .order('transaction_date', { ascending: false }),
     supabase
@@ -437,10 +489,16 @@ export async function getLedgerSummary(
   const allConfirmedLedgerEntries =
     ((quickEntriesResult.data || []) as QuickEntryRow[])
       .map((row) => quickEntryTransaction(row, plaidImportByTransactionId))
-  const confirmedLedgerEntries = activeConfirmedLedgerEntries(
+  const resolutionFilteredLedgerEntries = activeConfirmedLedgerEntries(
     allConfirmedLedgerEntries,
     confirmedLedgerDuplicateResolutions
   )
+  const sourceLifecycleFilteredLedgerEntries =
+    resolutionFilteredLedgerEntries.filter(activePlaidSourceTransaction)
+  const exactSourceDeduplication = uniqueConfirmedSourceTransactions(
+    sourceLifecycleFilteredLedgerEntries
+  )
+  const confirmedLedgerEntries = exactSourceDeduplication.rows
   const duplicateResolvedLedgerEntries = allConfirmedLedgerEntries.filter(
     (transaction) =>
       isDuplicateResolved(transaction, confirmedLedgerDuplicateResolutions)
@@ -469,6 +527,29 @@ export async function getLedgerSummary(
     ...ledgerReviewCandidates,
     ...importReviewCandidates,
   ])
+  const possibleDuplicates = possiblePostedDuplicateGroups(
+    confirmedLedgerEntries
+      .filter((transaction) => Boolean(transaction.plaidTransactionId))
+      .map((transaction) => ({
+        transactionId: transaction.plaidTransactionId as string,
+        pendingTransactionId:
+          (transaction.metadata.plaidPendingTransactionId as string | null) || null,
+        pending: transaction.metadata.plaidPending === true,
+        accountId:
+          (transaction.metadata.plaidAccountId as string | null) || null,
+        merchant: transaction.description || '',
+        amount: transaction.amount,
+        date: transaction.date || '',
+        status:
+          (transaction.metadata.plaidTransactionStatus as 'active' | undefined) ||
+          'active',
+      }))
+  )
+  const pendingReplacedByPosted = plaidSourceRows.filter(
+    (transaction) => transaction.metadata.transactionStatus === 'superseded'
+  ).length
+  const lifecycleExcluded =
+    resolutionFilteredLedgerEntries.length - sourceLifecycleFilteredLedgerEntries.length
 
   return {
     confirmedLedgerEntries,
@@ -492,5 +573,13 @@ export async function getLedgerSummary(
     ledgerReviewCandidates,
     importReviewCandidates,
     athReviewCandidates,
+    spendingDiagnostics: {
+      pendingReplacedByPosted,
+      exactSourceIdDuplicates: exactSourceDeduplication.exactSourceIdDuplicates,
+      possibleDuplicates: possibleDuplicates.length,
+      rowsExcludedFromSpending:
+        lifecycleExcluded + exactSourceDeduplication.exactSourceIdDuplicates +
+        duplicateResolvedLedgerEntries.length,
+    },
   }
 }

@@ -14,6 +14,7 @@ type NavItem = {
 const householdNav: NavItem[] = [
   { href: '/', label: 'Inicio', description: 'Resumen familiar', icon: '⌂' },
   { href: '/robototina', label: 'Robototina', description: 'Asesora', icon: '◉' },
+  { href: '/repair-center', label: 'Reparaciones', description: 'Salud de datos', icon: '◒' },
   { href: '/spending', label: 'Gastos', description: 'Consumo', icon: '◔' },
   { href: '/history', label: 'Movimientos', description: 'Historial', icon: '▤' },
   { href: '/timeline', label: 'Pagos', description: 'Calendario', icon: '□' },

@@ -1,4 +1,4 @@
-import { supabase } from '@/lib/supabase'
+import { requireUser } from '@/lib/auth/requireUser'
 import Nav from '../components/Nav'
 
 type Priority = {
@@ -11,6 +11,7 @@ type Priority = {
 }
 
 export default async function PrioritiesPage() {
+  const { supabase } = await requireUser()
   const { data: priorities } = await supabase
     .from('priorities')
     .select('*')

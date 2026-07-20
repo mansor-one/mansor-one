@@ -14,6 +14,12 @@ Esta carpeta documenta las decisiones actuales de producto y arquitectura.
 - `project/ARCHITECTURE_ALIGNMENT.md`: validacion de fronteras arquitectura.
 - `project/VERCEL_READINESS.md`: resumen actual de readiness Vercel.
 - `project/AI_READINESS.md`: prerequisitos para Robototina AI, Atlas y MCP.
+- `project/FINANCIAL_INTEGRITY_REPORT.md`: cobertura Phase 2 para tarjetas,
+  ingresos, Plaid, ATH, transferencias, Data Health y Snapshot readiness.
+- `project/HEALTH_CENTER.md`: proposito, scoring, reparaciones y readiness del
+  Health Center operacional.
+- `project/REPAIR_CENTER.md`: flujo guiado para revisar hallazgos, aprobar
+  reparaciones y evitar auto-fixes silenciosos.
 - `project/GIT_CHECKPOINT.md`: checkpoint y tag recomendados.
 - `architecture/domain-language.md`: vocabulario compartido del dominio financiero.
 - `architecture/category-system.md`: categorias canonicas y migracion futura desde texto libre.

@@ -15,6 +15,7 @@ export type DataHealthDomain =
   | 'ledger'
   | 'planning'
   | 'portfolio'
+  | 'snapshot'
   | 'security'
 
 export type DataHealthStatus = 'healthy' | 'warning' | 'critical' | 'unknown'
@@ -51,7 +52,6 @@ const READ_TABLES = [
   'plaid_accounts',
   'plaid_connections',
   'credit_cards',
-  'liabilities',
   'income_schedule',
   'quick_entries',
   'plaid_imports',
@@ -60,9 +60,7 @@ const READ_TABLES = [
   'obligation_instances',
   'obligation_providers',
   'scheduled_payments',
-  'payment_instances',
   'planning_items',
-  'future_obligations',
   'ath_movil_emails',
 ] as const
 
@@ -119,6 +117,14 @@ function money(value: unknown) {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   })}`
+}
+
+function hasField(row: Row, field: string) {
+  return Object.prototype.hasOwnProperty.call(row, field)
+}
+
+function missingValue(row: Row, field: string) {
+  return !hasField(row, field) || row[field] === null || row[field] === undefined || row[field] === ''
 }
 
 function percent(value: unknown) {
@@ -276,10 +282,12 @@ function buildAccountChecks({
   plaidAccounts,
   plaidConnections,
   manualAccounts,
+  plaidImports,
 }: {
   plaidAccounts: ReadResult
   plaidConnections: ReadResult
   manualAccounts: ReadResult
+  plaidImports: ReadResult
 }) {
   const checks: DataHealthCheck[] = []
 
@@ -331,6 +339,18 @@ function buildAccountChecks({
       const days = daysSince(row.last_sync_at)
       return days === null || days > 2 || Boolean(row.last_sync_error)
     })
+    const unhealthyConnections = plaidConnections.rows.filter((row) => {
+      const status = normalize(row.status)
+      const errorSignal = normalize(`${row.last_sync_error || ''} ${row.error || ''}`)
+      return (
+        status.includes('EXPIRED') ||
+        status.includes('RECONNECT') ||
+        status.includes('ERROR') ||
+        Boolean(row.needs_reconnect) ||
+        Boolean(row.last_sync_error) ||
+        errorSignal.includes('ITEM_LOGIN_REQUIRED')
+      )
+    })
     const missingFlags = plaidAccounts.rows.filter(
       (row) =>
         !row.owner_scope ||
@@ -338,6 +358,24 @@ function buildAccountChecks({
         row.include_in_dashboard === null ||
         row.include_in_dashboard === undefined
     )
+    const inactiveOrHiddenAccounts = plaidAccounts.rows.filter((row) => {
+      const status = normalize(row.account_status)
+      return (
+        status.includes('ARCHIVED') ||
+        status.includes('INACTIVE') ||
+        row.is_hidden === true ||
+        row.include_in_dashboard === false
+      )
+    })
+    const accountsWithoutConnection = plaidAccounts.rows.filter(
+      (row) => !activeConnectionIds.has(stringValue(row.connection_id))
+    )
+    const importHealthEvidence = plaidImports.ok
+      ? [
+          `${plaidImports.rows.length} Plaid import rows`,
+          `${plaidImports.rows.filter((row) => row.review_status || row.status).length} rows with review/status metadata`,
+        ]
+      : [plaidImports.error]
 
     checks.push(
       check({
@@ -411,6 +449,62 @@ function buildAccountChecks({
         requiresUserConfirmation: false,
       }),
       check({
+        id: 'plaid-connection-health',
+        domain: 'accounts',
+        status: unhealthyConnections.length > 0 ? 'critical' : 'healthy',
+        title: 'Plaid connection health state',
+        finding:
+          unhealthyConnections.length > 0
+            ? 'One or more Plaid connections appear expired, errored, or in need of reconnect.'
+            : 'Plaid connections do not show explicit reconnect/error state.',
+        evidence:
+          unhealthyConnections.length > 0
+            ? unhealthyConnections.map(
+                (row) =>
+                  `${row.institution_name || 'Unknown'} · status ${row.status || 'unknown'} · last sync ${row.last_sync_at || 'unknown'}`
+              )
+            : ['No expired/reconnect/error Plaid connection state detected.'],
+        affectedCount: unhealthyConnections.length,
+        actionHref: '/portfolio#plaid-connections',
+        requiresUserConfirmation: unhealthyConnections.length > 0,
+      }),
+      check({
+        id: 'plaid-account-trust-state',
+        domain: 'accounts',
+        status:
+          inactiveOrHiddenAccounts.length > 0 || accountsWithoutConnection.length > 0
+            ? 'warning'
+            : 'healthy',
+        title: 'Plaid account trust state',
+        finding:
+          inactiveOrHiddenAccounts.length > 0 || accountsWithoutConnection.length > 0
+            ? 'Some Plaid accounts are archived, hidden, inactive, excluded, or not tied to an active connection.'
+            : 'Plaid account rows are tied to active trusted connection state.',
+        evidence: [
+          `${inactiveOrHiddenAccounts.length} archived/hidden/inactive/excluded account rows`,
+          `${accountsWithoutConnection.length} account rows outside active connections`,
+        ],
+        affectedCount: inactiveOrHiddenAccounts.length + accountsWithoutConnection.length,
+        actionHref: '/portfolio#plaid-accounts',
+        requiresUserConfirmation:
+          inactiveOrHiddenAccounts.length + accountsWithoutConnection.length > 0,
+      }),
+      check({
+        id: 'plaid-import-health',
+        domain: 'accounts',
+        status: !plaidImports.ok ? 'unknown' : plaidImports.rows.length > 0 ? 'healthy' : 'warning',
+        title: 'Plaid transaction/import health',
+        finding: !plaidImports.ok
+          ? 'Plaid import rows could not be verified through the authenticated read path.'
+          : plaidImports.rows.length > 0
+            ? 'Plaid import rows are available for transaction/review health checks.'
+            : 'No Plaid import rows were found.',
+        evidence: importHealthEvidence,
+        affectedCount: plaidImports.ok ? plaidImports.rows.length : undefined,
+        actionHref: '/plaid',
+        requiresUserConfirmation: plaidImports.ok && plaidImports.rows.length === 0,
+      }),
+      check({
         id: 'accounts-flags-ownership',
         domain: 'accounts',
         status: missingFlags.length > 0 ? 'warning' : 'healthy',
@@ -465,7 +559,13 @@ function buildAccountChecks({
   return checks
 }
 
-function buildCardChecks(cardsResult: Awaited<ReturnType<typeof safeCall>>) {
+function buildCardChecks({
+  cardsResult,
+  creditCards,
+}: {
+  cardsResult: Awaited<ReturnType<typeof safeCall>>
+  creditCards: ReadResult
+}) {
   if (!cardsResult.ok) {
     return [
       unknownCheck({
@@ -486,6 +586,30 @@ function buildCardChecks(cardsResult: Awaited<ReturnType<typeof safeCall>>) {
     (card) => card.missingDataChecklist.length > 0
   )
   const disconnected = summary.activeCards.filter((card) => !card.isConnected)
+  const missingCreditLimit = summary.activeCards.filter(
+    (card) => !card.creditLimit || card.creditLimit <= 0
+  )
+  const missingAvailableCredit = summary.activeCards.filter(
+    (card) => card.availableCredit === null || card.availableCredit === undefined
+  )
+  const missingCurrentBalance = summary.activeCards.filter(
+    (card) => card.currentBalance === null || card.currentBalance === undefined
+  )
+  const rawActiveCards = creditCards.ok
+    ? creditCards.rows.filter((row) => row.is_active !== false)
+    : []
+  const statementBalanceRows = rawActiveCards.filter((row) =>
+    missingValue(row, 'statement_balance')
+  )
+  const statementDateRows = rawActiveCards.filter((row) =>
+    missingValue(row, 'statement_date')
+  )
+  const closedOrArchivedRows = creditCards.ok
+    ? creditCards.rows.filter((row) => {
+        const signal = normalize(`${row.status || ''} ${row.account_status || ''}`)
+        return row.is_active === false || signal.includes('CLOSED') || signal.includes('ARCHIVED')
+      })
+    : []
 
   return [
     check({
@@ -547,6 +671,43 @@ function buildCardChecks(cardsResult: Awaited<ReturnType<typeof safeCall>>) {
       requiresUserConfirmation: missingMetadata.length > 0,
     }),
     check({
+      id: 'cards-balance-limit-statement-fields',
+      domain: 'cards',
+      status:
+        missingCreditLimit.length > 0 ||
+        missingAvailableCredit.length > 0 ||
+        missingCurrentBalance.length > 0 ||
+        statementBalanceRows.length > 0 ||
+        statementDateRows.length > 0
+          ? 'warning'
+          : 'healthy',
+      title: 'Card balances, limits, statements, and lifecycle fields',
+      finding:
+        'Active cards were checked for credit limit, available credit, current balance, statement balance, statement date, and active/closed/archive state.',
+      evidence: [
+        `${missingCreditLimit.length} active cards missing credit limit`,
+        `${missingAvailableCredit.length} active cards missing available credit`,
+        `${missingCurrentBalance.length} active cards missing current balance`,
+        `${statementBalanceRows.length} raw active card rows missing statement balance`,
+        `${statementDateRows.length} raw active card rows missing statement date`,
+        `${closedOrArchivedRows.length} closed/archived/inactive card rows visible in raw card source`,
+      ],
+      affectedCount:
+        missingCreditLimit.length +
+        missingAvailableCredit.length +
+        missingCurrentBalance.length +
+        statementBalanceRows.length +
+        statementDateRows.length,
+      actionHref: '/cards',
+      requiresUserConfirmation:
+        missingCreditLimit.length +
+          missingAvailableCredit.length +
+          missingCurrentBalance.length +
+          statementBalanceRows.length +
+          statementDateRows.length >
+        0,
+    }),
+    check({
       id: 'cards-manual-connected-links',
       domain: 'cards',
       status: disconnected.length > 0 ? 'warning' : 'healthy',
@@ -573,20 +734,9 @@ function buildLoanChecks({
   liabilities: ReadResult
   portfolioResult: Awaited<ReturnType<typeof safeCall>>
 }) {
-  if (!liabilities.ok) {
-    return [
-      unknownCheck({
-        id: 'loans-liabilities-readable',
-        domain: 'loans',
-        title: 'Loan liability rows',
-        error: liabilities.error,
-        actionHref: '/portfolio#liabilities',
-      }),
-    ]
-  }
-
   const loanNames = ['HIPOTECA', 'HONDA', 'TOYOTA']
-  const loanRows = liabilities.rows.filter((row) => {
+  const liabilityRows = liabilities.ok ? liabilities.rows : []
+  const loanRows = liabilityRows.filter((row) => {
     const signal = normalize(`${row.name || ''} ${row.lender || ''} ${row.liability_type || ''}`)
     return loanNames.some((name) => signal.includes(name))
   })
@@ -607,36 +757,64 @@ function buildLoanChecks({
     check({
       id: 'loans-required-loans',
       domain: 'loans',
-      status: loanRows.length >= 3 ? 'healthy' : 'critical',
+      status:
+        loanRows.length >= 3 || (portfolioLoans !== false && portfolioLoans.length > 0)
+          ? 'healthy'
+          : 'critical',
       title: 'Mortgage, Honda, and Toyota loan coverage',
       finding:
         loanRows.length >= 3
           ? 'Required loan rows are present in liabilities.'
-          : 'One or more required loan rows were not found in liabilities.',
+          : portfolioLoans !== false && portfolioLoans.length > 0
+            ? 'Portfolio Summary exposes loan liabilities through the official net worth contract.'
+            : 'One or more required loan rows were not found in the available debt contracts.',
       evidence:
         loanRows.length > 0
           ? loanRows.map(rowIdentity)
-          : ['Expected loan names: Hipoteca, Honda, Toyota.'],
-      affectedCount: loanRows.length,
+          : portfolioLoans !== false && portfolioLoans.length > 0
+            ? portfolioLoans.map((liability) => liability.name || liability.id)
+            : [
+                'Expected loan names: Hipoteca, Honda, Toyota.',
+                liabilities.ok
+                  ? 'Liabilities table was readable.'
+                  : 'Raw liabilities table is not part of the actionable Health Center read path.',
+              ],
+      affectedCount:
+        loanRows.length > 0
+          ? loanRows.length
+          : portfolioLoans === false
+            ? 0
+            : portfolioLoans.length,
       actionHref: '/portfolio#liabilities',
-      requiresUserConfirmation: loanRows.length < 3,
+      requiresUserConfirmation:
+        loanRows.length < 3 && !(portfolioLoans !== false && portfolioLoans.length > 0),
     }),
     check({
       id: 'loans-missing-fields',
       domain: 'loans',
-      status: missingFields.length > 0 ? 'warning' : 'healthy',
+      status:
+        !liabilities.ok && portfolioLoans !== false && portfolioLoans.length > 0
+          ? 'healthy'
+          : missingFields.length > 0
+            ? 'warning'
+            : 'healthy',
       title: 'Loan metadata completeness',
       finding:
-        missingFields.length > 0
-          ? 'Some loan rows are missing balance, payment, due day, owner, or type fields.'
-          : 'Loan rows have core debt metadata.',
+        !liabilities.ok && portfolioLoans !== false && portfolioLoans.length > 0
+          ? 'Loan completeness is being judged from Portfolio Summary because the raw liabilities table is not an operational Health Center source.'
+          : missingFields.length > 0
+            ? 'Some loan rows are missing balance, payment, due day, owner, or type fields.'
+            : 'Loan rows have core debt metadata.',
       evidence:
-        missingFields.length > 0
-          ? missingFields.map(rowIdentity)
-          : ['No missing loan metadata detected.'],
+        !liabilities.ok && portfolioLoans !== false && portfolioLoans.length > 0
+          ? [`${portfolioLoans.length} loan liabilities in Portfolio Summary`]
+          : missingFields.length > 0
+            ? missingFields.map(rowIdentity)
+            : ['No missing loan metadata detected.'],
       affectedCount: missingFields.length,
       actionHref: '/portfolio#liabilities',
-      requiresUserConfirmation: missingFields.length > 0,
+      requiresUserConfirmation:
+        liabilities.ok ? missingFields.length > 0 : portfolioLoans === false,
     }),
     check({
       id: 'loans-portfolio-inclusion',
@@ -686,6 +864,16 @@ function buildIncomeChecks(incomeRows: ReadResult) {
   )
   const missingDestination = active.filter(
     (row) => !row.destination_account_id || !row.destination_account_source
+  )
+  const missingOwner = active.filter((row) => !row.owner && !row.owner_scope)
+  const missingFrequency = active.filter(
+    (row) => !row.cadence && !row.frequency && !row.income_type
+  )
+  const missingExpectedAmount = active.filter((row) => !row.amount)
+  const receivedWithoutSchedule = incomeRows.rows.filter(
+    (row) =>
+      stringValue(row.status) === 'received' &&
+      (!row.name || !row.received_at || !row.amount)
   )
   const estimated = active.filter(
     (row) => row.amount_is_estimated === true || stringValue(row.confidence) !== 'confirmed'
@@ -743,15 +931,31 @@ function buildIncomeChecks(incomeRows: ReadResult) {
       id: 'income-metadata',
       domain: 'income',
       status:
-        missingDestination.length > 0 || estimated.length > 0 || missingSignals.length > 0
+        missingDestination.length > 0 ||
+        estimated.length > 0 ||
+        missingSignals.length > 0 ||
+        missingOwner.length > 0 ||
+        missingFrequency.length > 0 ||
+        missingExpectedAmount.length > 0 ||
+        receivedWithoutSchedule.length > 0
           ? 'warning'
           : 'healthy',
       title: 'Income metadata and required sources',
       finding:
-        missingDestination.length > 0 || estimated.length > 0 || missingSignals.length > 0
+        missingDestination.length > 0 ||
+        estimated.length > 0 ||
+        missingSignals.length > 0 ||
+        missingOwner.length > 0 ||
+        missingFrequency.length > 0 ||
+        missingExpectedAmount.length > 0 ||
+        receivedWithoutSchedule.length > 0
           ? 'Income rows need destination, confidence, or required-source review.'
           : 'Income rows include destinations and confirmed metadata.',
       evidence: [
+        `${missingOwner.length} rows missing owner/owner scope`,
+        `${missingFrequency.length} rows missing frequency/cadence`,
+        `${missingExpectedAmount.length} active rows missing expected amount`,
+        `${receivedWithoutSchedule.length} received rows missing received amount/date/name signals`,
         `${missingDestination.length} rows missing destination account`,
         `${estimated.length} rows estimated or not confirmed`,
         missingSignals.length > 0
@@ -760,7 +964,14 @@ function buildIncomeChecks(incomeRows: ReadResult) {
         `${duplicateConcepts.length} duplicate income concept groups`,
       ],
       affectedCount:
-        missingDestination.length + estimated.length + missingSignals.length + duplicateConcepts.length,
+        missingDestination.length +
+        estimated.length +
+        missingSignals.length +
+        duplicateConcepts.length +
+        missingOwner.length +
+        missingFrequency.length +
+        missingExpectedAmount.length +
+        receivedWithoutSchedule.length,
       actionHref: '/income#expected-income',
       requiresUserConfirmation: true,
     }),
@@ -1035,6 +1246,19 @@ function buildTransferChecks({
       .join(' ')
       .match(/COOPERATIVA|FIRSTBANK/)
   )
+  const duplicateTransferGroups = groupRows(transferLikeLedgerRows, (row) =>
+    [
+      dateOnly(row.entry_date || row.date || row.created_at) || 'unknown-date',
+      Math.round(Math.abs(numberValue(row.amount)) * 100),
+      normalize(row.description || row.merchant || row.name),
+      normalize(row.account_name),
+    ].join('|')
+  )
+  const pendingTransferRows = [...athRows.rows, ...quickEntries.rows].filter((row) =>
+    normalize(`${row.status || ''} ${row.review_status || ''} ${row.notes || ''}`).match(
+      /PENDING|REVIEW|AMBIGUOUS|UNMATCHED/
+    )
+  )
 
   return [
     check({
@@ -1091,6 +1315,26 @@ function buildTransferChecks({
       actionHref: '/history',
       requiresUserConfirmation: transferLikeLedgerRows.length > 0,
     }),
+    check({
+      id: 'transfers-duplicate-pending-ambiguity',
+      domain: 'transfers',
+      status:
+        duplicateTransferGroups.length > 0 || pendingTransferRows.length > 0
+          ? 'warning'
+          : 'healthy',
+      title: 'Transfer duplicate and ambiguity state',
+      finding:
+        duplicateTransferGroups.length > 0 || pendingTransferRows.length > 0
+          ? 'Some transfer-like rows are duplicated, pending, or ambiguous.'
+          : 'No duplicate, pending, or ambiguous transfer-like rows were detected.',
+      evidence: [
+        `${duplicateTransferGroups.length} duplicate transfer-like groups`,
+        `${pendingTransferRows.length} pending/review/ambiguous transfer or ATH rows`,
+      ],
+      affectedCount: duplicateTransferGroups.length + pendingTransferRows.length,
+      actionHref: '/history',
+      requiresUserConfirmation: duplicateTransferGroups.length + pendingTransferRows.length > 0,
+    }),
   ]
 }
 
@@ -1123,6 +1367,9 @@ function buildPlanningChecks({
   })
   const duplicateConcepts = groupRows(active, (row) =>
     [normalize(row.name), normalize(row.item_type)].join('|')
+  )
+  const missingIdentity = active.filter(
+    (row) => !row.owner && !row.owner_scope && !row.priority && !row.status
   )
   const obligationLike = active.filter((row) =>
     normalize(`${row.name || ''} ${row.item_type || ''}`).match(
@@ -1167,10 +1414,104 @@ function buildPlanningChecks({
         `${staleDue.length} active items with stale due dates`,
         `${duplicateConcepts.length} duplicate concept groups`,
         `${obligationLike.length} items may belong in obligations instead`,
+        `${missingIdentity.length} active items missing owner/status/priority signals`,
       ],
       affectedCount:
-        zeroAllocated.length + staleDue.length + duplicateConcepts.length + obligationLike.length,
+        zeroAllocated.length +
+        staleDue.length +
+        duplicateConcepts.length +
+        obligationLike.length +
+        missingIdentity.length,
       actionHref: '/planning#funds',
+      requiresUserConfirmation: true,
+    }),
+  ]
+}
+
+function buildSnapshotReadinessChecks({
+  portfolioResult,
+  cardsResult,
+  ledgerResult,
+  planningResult,
+  incomeRows,
+  plaidConnections,
+  athRows,
+}: {
+  portfolioResult: Awaited<ReturnType<typeof safeCall>>
+  cardsResult: Awaited<ReturnType<typeof safeCall>>
+  ledgerResult: Awaited<ReturnType<typeof safeCall>>
+  planningResult: Awaited<ReturnType<typeof safeCall>>
+  incomeRows: ReadResult
+  plaidConnections: ReadResult
+  athRows: ReadResult
+}) {
+  const missingSources = [
+    portfolioResult.ok ? null : 'Portfolio Summary',
+    cardsResult.ok ? null : 'Cards Summary',
+    ledgerResult.ok ? null : 'Ledger Summary',
+    planningResult.ok ? null : 'Planning Summary',
+    incomeRows.ok ? null : 'Income schedule',
+    plaidConnections.ok ? null : 'Plaid connections',
+    athRows.ok ? null : 'ATH rows',
+  ].filter(Boolean) as string[]
+
+  const cardsSummary = cardsResult.ok
+    ? (cardsResult.value as Awaited<ReturnType<typeof getCardsSummary>>)
+    : null
+  const missingCardData = cardsSummary
+    ? cardsSummary.activeCards.filter((card) => card.missingDataChecklist.length > 0)
+    : []
+  const activeIncome = incomeRows.ok
+    ? incomeRows.rows.filter((row) => row.is_active !== false)
+    : []
+  const incomeReady = activeIncome.some(
+    (row) => row.amount && row.next_expected_date && (row.owner || row.owner_scope)
+  )
+  const activePlaidConnections = plaidConnections.ok
+    ? plaidConnections.rows.filter((row) => stringValue(row.status) === 'active')
+    : []
+  const unmatchedAth = athRows.ok
+    ? athRows.rows.filter(
+        (row) =>
+          !row.matched_plaid_transaction_id &&
+          row.is_ignored !== true &&
+          row.exclude_from_spending !== true
+      )
+    : []
+
+  return [
+    check({
+      id: 'snapshot-robototina-readiness',
+      domain: 'snapshot',
+      status:
+        missingSources.length > 0 ||
+        missingCardData.length > 0 ||
+        !incomeReady ||
+        activePlaidConnections.length === 0 ||
+        unmatchedAth.length > 0
+          ? 'warning'
+          : 'healthy',
+      title: 'Snapshot readiness for Robototina explanations',
+      finding:
+        'The inspector checked whether core sources have enough structured metadata for Robototina to explain recommendations without guessing.',
+      evidence: [
+        missingSources.length > 0
+          ? `Unavailable sources: ${missingSources.join(', ')}`
+          : 'Core summary sources are readable.',
+        `${missingCardData.length} active cards with missing strategy metadata`,
+        incomeReady
+          ? 'At least one active income row has amount/date/owner metadata.'
+          : 'No active income row has complete amount/date/owner metadata.',
+        `${activePlaidConnections.length} active Plaid connections`,
+        `${unmatchedAth.length} unmatched active ATH rows`,
+      ],
+      affectedCount:
+        missingSources.length +
+        missingCardData.length +
+        (incomeReady ? 0 : 1) +
+        (activePlaidConnections.length === 0 ? 1 : 0) +
+        unmatchedAth.length,
+      actionHref: '/dev/data-health',
       requiresUserConfirmation: true,
     }),
   ]
@@ -1263,7 +1604,9 @@ export async function getDataHealthReport(
   const [
     plaidAccounts,
     plaidConnections,
+    creditCards,
     manualAccounts,
+    plaidImports,
     liabilities,
     incomeRows,
     obligations,
@@ -1279,7 +1622,9 @@ export async function getDataHealthReport(
   ] = await Promise.all([
     safeSelect(supabase, 'plaid_accounts', userId),
     safeSelect(supabase, 'plaid_connections', userId),
+    safeSelect(supabase, 'credit_cards', userId),
     safeSelect(supabase, 'accounts', userId),
+    safeSelect(supabase, 'plaid_imports', userId),
     safeSelect(supabase, 'liabilities', userId),
     safeSelect(supabase, 'income_schedule', userId),
     safeSelect(supabase, 'obligations', userId),
@@ -1297,8 +1642,13 @@ export async function getDataHealthReport(
   const accessChecks = await buildAccessChecks(supabase, userId)
   const checks = [
     ...accessChecks,
-    ...buildAccountChecks({ plaidAccounts, plaidConnections, manualAccounts }),
-    ...buildCardChecks(cardsResult),
+    ...buildAccountChecks({
+      plaidAccounts,
+      plaidConnections,
+      manualAccounts,
+      plaidImports,
+    }),
+    ...buildCardChecks({ cardsResult, creditCards }),
     ...buildLoanChecks({ liabilities, portfolioResult }),
     ...buildIncomeChecks(incomeRows),
     ...buildObligationChecks({
@@ -1310,6 +1660,15 @@ export async function getDataHealthReport(
     ...buildTransferChecks({ athRows, quickEntries }),
     ...buildPlanningChecks({ planningItems, planningResult }),
     ...buildPortfolioChecks(portfolioResult),
+    ...buildSnapshotReadinessChecks({
+      portfolioResult,
+      cardsResult,
+      ledgerResult,
+      planningResult,
+      incomeRows,
+      plaidConnections,
+      athRows,
+    }),
   ].sort((left, right) => {
     const rank = statusRank(right.status) - statusRank(left.status)
     if (rank !== 0) return rank

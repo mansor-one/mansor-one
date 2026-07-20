@@ -163,6 +163,13 @@ export async function POST(request: Request) {
         )
       }
 
+      if (error.code === 'plaid_import_not_active') {
+        return NextResponse.json(
+          { error: 'This transaction is pending, replaced, removed, or otherwise inactive' },
+          { status: 409 }
+        )
+      }
+
       if (error.code === 'reconciliation_failed') {
         return NextResponse.json(
           { error: 'Transaction imported but reconciliation failed' },

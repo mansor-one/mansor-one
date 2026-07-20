@@ -1,6 +1,6 @@
 # Mansor One Roadmap
 
-Last updated: 2026-07-14
+Last updated: 2026-07-16
 
 ## Phase 0 — Project Alignment and Git Checkpoint
 
@@ -28,27 +28,47 @@ Last updated: 2026-07-14
 ## Phase 2 — Data Completion
 
 - Objective: close missing/unknown financial metadata.
-- Scope: authenticated Data Health run, debt metadata, income ownership,
-  transfers, duplicate/category conflicts, stale accounts.
+- Scope: Data Health coverage expansion, authenticated Data Health run, debt
+  metadata, income ownership, transfers, duplicate/category conflicts, stale
+  accounts.
 - Dependencies: Data Health Inspector and user confirmation for ambiguous data.
 - Out of scope: destructive cleanup.
 - Acceptance criteria: live data health score improved and unknowns explained.
+  Current code coverage is expanded; live repair remains pending.
 - Risks: RLS/schema gaps discovered during live readback.
 - Estimate: Medium/Large.
 
 ## Phase 3 — Financial Integrity
 
 - Objective: remove remaining parallel financial logic.
-- Scope: migrate legacy pages or hide them, extract page view models,
-  add engine tests, service-role route ownership audit.
+- Scope: Health Center, live repair backlog review, migrate legacy pages or
+  hide them, extract page view models, add engine tests, service-role route
+  ownership audit.
 - Dependencies: Phase 2 data findings.
 - Out of scope: AI/Atlas/MCP.
-- Acceptance criteria: no user-facing direct financial table reads outside
-  official helpers/actions; first-party tests exist.
+- Acceptance criteria: Health Center live review is complete, no user-facing
+  direct financial table reads outside official helpers/actions, first-party
+  tests exist.
 - Risks: legacy routes still used by bookmarks.
 - Estimate: Large.
 
-## Phase 4 — Vercel Preview
+## Phase 4 — Financial Repair Center
+
+- Objective: turn Health Center findings into an explicit guided repair
+  workflow.
+- Scope: `/repair-center`, repair queue, status model, review links, repair
+  classification, scan-derived history, false-positive cleanup for operational
+  health findings.
+- Dependencies: Health Center and authenticated user review.
+- Out of scope: schema changes, automatic repairs, AI, Atlas, destructive
+  writes.
+- Acceptance criteria: every finding can be reviewed with why-it-matters,
+  suggested action, status and workflow link; Health Center links to Repair
+  Center; technical table-access noise is not shown as financial action.
+- Risks: persistent repair audit history requires a future approved data model.
+- Estimate: Medium.
+
+## Phase 5 — Vercel Preview
 
 - Objective: first private Preview deployment.
 - Scope: Preview env vars, Supabase redirects, stable Preview URL decision,
@@ -59,7 +79,7 @@ Last updated: 2026-07-14
 - Risks: Google/Plaid callbacks cannot use random Preview URLs.
 - Estimate: Medium.
 
-## Phase 5 — Robototina AI v1
+## Phase 6 — Robototina AI v1
 
 - Objective: add AI explanation layer without violating data boundaries.
 - Scope: context contract, prompt boundary, refusal/uncertainty rules, audit log.
@@ -70,7 +90,7 @@ Last updated: 2026-07-14
 - Risks: hallucinated balances or sensitive data exposure.
 - Estimate: Medium.
 
-## Phase 6 — Atlas v1
+## Phase 7 — Atlas v1
 
 - Objective: simulate scenarios from official snapshots.
 - Scope: Current Snapshot + Scenario Input = Simulated Snapshot.
@@ -80,7 +100,7 @@ Last updated: 2026-07-14
 - Risks: duplicating Financial Engine calculations.
 - Estimate: Large.
 
-## Phase 7 — MCP and Automations
+## Phase 8 — MCP and Automations
 
 - Objective: expose safe tools after AI and Atlas are bounded.
 - Scope: read-only tools first, then proposed actions requiring approval.
@@ -90,7 +110,7 @@ Last updated: 2026-07-14
 - Risks: bypassing RLS, unaudited writes, over-automation.
 - Estimate: Large.
 
-## Phase 8 — Production Hardening
+## Phase 9 — Production Hardening
 
 - Objective: production-grade reliability and security.
 - Scope: rate limits, CSRF, logs, backups, rollback, provider production config,

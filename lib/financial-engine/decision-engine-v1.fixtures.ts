@@ -36,6 +36,7 @@ function timelinePayment(
   overrides: Partial<TimelineProjectionEvent>
 ): TimelineProjectionEvent {
   return {
+    id: 'fixture-timeline-payment',
     date: '2026-07-10',
     title: 'Mortgage',
     amount: -1200,
@@ -46,6 +47,9 @@ function timelinePayment(
     graceUntilDate: null,
     isInGracePeriod: false,
     balanceAfter: -300,
+    sourceOfTruth: 'fixture',
+    matchingInformation: null,
+    availableAction: 'Review payment',
     ...overrides,
   }
 }

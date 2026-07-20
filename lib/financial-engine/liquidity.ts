@@ -556,7 +556,7 @@ export function buildPaymentLifecycleView({
   currentPayments,
   allPayments,
   scheduledPayments,
-  confirmedLedgerEntries,
+  reconciliationTransactions,
   obligationPayments = [],
   month,
   year,
@@ -565,7 +565,7 @@ export function buildPaymentLifecycleView({
   currentPayments: PaymentInstance[]
   allPayments: PaymentInstance[]
   scheduledPayments: ScheduledPayment[]
-  confirmedLedgerEntries: LedgerSummaryTransaction[]
+  reconciliationTransactions: LedgerSummaryTransaction[]
   obligationPayments?: PaymentInstance[]
   month: number
   year: number
@@ -650,7 +650,7 @@ export function buildPaymentLifecycleView({
     ...nextExpectedPayments,
   ]
   const reconciliation = buildReconciliationMatches({
-    transactions: confirmedLedgerEntries.map(ledgerTransactionForReconciliation),
+    transactions: reconciliationTransactions.map(ledgerTransactionForReconciliation),
     payments: openLifecyclePayments.map(paymentForReconciliation),
   })
   const matchesByPaymentId = bestMatchByPaymentId(reconciliation.allMatches)
@@ -744,7 +744,10 @@ export async function getLiquiditySummary(
     currentPayments: payments,
     allPayments,
     scheduledPayments,
-    confirmedLedgerEntries: ledgerSummary.confirmedLedgerEntries,
+    reconciliationTransactions: [
+      ...ledgerSummary.confirmedLedgerEntries,
+      ...ledgerSummary.importCandidates,
+    ],
     obligationPayments: obligationLifecyclePayments,
     month: now.getMonth() + 1,
     year: now.getFullYear(),

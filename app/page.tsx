@@ -2,6 +2,7 @@ import { requireUser } from '@/lib/auth/requireUser'
 import type { Metadata } from 'next'
 import {
   canonicalCategoryCodeForText,
+  buildTimelineProjectionFromLiquidity,
   commonMerchantDefaultCategoryCode,
   type FinancialAsset,
   getCategoryByCode,
@@ -579,6 +580,9 @@ export default async function Home() {
   ])
 
   const { liquidity, planning } = dashboardSummary
+  const timeline = buildTimelineProjectionFromLiquidity(liquidity, {
+    today: dateOnly(now),
+  })
   const ledgerSummary = reviewQueue.source.ledgerSummary
   const household = householdGreeting()
   const greeting = timeOfDayGreeting(now)
@@ -647,8 +651,8 @@ export default async function Home() {
   const nextPlanningItem = planningItems[0]
   const health = financialHealth(
     portfolioSummary.totalLiquidAvailable,
-    liquidity.committedPaymentsTotal,
-    liquidity.resultToday
+    timeline.explanation.finalBalance.totalPayments,
+    timeline.finalBalance
   )
   const methodSplit = paymentMethodSplit(spendingMovements)
   const reviewPercent = reviewProgress(
@@ -736,10 +740,10 @@ export default async function Home() {
             detail="Pagos y transferencias"
           />
           <SummaryCard
-            label="Pagos abiertos"
-            value={money(liquidity.committedPaymentsTotal)}
-            detail={`${liquidity.committedPayments.length} compromisos abiertos`}
-            helper="Incluye obligaciones y pagos legacy del ciclo actual/próximo."
+            label="Pagos que requieren acción"
+            value={timeline.diagnostics.overduePayments + timeline.paymentCounts.due_soon + timeline.paymentCounts.due_today + timeline.paymentCounts.grace_period + timeline.paymentCounts.needs_review + timeline.paymentCounts.possible_match}
+            detail={`${timeline.diagnostics.overduePayments} vencidos · ${timeline.paymentCounts.due_soon + timeline.paymentCounts.due_today} próximos`}
+            helper={`${timeline.paymentCounts.grace_period} en gracia · ${timeline.paymentCounts.possible_match} posibles matches · ${timeline.paymentCounts.needs_review} por revisar. Horizonte ${timeline.horizonDays} días.`}
             href="/timeline"
           />
         </section>

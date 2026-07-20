@@ -5,6 +5,7 @@ import { createServerSupabase } from '@/lib/supabase/server'
 import { createClient } from '@supabase/supabase-js'
 import { Configuration, PlaidApi, PlaidEnvironments } from 'plaid'
 import { decrypt } from '@/lib/security/encryption'
+import { lifecycleActionsForSync } from '@/lib/financial-engine/plaid-transaction-lifecycle'
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -33,6 +34,7 @@ type PlaidConnectionRow = {
   encrypted_access_token: string
   token_iv: string
   token_auth_tag: string
+  transactions_cursor: string | null
 }
 
 type PlaidAccountRow = {
@@ -52,6 +54,7 @@ type ExistingPlaidImportRow = {
   account_type: string | null
   account_subtype: string | null
   imported: boolean | null
+  transaction_status: string | null
 }
 
 type PlaidSyncFailure = {
@@ -88,7 +91,7 @@ async function existingImportsByTransactionId(
   const { data, error } = await supabaseAdmin
     .from('plaid_imports')
     .select(
-      'id, plaid_transaction_id, plaid_account_id, account_name, institution_name, account_type, account_subtype, imported'
+      'id, plaid_transaction_id, plaid_account_id, account_name, institution_name, account_type, account_subtype, imported, transaction_status'
     )
     .eq('user_id', userId)
     .in('plaid_transaction_id', plaidTransactionIds)
@@ -107,7 +110,7 @@ async function backfillPlaidImportAccountContext(userId: string) {
     supabaseAdmin
       .from('plaid_imports')
       .select(
-        'id, plaid_transaction_id, plaid_account_id, account_name, institution_name, account_type, account_subtype, imported'
+        'id, plaid_transaction_id, plaid_account_id, account_name, institution_name, account_type, account_subtype, imported, transaction_status'
       )
       .eq('user_id', userId)
       .not('plaid_account_id', 'is', null),
@@ -259,6 +262,9 @@ export async function POST() {
 
     let transactionsReturnedByPlaid = 0
     let newImportsCreated = 0
+    let pendingReplacedByPosted = 0
+    let rowsMarkedRemoved = 0
+    let modifiedImportsUpdated = 0
     const returnedPlaidTransactionIds: string[] = []
     const failedConnections: PlaidSyncFailure[] = []
 
@@ -269,13 +275,25 @@ export async function POST() {
         connection.token_auth_tag
       )
 
-      let response
+      const addedTransactions = []
+      const modifiedTransactions = []
+      const removedTransactions = []
+      let nextCursor = connection.transactions_cursor || undefined
+      let hasMore = true
 
       try {
-        response = await plaidClient.transactionsSync({
-          access_token: accessToken,
-          count: 50,
-        })
+        while (hasMore) {
+          const response = await plaidClient.transactionsSync({
+            access_token: accessToken,
+            cursor: nextCursor,
+            count: 500,
+          })
+          addedTransactions.push(...(response.data.added || []))
+          modifiedTransactions.push(...(response.data.modified || []))
+          removedTransactions.push(...(response.data.removed || []))
+          nextCursor = response.data.next_cursor
+          hasMore = response.data.has_more
+        }
       } catch (error: unknown) {
         const errorCode = plaidErrorDetails(error) || 'UNKNOWN_ERROR'
 
@@ -308,7 +326,7 @@ export async function POST() {
         continue
       }
 
-      const transactions = response.data.added || []
+      const transactions = [...addedTransactions, ...modifiedTransactions]
       const plaidTransactionIds = transactions.map(
         (transaction) => transaction.transaction_id
       )
@@ -318,6 +336,7 @@ export async function POST() {
       )
 
       transactionsReturnedByPlaid += transactions.length
+      modifiedImportsUpdated += modifiedTransactions.length
       newImportsCreated += plaidTransactionIds.filter(
         (plaidTransactionId) => !existingImports.has(plaidTransactionId)
       ).length
@@ -376,6 +395,16 @@ export async function POST() {
           plaid_category: plaidPrimary,
           suggested_category: categorizeTransaction(merchant, plaidPrimary),
           imported: existingImport?.imported === true,
+          pending: transaction.pending === true,
+          pending_transaction_id: transaction.pending_transaction_id || null,
+          transaction_status:
+            existingImport?.transaction_status === 'rejected' ||
+            existingImport?.transaction_status === 'duplicate'
+              ? existingImport.transaction_status
+              : transaction.pending
+                ? 'pending'
+                : 'active',
+          updated_at: new Date().toISOString(),
         }
       })
 
@@ -396,11 +425,53 @@ export async function POST() {
         }
       }
 
+      const lifecycleActions = lifecycleActionsForSync({
+        addedOrModified: transactions.map((transaction) => ({
+          transactionId: transaction.transaction_id,
+          pendingTransactionId: transaction.pending_transaction_id || null,
+          pending: transaction.pending === true,
+          accountId: transaction.account_id || null,
+          merchant: transaction.merchant_name || transaction.name || 'Unknown',
+          amount: transaction.amount,
+          date: transaction.date,
+        })),
+        removed: removedTransactions.map((transaction) => ({
+          transactionId: transaction.transaction_id,
+          accountId: transaction.account_id || null,
+        })),
+      })
+
+      for (const action of lifecycleActions) {
+        if (action.status !== 'superseded' && action.status !== 'removed') continue
+        const timestamp = new Date().toISOString()
+        const update = action.status === 'superseded'
+          ? {
+              transaction_status: 'superseded',
+              superseded_by_transaction_id: action.supersededByTransactionId,
+              superseded_at: timestamp,
+              updated_at: timestamp,
+            }
+          : {
+              transaction_status: 'removed',
+              removed_at: timestamp,
+              updated_at: timestamp,
+            }
+        const { error: lifecycleError } = await supabaseAdmin
+          .from('plaid_imports')
+          .update(update)
+          .eq('user_id', user.id)
+          .eq('plaid_transaction_id', action.transactionId)
+        if (lifecycleError) throw lifecycleError
+        if (action.status === 'superseded') pendingReplacedByPosted += 1
+        else rowsMarkedRemoved += 1
+      }
+
       const { error: syncMetadataError } = await supabaseAdmin
         .from('plaid_connections')
         .update({
           last_sync_at: new Date().toISOString(),
           last_sync_error: null,
+          transactions_cursor: nextCursor || connection.transactions_cursor,
         })
         .eq('id', connection.id)
         .eq('user_id', user.id)
@@ -429,6 +500,9 @@ export async function POST() {
       pending_imports_from_sync,
       account_context_backfilled,
       already_confirmed_imports_cleaned,
+      pending_replaced_by_posted: pendingReplacedByPosted,
+      modified_imports_updated: modifiedImportsUpdated,
+      rows_marked_removed: rowsMarkedRemoved,
       failed_connections: failedConnections,
     })
   } catch (error) {

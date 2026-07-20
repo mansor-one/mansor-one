@@ -14,10 +14,12 @@ Resolved in Phase 0:
 
 ## P1
 
-- Client-side legacy pages still import the browser Supabase client and query
-  financial tables directly: `/accounts`, `/quick-entry`,
-  `/payment-instances`, `/imports`. These are the next highest architecture
-  cleanup after `/goals`.
+- Phase 1 contained the highest-priority client-side legacy Supabase pages:
+  `/accounts`, `/quick-entry`, `/payment-instances`, `/imports`. They remain
+  legacy product surfaces, but no longer query financial tables from Client
+  Components.
+- Phase 2 removed the remaining financial browser-client Supabase imports found
+  in `/assets` and `/priorities`; remaining page-level debt is server-side.
 - Server-rendered legacy pages still query financial tables directly instead
   of consuming official helpers/view models: `/assets`, `/priorities`,
   `/cashflow`, `/payments`, `/future-obligations`, `/health-score`,
@@ -28,6 +30,8 @@ Resolved in Phase 0:
 - Gmail/ATH import mode is not production-decided.
 - Service-role routes need explicit ownership review.
 - No first-party tests.
+- TransferSummary contract is missing.
+- Live Data Health repair backlog is not captured yet.
 
 ## P2
 

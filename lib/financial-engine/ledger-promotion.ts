@@ -24,6 +24,7 @@ export type PlaidImportPromotionResult = {
 
 export type LedgerPromotionErrorCode =
   | 'plaid_import_not_found'
+  | 'plaid_import_not_active'
   | 'duplicate_check_failed'
   | 'quick_entry_insert_failed'
   | 'reconciliation_failed'
@@ -63,6 +64,8 @@ type PlaidImportRow = {
   account_mask?: string | null
   account_type?: string | null
   account_subtype?: string | null
+  pending?: boolean | null
+  transaction_status?: string | null
 }
 
 type QuickEntryRow = {
@@ -326,6 +329,18 @@ export async function promotePlaidImportToQuickEntry(
     throw new LedgerPromotionError(
       'plaid_import_not_found',
       'Plaid import not found'
+    )
+  }
+
+  if (
+    plaidImport.pending === true ||
+    ['pending', 'superseded', 'replaced', 'removed', 'rejected', 'duplicate'].includes(
+      String(plaidImport.transaction_status || 'active')
+    )
+  ) {
+    throw new LedgerPromotionError(
+      'plaid_import_not_active',
+      'Pending or inactive Plaid transactions cannot be promoted to confirmed spending.'
     )
   }
 

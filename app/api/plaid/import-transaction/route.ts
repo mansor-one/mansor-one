@@ -74,6 +74,13 @@ export async function POST(request: Request) {
         )
       }
 
+      if (error.code === 'plaid_import_not_active') {
+        return NextResponse.json(
+          { error: 'Pending or inactive transactions cannot be confirmed' },
+          { status: 409 }
+        )
+      }
+
       if (error.code === 'plaid_import_existing_update_failed') {
         return NextResponse.json(
           { error: 'Transaction already imported but status update failed' },

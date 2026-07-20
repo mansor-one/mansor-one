@@ -308,6 +308,16 @@ export default async function SpendingPage({ searchParams }: PageProps) {
           'Resumen de gastos confirmados. Los movimientos pendientes y no-gasto se muestran aparte.',
       }}
     >
+      <details className="rounded border p-4 text-sm">
+        <summary className="font-semibold">Diagnóstico de duplicados</summary>
+        <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+          <p>Pending reemplazados: {ledgerSummary.spendingDiagnostics.pendingReplacedByPosted}</p>
+          <p>IDs de origen duplicados: {ledgerSummary.spendingDiagnostics.exactSourceIdDuplicates}</p>
+          <p>Posibles duplicados: {ledgerSummary.spendingDiagnostics.possibleDuplicates}</p>
+          <p>Filas excluidas: {ledgerSummary.spendingDiagnostics.rowsExcludedFromSpending}</p>
+        </div>
+      </details>
+
       <section className="border rounded p-4 space-y-3">
         <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
           <div>
