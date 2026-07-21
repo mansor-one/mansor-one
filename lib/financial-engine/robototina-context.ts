@@ -6,6 +6,7 @@ import type {
   PaymentInstance,
   PlanningItem,
 } from './types'
+import { paymentRequiresUserAction } from '../finance/paymentLifecycle.ts'
 
 type RobototinaInsightTone = 'info' | 'warning' | 'critical' | 'success'
 type RobototinaRecommendationKind =
@@ -119,11 +120,7 @@ function sortPaymentsByDate(a: PaymentInstance, b: PaymentInstance) {
 }
 
 function openLifecyclePayment(payment: PaymentInstance) {
-  if (payment.lifecycleIsClosed) return false
-  if (payment.lifecycleIsOpen !== undefined) return Boolean(payment.lifecycleIsOpen)
-
-  const status = String(payment.status || payment.lifecycleState || '').toLowerCase()
-  return !['paid', 'confirmed', 'cancelled', 'canceled'].includes(status)
+  return paymentRequiresUserAction(payment)
 }
 
 function staleAccountWarnings(

@@ -68,7 +68,7 @@ declare
   household_count integer;
   sole_household_id uuid;
 begin
-  select count(*), min(id::text)::uuid into household_count, sole_household_id
+  select count(*), min(id) into household_count, sole_household_id
   from public.households;
 
   if exists (
@@ -243,7 +243,7 @@ declare
     'transaction_suggestions'
   ];
 begin
-  select count(*), min(id::text)::uuid into household_count, sole_household_id
+  select count(*), min(id) into household_count, sole_household_id
   from public.households;
 
   foreach target_table in array scoped_tables loop

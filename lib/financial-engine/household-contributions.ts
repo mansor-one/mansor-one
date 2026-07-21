@@ -4,6 +4,7 @@ import type {
   IncomeSchedule,
   PaymentInstance,
 } from './types'
+import { paymentCountsAsUnpaidRisk } from '../finance/paymentLifecycle.ts'
 
 export type HouseholdPerson = 'manuel' | 'soraya'
 export type HouseholdOwner = HouseholdPerson | 'household' | 'unknown'
@@ -295,7 +296,7 @@ function contributionPaymentFromLifecycle(
   const amount = numberValue(payment.amount)
   const dueDate = effectivePaymentDate(payment)
 
-  if (payment.lifecycleIsOpen === false || amount <= 0 || !dueDate) return null
+  if (!paymentCountsAsUnpaidRisk(payment) || amount <= 0 || !dueDate) return null
 
   const hasGracePeriod = Boolean(
     payment.grace_until || payment.grace_due_date || numberValue(payment.grace_days) > 0

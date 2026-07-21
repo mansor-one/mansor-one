@@ -69,3 +69,86 @@ test('amount-only or merchant-incompatible evidence never auto-closes an obligat
   assert.equal(selectAutomaticReconciliations(result.allMatches).length, 0)
   assert.ok(result.allMatches[0].confidence < 50)
 })
+
+test('$359 U.S. Bank obligation rejects the unrelated $46 candidate', () => {
+  const result = buildReconciliationMatches({
+    transactions: [{
+      source: 'plaid_imports', id: 'us-bank-46',
+      name: 'Internet Payment Thank You', amount: 46, date: '2026-07-15',
+      institutionName: 'U.S. Bank', accountName: 'Credit Card',
+    }],
+    payments: [{
+      id: 'us-bank-cycle', name: 'U.S. Bank', amount: 359,
+      status: 'initiated', effective_due_date: '2026-07-15',
+      updated_at: '2026-07-13', recurrence: 'monthly',
+    }],
+  })
+
+  const [match] = result.allMatches
+  assert.equal(match.eligible, false)
+  assert.equal(match.confidence, 0)
+  assert.equal(
+    result.highConfidenceMatches.length +
+      result.likelyMatches.length +
+      result.possibleMatches.length,
+    0
+  )
+  assert.match(match.ineligibilityReasons.join(' '), /Exact amount is mandatory/)
+})
+
+test('$359 exact amount within the U.S. Bank grace window is eligible', () => {
+  const result = buildReconciliationMatches({
+    transactions: [{
+      source: 'plaid_imports', id: 'us-bank-359', name: 'U.S. BANK PAYMENT',
+      amount: 359, date: '2026-07-15', institutionName: 'U.S. Bank',
+      accountName: 'Credit Card',
+    }],
+    payments: [{
+      id: 'us-bank-cycle', name: 'U.S. Bank', amount: 359,
+      status: 'initiated', effective_due_date: '2026-07-15',
+      updated_at: '2026-07-13', recurrence: 'monthly',
+    }],
+  })
+
+  const [match] = result.allMatches
+  assert.equal(match.eligible, true)
+  assert.equal(match.amountDifference <= 0.009, true)
+  assert.equal(selectAutomaticReconciliations(result.allMatches).length, 1)
+})
+
+test('rejected obligation-transaction pair does not reappear', () => {
+  const key = 'us-bank-cycle:plaid_imports:us-bank-359'
+  const result = buildReconciliationMatches({
+    transactions: [{
+      source: 'plaid_imports', id: 'us-bank-359', name: 'U.S. BANK PAYMENT',
+      amount: 359, date: '2026-07-15', institutionName: 'U.S. Bank',
+      accountName: 'Credit Card',
+    }],
+    payments: [{
+      id: 'us-bank-cycle', name: 'U.S. Bank', amount: 359,
+      status: 'initiated', effective_due_date: '2026-07-15',
+      updated_at: '2026-07-13', recurrence: 'monthly',
+    }],
+    rejectedMatchKeys: new Set([key]),
+  })
+
+  assert.equal(result.allMatches.length, 0)
+})
+
+test('near, partial, or split amounts stay ineligible without explicit semantics', () => {
+  const result = buildReconciliationMatches({
+    transactions: [{
+      source: 'plaid_imports', id: 'partial', name: 'U.S. BANK PAYMENT',
+      amount: 358.5, date: '2026-07-15', institutionName: 'U.S. Bank',
+      accountName: 'Credit Card',
+    }],
+    payments: [{
+      id: 'us-bank-cycle', name: 'U.S. Bank', amount: 359,
+      status: 'initiated', effective_due_date: '2026-07-15',
+      recurrence: 'monthly',
+    }],
+  })
+
+  assert.equal(result.allMatches[0].eligible, false)
+  assert.equal(selectAutomaticReconciliations(result.allMatches).length, 0)
+})

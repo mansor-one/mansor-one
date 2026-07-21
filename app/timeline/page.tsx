@@ -50,7 +50,7 @@ function PaymentCard({ payment, today }: { payment: TrustedPayment; today: strin
     {status.relativeLabel && <p className="font-semibold">{status.relativeLabel}</p>}
     {status.confidence !== null && <p className="font-semibold">Confianza: {status.confidence}% · {status.confidenceStrength}</p>}
     {invalidAmount && <Link className="mt-2 inline-flex rounded border border-current px-3 py-2 font-semibold" href="/repair-center">Configurar</Link>}
-    {payment.obligationInstanceId && !['paid', 'matched', 'in_transit'].includes(payment.truthStatus) && <ConfirmObligationPaid obligationInstanceId={payment.obligationInstanceId} defaultPaymentMethod={payment.paymentMethod} />}
+    {payment.obligationInstanceId && !['paid', 'matched', 'in_transit'].includes(payment.truthStatus) && <ConfirmObligationPaid obligationInstanceId={payment.obligationInstanceId} amount={Number(payment.amount || 0)} defaultPaymentMethod={payment.paymentMethod} />}
   </div>
 }
 

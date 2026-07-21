@@ -6,6 +6,7 @@ import type {
 } from './types'
 import { getLiquiditySummary } from './liquidity'
 import { getPortfolioSummary } from './portfolio'
+import { paymentRequiresUserAction } from '../finance/paymentLifecycle.ts'
 
 export type DebtStrategyInsightType =
   | 'high_utilization'
@@ -123,11 +124,7 @@ function paymentDate(payment: PaymentInstance) {
 }
 
 function isOpenPayment(payment: PaymentInstance) {
-  if (payment.lifecycleIsClosed) return false
-  if (payment.lifecycleIsOpen !== undefined) return payment.lifecycleIsOpen
-
-  const status = String(payment.status || payment.lifecycleState || '').toLowerCase()
-  return !['paid', 'confirmed', 'cancelled', 'canceled'].includes(status)
+  return paymentRequiresUserAction(payment)
 }
 
 function matchesDebtPayment(debt: PortfolioLiability, payment: PaymentInstance) {

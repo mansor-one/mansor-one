@@ -72,6 +72,68 @@ export type ObligationLifecyclePaymentOptions = {
   today?: string
 }
 
+export type PaymentStateSemantics = {
+  settlementState: string
+  userActionRequired: boolean
+  countsAsUnpaidRisk: boolean
+  bankConfirmationPending: boolean
+}
+
+export function derivePaymentStateSemantics({
+  lifecycleState,
+  status,
+}: Pick<PaymentInstance, 'lifecycleState' | 'status'>): PaymentStateSemantics {
+  const state = String(lifecycleState || status || 'unpaid').toLowerCase()
+
+  if (state === 'pending_settlement') {
+    return {
+      settlementState: 'pending_settlement',
+      userActionRequired: false,
+      countsAsUnpaidRisk: false,
+      bankConfirmationPending: true,
+    }
+  }
+
+  if (['reconciled', 'closed', 'paid', 'confirmed'].includes(state)) {
+    return {
+      settlementState: 'reconciled',
+      userActionRequired: false,
+      countsAsUnpaidRisk: false,
+      bankConfirmationPending: false,
+    }
+  }
+
+  if (['cancelled', 'canceled', 'duplicate'].includes(state)) {
+    return {
+      settlementState: state === 'canceled' ? 'cancelled' : state,
+      userActionRequired: false,
+      countsAsUnpaidRisk: false,
+      bankConfirmationPending: false,
+    }
+  }
+
+  return {
+    settlementState: state,
+    userActionRequired: true,
+    countsAsUnpaidRisk: true,
+    bankConfirmationPending: false,
+  }
+}
+
+export function paymentRequiresUserAction(payment: PaymentInstance) {
+  if (payment.userActionRequired !== undefined) return payment.userActionRequired
+  if (payment.lifecycleIsClosed || payment.lifecycleIsOpen === false) return false
+
+  return derivePaymentStateSemantics(payment).userActionRequired
+}
+
+export function paymentCountsAsUnpaidRisk(payment: PaymentInstance) {
+  if (payment.countsAsUnpaidRisk !== undefined) return payment.countsAsUnpaidRisk
+  if (payment.lifecycleIsClosed || payment.lifecycleIsOpen === false) return false
+
+  return derivePaymentStateSemantics(payment).countsAsUnpaidRisk
+}
+
 function dateOnly(value: string | null | undefined) {
   if (!value) return null
   const parsed = new Date(`${value.slice(0, 10)}T00:00:00`)
@@ -216,6 +278,10 @@ export function obligationInstanceToLifecyclePayment(
     today,
   })
   const extraReasons = obligationLifecycleReasons(instance)
+  const semantics = derivePaymentStateSemantics({
+    lifecycleState: snapshot.state,
+    status: obligationStatusForLifecycle(instance),
+  })
 
   return {
     id: `obligation:${instance.id}`,
@@ -254,6 +320,7 @@ export function obligationInstanceToLifecyclePayment(
     isInGracePeriod: instance.isInGracePeriod,
     lifecycleState: snapshot.state,
     lifecycleLabel: snapshot.label,
+    ...semantics,
     lifecycleIsOpen: snapshot.isOpen,
     lifecycleIsClosed: snapshot.state === 'closed',
     isOverdue: snapshot.state === 'overdue',
@@ -280,7 +347,7 @@ export async function getObligationLifecyclePaymentItems(
   })
   const { data: links, error } = await supabase
     .from('obligation_payment_links')
-    .select('id, obligation_instance_id, reconciliation_status, confidence, confirmed_at, payment_method, confirmation_note, plaid_imports(id, merchant, amount, transaction_date)')
+    .select('id, obligation_instance_id, reconciliation_status, confidence, reported_amount, confirmed_at, payment_method, confirmation_note, plaid_imports(id, merchant, amount, transaction_date)')
     .eq('user_id', userId)
     .in('reconciliation_status', ['detected', 'pending_settlement', 'reconciled'])
   if (error) throw error
@@ -308,11 +375,19 @@ export async function getObligationLifecyclePaymentItems(
       : link.reconciliation_status === 'pending_settlement'
         ? 'pending_settlement'
         : 'payment_detected'
+    const semantics = derivePaymentStateSemantics({
+      lifecycleState,
+      status: payment.status,
+    })
     return {
       ...payment,
+      amount: link.reported_amount === null
+        ? payment.amount
+        : Number(link.reported_amount),
       paymentMethod: link.payment_method || payment.paymentMethod,
       lifecycleState,
       lifecycleLabel: lifecycleState.replaceAll('_', ' ').replace(/\b\w/g, (letter) => letter.toUpperCase()),
+      ...semantics,
       lifecycleIsOpen: lifecycleState !== 'reconciled',
       lifecycleIsClosed: lifecycleState === 'reconciled',
       lifecycleMatchedTransaction: plaidImport ? {

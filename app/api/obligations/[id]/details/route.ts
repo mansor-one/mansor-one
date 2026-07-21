@@ -20,7 +20,7 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
       instance.provider_id
         ? supabase.from('obligation_providers').select('*').eq('id', instance.provider_id).eq('user_id', auth.user.id).maybeSingle()
         : Promise.resolve({ data: null, error: null }),
-      supabase.from('obligation_payment_links').select('*').eq('obligation_instance_id', id).eq('user_id', auth.user.id).order('created_at', { ascending: false }),
+      supabase.from('obligation_payment_links').select('*, plaid_imports(id, merchant, amount, transaction_date, institution_name, account_name)').eq('obligation_instance_id', id).eq('user_id', auth.user.id).order('created_at', { ascending: false }),
       supabase.from('obligation_reconciliation_events').select('*').eq('obligation_instance_id', id).eq('user_id', auth.user.id).order('occurred_at', { ascending: false }),
       supabase.from('plaid_accounts').select('*').eq('user_id', auth.user.id),
       supabase.from('accounts').select('*').eq('user_id', auth.user.id),

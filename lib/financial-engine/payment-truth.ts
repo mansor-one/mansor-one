@@ -140,13 +140,22 @@ export function resolveTrustedPayments({
     } else if (duplicate) {
       truthStatus = 'needs_review'
       reasons.push('Otra obligación tiene el mismo nombre normalizado, monto y fecha de vencimiento.')
-    } else if (['paid', 'confirmed', 'closed'].includes(rawStatus) || payment.lifecycleIsClosed || payment.lifecycleState === 'reconciled') {
+    } else if (
+      ['paid', 'confirmed', 'closed'].includes(rawStatus) ||
+      payment.lifecycleIsClosed ||
+      payment.lifecycleState === 'reconciled' ||
+      payment.settlementState === 'reconciled'
+    ) {
       truthStatus = 'paid'
       reasons.push('El pago fue cerrado explícitamente.')
     } else if (confirmedMatch) {
       truthStatus = 'matched'
       reasons.push('Una transacción única del historial confirmado cumple el umbral de coincidencia confiable.')
-    } else if (payment.lifecycleState === 'pending_settlement' || recentInitiatedPayment) {
+    } else if (
+      payment.bankConfirmationPending === true ||
+      payment.lifecycleState === 'pending_settlement' ||
+      recentInitiatedPayment
+    ) {
       truthStatus = 'in_transit'
       reasons.push(`El pago fue reportado en los últimos ${IN_TRANSIT_BUSINESS_DAYS} días laborables y está esperando confirmación bancaria.`)
     } else if (payment.lifecycleState === 'payment_detected' || possibleMatch) {

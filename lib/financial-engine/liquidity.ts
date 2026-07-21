@@ -14,7 +14,10 @@ import {
 } from './reconciliation'
 import {
   buildPaymentLifecycleSnapshot,
+  derivePaymentStateSemantics,
   getObligationLifecyclePaymentItems,
+  paymentCountsAsUnpaidRisk,
+  paymentRequiresUserAction,
 } from '../finance/paymentLifecycle'
 import type {
   ConnectedAccount,
@@ -319,6 +322,7 @@ function bestMatchByPaymentId(matches: ReconciliationMatch[]) {
   const byPaymentId = new Map<string, ReconciliationMatch>()
 
   matches.forEach((match) => {
+    if (!match.eligible) return
     const current = byPaymentId.get(match.paymentInstanceId)
     if (!current || match.confidence > current.confidence) {
       byPaymentId.set(match.paymentInstanceId, match)
@@ -365,6 +369,10 @@ function withLifecycle(
     Boolean(dueDate && graceUntil) &&
     String(dueDate) < today &&
     String(graceUntil) >= today
+  const semantics = derivePaymentStateSemantics({
+    lifecycleState: snapshot.state,
+    status: payment.status,
+  })
 
   return {
     ...payment,
@@ -372,6 +380,7 @@ function withLifecycle(
     grace_until: graceUntil,
     lifecycleState: snapshot.state,
     lifecycleLabel: snapshot.label,
+    ...semantics,
     lifecycleIsOpen: snapshot.isOpen,
     lifecycleIsClosed: snapshot.state === 'closed',
     isOverdue: snapshot.state === 'overdue',
@@ -755,11 +764,15 @@ export async function getLiquiditySummary(
   })
 
   const pendingActionPayments = lifecyclePayments.filter(
-    (payment) => payment.status === 'pending' && payment.lifecycleIsOpen !== false
+    (payment) => payment.status === 'pending' && paymentRequiresUserAction(payment)
   )
 
   const initiatedPayments = lifecyclePayments.filter(
-    (payment) => payment.status === 'initiated' && payment.lifecycleIsOpen !== false
+    (payment) =>
+      payment.bankConfirmationPending === true ||
+      (payment.bankConfirmationPending === undefined &&
+        payment.status === 'initiated' &&
+        payment.lifecycleIsOpen !== false)
   )
 
   // Backward compatibility: pendingPayments/totalPendingPayments remain the
@@ -767,11 +780,11 @@ export async function getLiquiditySummary(
   // separate pending action from initiated payments waiting confirmation.
   const committedPayments = lifecyclePayments.filter(
     (payment) =>
-      payment.lifecycleIsOpen !== false &&
+      paymentCountsAsUnpaidRisk(payment) &&
       (payment.status === 'pending' || payment.status === 'initiated')
   )
   const overduePayments = lifecyclePayments.filter(
-    (payment) => payment.isOverdue === true
+    (payment) => payment.isOverdue === true && paymentCountsAsUnpaidRisk(payment)
   )
 
   const pendingActionPaymentTotal = pendingActionPayments.reduce(

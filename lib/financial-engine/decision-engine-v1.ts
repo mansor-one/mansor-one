@@ -1,5 +1,6 @@
 import type { FinancialEngineSnapshot } from './snapshot'
 import type { IncomeSchedule, PaymentInstance, PlanningItem } from './types'
+import { paymentRequiresUserAction } from '../finance/paymentLifecycle.ts'
 
 export type MansorDecisionType =
   | 'pay_now'
@@ -90,11 +91,7 @@ function hasGracePeriod(payment: PaymentInstance) {
 }
 
 function openLifecyclePayment(payment: PaymentInstance) {
-  if (payment.lifecycleIsClosed) return false
-  if (payment.lifecycleIsOpen !== undefined) return Boolean(payment.lifecycleIsOpen)
-
-  const status = String(payment.status || payment.lifecycleState || '').toLowerCase()
-  return !['paid', 'confirmed', 'cancelled', 'canceled'].includes(status)
+  return paymentRequiresUserAction(payment)
 }
 
 function paymentAmountFact(payment: PaymentInstance) {

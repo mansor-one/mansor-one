@@ -293,6 +293,10 @@ export type PaymentInstance = {
   isInGracePeriod?: boolean
   lifecycleState?: string | null
   lifecycleLabel?: string | null
+  settlementState?: string | null
+  userActionRequired?: boolean
+  countsAsUnpaidRisk?: boolean
+  bankConfirmationPending?: boolean
   lifecycleIsOpen?: boolean
   lifecycleIsClosed?: boolean
   isOverdue?: boolean

@@ -29,6 +29,7 @@ export type ReconciliationTransaction = {
   accountType?: string | null
   accountSubtype?: string | null
   category?: string | null
+  plaidAccountId?: string | null
 }
 
 export type ReconciliationPaymentInstance = {
@@ -41,6 +42,8 @@ export type ReconciliationPaymentInstance = {
   notes?: string | null
   scheduled_payment_id?: string | null
   recurrence?: string | null
+  fundingPlaidAccountId?: string | null
+  fundingAccountName?: string | null
 }
 
 export type ReconciliationScoreFactor = {
@@ -70,6 +73,9 @@ export type ReconciliationMatch = {
   scoreFactors: ReconciliationScoreFactor[]
   confidence: number
   confidenceLevel: ReconciliationConfidenceLevel
+  eligible: boolean
+  ineligibilityReasons: string[]
+  evidenceSide: 'funding_outflow' | 'obligation_credit' | 'unknown'
   reasons: string[]
   recommendedActionText: string
 }
@@ -170,6 +176,7 @@ function amountReasons(
   if (difference <= 0.009) {
     return {
       score: 15,
+      exact: true,
       amountDifference: difference,
       reasons: ['Exact amount match.'],
       factors: [
@@ -187,6 +194,7 @@ function amountReasons(
   if (difference <= 1) {
     return {
       score: 10,
+      exact: false,
       amountDifference: difference,
       reasons: ['Amount is within $1.'],
       factors: [
@@ -204,6 +212,7 @@ function amountReasons(
   if (percentDifference <= 0.05) {
     return {
       score: 7,
+      exact: false,
       amountDifference: difference,
       reasons: ['Amount is within 5%.'],
       factors: [
@@ -220,6 +229,7 @@ function amountReasons(
 
   return {
     score: 0,
+    exact: false,
     amountDifference: difference,
     reasons: ['Amount does not closely match.'],
     factors: [
@@ -587,6 +597,57 @@ function accountReasons(
   }
 }
 
+function fundingAccountReasons(
+  transaction: ReconciliationTransaction,
+  payment: ReconciliationPaymentInstance
+) {
+  const directMatch = Boolean(
+    transaction.plaidAccountId &&
+    payment.fundingPlaidAccountId &&
+    transaction.plaidAccountId === payment.fundingPlaidAccountId
+  )
+  const transactionAccount = normalize(
+    [transaction.institutionName, transaction.accountName].filter(Boolean).join(' ')
+  )
+  const fundingAccount = normalize(payment.fundingAccountName)
+  const nameMatch = Boolean(
+    transactionAccount &&
+    fundingAccount &&
+    (transactionAccount.includes(fundingAccount) ||
+      fundingAccount.includes(transactionAccount))
+  )
+
+  if (directMatch || nameMatch) {
+    return {
+      score: 15,
+      evidenceSide: 'funding_outflow' as const,
+      reasons: ['Transaction is on the user-reported funding account.'],
+      factors: [factor({
+        code: 'funding_account_match',
+        label: 'Funding account',
+        score: 15,
+        passed: true,
+        details: 'Transaction is on the user-reported funding account.',
+      })],
+    }
+  }
+
+  return {
+    score: 0,
+    evidenceSide: 'unknown' as const,
+    reasons: payment.fundingPlaidAccountId || payment.fundingAccountName
+      ? ['Transaction is not on the reported funding account.']
+      : ['No structured funding-account signal is available.'],
+    factors: [factor({
+      code: 'funding_account_missing',
+      label: 'Funding account',
+      score: 0,
+      passed: false,
+      details: 'No matching funding-account signal is available.',
+    })],
+  }
+}
+
 function recommendedAction(payment: ReconciliationPaymentInstance) {
   if (payment.status === 'initiated') {
     return `${
@@ -609,6 +670,7 @@ function scoreMatch(
   const identity = identityCompatibilityReasons(transaction, payment)
   const institution = institutionReasons(transaction, payment)
   const account = accountReasons(transaction, payment)
+  const fundingAccount = fundingAccountReasons(transaction, payment)
   const statusScore = payment.status === 'initiated' ? 10 : 0
   const recurrenceScore = payment.recurrence || payment.scheduled_payment_id ? 5 : 0
   const statusReason =
@@ -619,6 +681,7 @@ function scoreMatch(
     identity.score +
     institution.score +
     account.score +
+    fundingAccount.score +
     name.score +
     amount.score +
     date.score +
@@ -628,15 +691,18 @@ function scoreMatch(
     identity.score > 0 ||
     institution.score > 0 ||
     account.score > 0 ||
+    fundingAccount.score > 0 ||
     name.score > 0
-  const cappedConfidence =
-    amount.score === 0 || identity.incompatible || !hasNonAmountSignal
+  const exactAmountRequired = !amount.exact
+  const cappedConfidence = exactAmountRequired
+    ? 0
+    : identity.incompatible || !hasNonAmountSignal
       ? Math.min(rawConfidence, 49)
       : rawConfidence
   const confidence = Math.max(0, Math.min(100, cappedConfidence))
   const amountCapReason =
-    amount.score === 0
-      ? ['No amount similarity, so confidence is capped below proposal level.']
+    exactAmountRequired
+      ? ['Exact amount is required. Partial or split-payment semantics are not enabled.']
       : []
   const identityCapReason =
     identity.incompatible
@@ -650,6 +716,7 @@ function scoreMatch(
     ...identity.factors,
     ...institution.factors,
     ...account.factors,
+    ...fundingAccount.factors,
     ...name.factors,
     ...amount.factors,
     ...date.factors,
@@ -700,12 +767,26 @@ function scoreMatch(
     scoreFactors,
     confidence,
     confidenceLevel: confidenceLevel(confidence),
+    eligible: !exactAmountRequired && !identity.incompatible && hasNonAmountSignal,
+    ineligibilityReasons: [
+      ...(exactAmountRequired
+        ? ['Exact amount is mandatory for normal single-payment reconciliation.']
+        : []),
+      ...(identity.incompatible ? ['Transaction and obligation identities are incompatible.'] : []),
+      ...(!hasNonAmountSignal ? ['No non-amount evidence connects the transaction to the obligation.'] : []),
+    ],
+    evidenceSide: fundingAccount.evidenceSide === 'funding_outflow'
+      ? 'funding_outflow'
+      : account.score > 0 || institution.score > 0
+        ? 'obligation_credit'
+        : 'unknown',
     reasons: [
       ...amount.reasons,
       ...amountCapReason,
       ...date.reasons,
       ...institution.reasons,
       ...account.reasons,
+      ...fundingAccount.reasons,
       ...name.reasons,
       ...identity.reasons,
       ...identityCapReason,
@@ -743,16 +824,23 @@ function uniqueMatches(matches: ReconciliationMatch[]) {
 export function buildReconciliationMatches({
   transactions,
   payments,
+  rejectedMatchKeys = new Set<string>(),
 }: {
   transactions: ReconciliationTransaction[]
   payments: ReconciliationPaymentInstance[]
+  rejectedMatchKeys?: Set<string>
 }): ReconciliationResult {
   const openPayments = payments.filter((payment) =>
     OPEN_PAYMENT_STATUSES.includes(payment.status as PaymentStatus)
   )
   const allMatches = uniqueMatches(bestMatches(transactions, openPayments))
+    .filter((match) => !rejectedMatchKeys.has(
+      `${match.paymentInstanceId}:${match.transactionSource}:${match.transactionId}`
+    ))
     .sort((a, b) => b.confidence - a.confidence)
-  const proposedMatches = allMatches.filter((match) => match.confidence >= 50)
+  const proposedMatches = allMatches.filter(
+    (match) => match.eligible && match.confidence >= 50
+  )
   const matchedInitiatedPaymentIds = new Set(
     proposedMatches
       .filter((match) => match.paymentStatus === 'initiated')

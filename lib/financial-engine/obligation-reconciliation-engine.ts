@@ -10,8 +10,9 @@ export const AUTO_RECONCILIATION_THRESHOLD = 90
 
 export function selectAutomaticReconciliations(matches: ReconciliationMatch[]) {
   const eligible = matches.filter((match) =>
+    match.eligible &&
     match.confidence >= AUTO_RECONCILIATION_THRESHOLD &&
-    match.amountDifference <= 1 &&
+    match.amountDifference <= 0.009 &&
     match.dateDifferenceDays !== null &&
     match.dateDifferenceDays <= 10 &&
     match.scoreFactors.some((factor) =>
@@ -43,7 +44,7 @@ export async function reconcileOpenObligationsAfterPlaidSync(
   supabase: SupabaseClient,
   userId: string
 ): Promise<ReconciliationRunSummary> {
-  const [instancesResult, importsResult, linksResult] = await Promise.all([
+  const [instancesResult, importsResult, linksResult, accountsResult] = await Promise.all([
     supabase
       .from('obligation_instances')
       .select('id, amount_expected, status, effective_due_date, updated_at, notes, obligations(name, default_amount, frequency)')
@@ -51,19 +52,24 @@ export async function reconcileOpenObligationsAfterPlaidSync(
       .in('status', ['pending', 'initiated']),
     supabase
       .from('plaid_imports')
-      .select('id, merchant, amount, transaction_date, institution_name, account_name, account_type, account_subtype, suggested_category')
+      .select('id, merchant, amount, transaction_date, institution_name, account_name, account_type, account_subtype, suggested_category, plaid_account_id')
       .eq('user_id', userId)
       .eq('pending', false)
       .eq('transaction_status', 'active'),
     supabase
       .from('obligation_payment_links')
-      .select('id, obligation_instance_id, plaid_import_id, reconciliation_status')
+      .select('id, obligation_instance_id, plaid_import_id, reconciliation_status, reported_amount, payment_account_id, payment_account_source')
+      .eq('user_id', userId),
+    supabase
+      .from('plaid_accounts')
+      .select('id, plaid_account_id, institution_name, name')
       .eq('user_id', userId),
   ])
 
   if (instancesResult.error) throw instancesResult.error
   if (importsResult.error) throw importsResult.error
   if (linksResult.error) throw linksResult.error
+  if (accountsResult.error) throw accountsResult.error
 
   const linkedTransactionIds = new Set(
     (linksResult.data || [])
@@ -75,17 +81,41 @@ export async function reconcileOpenObligationsAfterPlaidSync(
       .filter((link) => link.plaid_import_id)
       .map((link) => `${link.obligation_instance_id}:${link.plaid_import_id}`)
   )
+  const rejectedMatchKeys = new Set(
+    (linksResult.data || [])
+      .filter((link) => link.reconciliation_status === 'rejected' && link.plaid_import_id)
+      .map((link) => `${link.obligation_instance_id}:plaid_imports:${link.plaid_import_id}`)
+  )
+  const pendingLinksByInstance = new Map(
+    (linksResult.data || [])
+      .filter((link) =>
+        link.reconciliation_status === 'pending_settlement' &&
+        !link.plaid_import_id
+      )
+      .map((link) => [link.obligation_instance_id, link])
+  )
+  const plaidAccountsById = new Map(
+    (accountsResult.data || []).map((account) => [account.id, account])
+  )
   const payments: ReconciliationPaymentInstance[] = (instancesResult.data || []).map((row) => {
     const obligation = Array.isArray(row.obligations) ? row.obligations[0] : row.obligations
+    const pendingLink = pendingLinksByInstance.get(row.id)
+    const fundingAccount = pendingLink?.payment_account_source === 'plaid_account'
+      ? plaidAccountsById.get(pendingLink.payment_account_id)
+      : null
     return {
       id: row.id,
       name: obligation?.name || null,
-      amount: Number(row.amount_expected ?? obligation?.default_amount ?? 0),
+      amount: Number(pendingLink?.reported_amount ?? row.amount_expected ?? obligation?.default_amount ?? 0),
       status: row.status,
       effective_due_date: row.effective_due_date,
       updated_at: row.updated_at,
       notes: row.notes,
       recurrence: obligation?.frequency || null,
+      fundingPlaidAccountId: fundingAccount?.plaid_account_id || null,
+      fundingAccountName: fundingAccount
+        ? `${fundingAccount.institution_name || ''} ${fundingAccount.name || ''}`.trim()
+        : null,
     }
   })
   const transactions: ReconciliationTransaction[] = (importsResult.data || [])
@@ -101,10 +131,17 @@ export async function reconcileOpenObligationsAfterPlaidSync(
       accountType: row.account_type,
       accountSubtype: row.account_subtype,
       category: row.suggested_category,
+      plaidAccountId: row.plaid_account_id,
     }))
 
-  const reconciliation = buildReconciliationMatches({ transactions, payments })
-  const candidates = reconciliation.allMatches.filter((match) => match.confidence >= 50)
+  const reconciliation = buildReconciliationMatches({
+    transactions,
+    payments,
+    rejectedMatchKeys,
+  })
+  const candidates = reconciliation.allMatches.filter(
+    (match) => match.eligible && match.confidence >= 50
+  )
   const automatic = selectAutomaticReconciliations(candidates)
   const automaticKeys = new Set(automatic.map((match) => `${match.paymentInstanceId}:${match.transactionId}`))
   let candidatesDetected = 0
