@@ -65,7 +65,7 @@ test('does not auto-reconcile an ambiguous transaction against duplicate obligat
 })
 
 test('amount-only or merchant-incompatible evidence never auto-closes an obligation', () => {
-  const result = reconciliation([{ source: 'plaid_imports', id: 'txn-false', name: 'UNRELATED POS PURCHASE', amount: 125, date: '2026-07-20' }])
+  const result = reconciliation([{ source: 'plaid_imports', id: 'txn-false', name: 'UNRELATED POS PURCHASE', amount: 125, date: '2026-07-20', institutionName: '', accountName: '' }])
   assert.equal(selectAutomaticReconciliations(result.allMatches).length, 0)
   assert.ok(result.allMatches[0].confidence < 50)
 })

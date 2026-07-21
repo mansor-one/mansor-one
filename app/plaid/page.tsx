@@ -33,14 +33,6 @@ type PlaidAccount = {
   updated_at: string | null
 }
 
-type PlaidAccountSyncRow = {
-  updated_at: string | null
-}
-
-type PlaidImportSyncRow = {
-  transaction_date: string | null
-}
-
 function formatDate(dateString: string | null) {
   if (!dateString) return 'Sin fecha'
 
@@ -113,9 +105,8 @@ export default async function PlaidPage() {
   const [
     connectionsResult,
     accountsResult,
-    accountSyncResult,
-    importSyncResult,
-    importCountResult,
+    syncRunResult,
+    successfulRunResult,
   ] = await Promise.all([
     supabase
       .from('plaid_connections')
@@ -131,24 +122,8 @@ export default async function PlaidPage() {
       )
       .eq('user_id', user.id)
       .order('updated_at', { ascending: false }),
-    supabase
-      .from('plaid_accounts')
-      .select('updated_at')
-      .eq('user_id', user.id)
-      .not('updated_at', 'is', null)
-      .order('updated_at', { ascending: false })
-      .limit(1),
-    supabase
-      .from('plaid_imports')
-      .select('transaction_date')
-      .eq('user_id', user.id)
-      .order('transaction_date', { ascending: false })
-      .limit(1),
-    supabase
-      .from('plaid_imports')
-      .select('id', { count: 'exact', head: true })
-      .eq('user_id', user.id)
-      .eq('imported', false),
+    supabase.from('plaid_sync_runs').select('*').eq('user_id', user.id).order('created_at', { ascending: false }).limit(1).maybeSingle(),
+    supabase.from('plaid_sync_runs').select('completed_at').eq('user_id', user.id).eq('status', 'completed').order('completed_at', { ascending: false }).limit(1).maybeSingle(),
   ])
 
   const connections = connectionsResult.data
@@ -173,12 +148,6 @@ export default async function PlaidPage() {
     (connection) =>
       connection.status === 'archived' || connection.archived_at !== null
   )
-  const latestAccountSync =
-    ((accountSyncResult.data || []) as PlaidAccountSyncRow[])[0]?.updated_at ||
-    null
-  const latestImportDate =
-    ((importSyncResult.data || []) as PlaidImportSyncRow[])[0]?.transaction_date ||
-    null
   const renderConnectionCard = (
     connection: PlaidConnection,
     archived = false
@@ -365,11 +334,7 @@ export default async function PlaidPage() {
     >
         <ConnectPlaidButton />
 
-        <PlaidSyncActions
-          lastAccountSync={latestAccountSync}
-          lastTransactionDate={latestImportDate}
-          pendingImportCount={importCountResult.count ?? 0}
-        />
+        <PlaidSyncActions initialRun={syncRunResult.data ? { ...syncRunResult.data, last_successful_at: successfulRunResult.data?.completed_at || null } : null} connectionNeedsAttention={activeConnections.some((connection) => Boolean(connection.last_sync_error) || !connection.encrypted_access_token)} />
 
         <section className="space-y-4">
           <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">

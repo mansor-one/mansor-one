@@ -1,0 +1,5 @@
+{
+  "crons": [
+    { "path": "/api/plaid/sync/daily", "schedule": "15 10 * * *" }
+  ]
+}

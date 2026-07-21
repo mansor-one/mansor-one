@@ -25,6 +25,7 @@ export type TimelineProjectionEvent = {
   balanceAfter: number
   sourceOfTruth: string
   matchingInformation: string | null
+  matchConfidence?: number | null
   availableAction: string
 }
 
@@ -97,8 +98,8 @@ export function buildTimelineProjectionFromLiquidity(
       status: item.projected ? 'projected_income' as const : 'confirmed_income' as const,
       notes: `${item.owner} · ${item.confidence}`,
       dueDate: item.date, graceUntilDate: null, isInGracePeriod: false,
-      sourceOfTruth: 'income schedule occurrence', matchingInformation: null,
-      availableAction: 'Review income schedule',
+      sourceOfTruth: 'ocurrencia del calendario de ingresos', matchingInformation: null,
+      matchConfidence: null, availableAction: 'Revisar calendario de ingresos',
     })),
     ...projectedPayments.map((payment) => ({
       id: payment.id,
@@ -112,6 +113,7 @@ export function buildTimelineProjectionFromLiquidity(
       matchingInformation: payment.lifecycleMatchedTransaction
         ? `${payment.lifecycleMatchedTransaction.name || 'Transaction'} · ${payment.lifecycleMatchedTransaction.confidence}%`
         : null,
+      matchConfidence: payment.lifecycleMatchedTransaction?.confidence ?? null,
       availableAction: payment.availableAction,
     })),
   ].sort((left, right) => left.date.localeCompare(right.date) || right.amount - left.amount)
@@ -138,6 +140,7 @@ export function buildTimelineProjectionFromLiquidity(
       balanceAfter: liquidity.cashAvailableTotal,
       sourceOfTruth: payment.sourceOfTruth,
       matchingInformation: null,
+      matchConfidence: payment.lifecycleMatchedTransaction?.confidence ?? null,
       availableAction: payment.availableAction,
     }))
   const needsAttention = [
@@ -150,6 +153,7 @@ export function buildTimelineProjectionFromLiquidity(
     graceUntilDate: payment.grace_until || null, isInGracePeriod: false, balanceAfter: balance,
     sourceOfTruth: payment.sourceOfTruth,
     matchingInformation: payment.lifecycleMatchedTransaction ? `${payment.lifecycleMatchedTransaction.name || 'Transaction'} · ${payment.lifecycleMatchedTransaction.confidence}%` : null,
+    matchConfidence: payment.lifecycleMatchedTransaction?.confidence ?? null,
     availableAction: payment.availableAction,
   }))
   const totalIncome = income.instances.reduce((sum, item) => sum + item.amount, 0)
@@ -187,9 +191,9 @@ export function buildTimelineProjectionFromLiquidity(
       reconciliationErrors: 0,
     },
     explanation: {
-      initialCash: { balance: liquidity.cashAvailableTotal, connectedCash: liquidity.cashAvailablePlaid, manualCash: liquidity.cashAvailableManual, text: 'Starts from Financial Engine usable cash, not raw bank balance.' },
-      lowestPoint: { date: lowestDate, balance: lowest?.balanceAfter ?? liquidity.cashAvailableTotal, payments: events.filter((event) => event.date === lowestDate && event.type === 'payment'), incomeEvents: events.filter((event) => event.date === lowestDate && event.type === 'income'), text: lowestDate ? `Lowest point inside the active ${horizonDays}-day horizon.` : 'No projected events are loaded inside the active horizon.' },
-      finalBalance: { balance, totalIncome, totalPayments, openCommitmentsCount: projectedPayments.length, incomeEventsCount: income.instances.length, text: 'Initial usable cash plus generated expected income, minus only unpaid actionable commitments inside the active horizon.' },
+      initialCash: { balance: liquidity.cashAvailableTotal, connectedCash: liquidity.cashAvailablePlaid, manualCash: liquidity.cashAvailableManual, text: 'Parte del efectivo utilizable del Motor Financiero, no del saldo bancario bruto.' },
+      lowestPoint: { date: lowestDate, balance: lowest?.balanceAfter ?? liquidity.cashAvailableTotal, payments: events.filter((event) => event.date === lowestDate && event.type === 'payment'), incomeEvents: events.filter((event) => event.date === lowestDate && event.type === 'income'), text: lowestDate ? `Punto más bajo dentro del horizonte activo de ${horizonDays} días.` : 'No hay eventos proyectados dentro del horizonte activo.' },
+      finalBalance: { balance, totalIncome, totalPayments, openCommitmentsCount: projectedPayments.length, incomeEventsCount: income.instances.length, text: 'Efectivo utilizable inicial más ingresos esperados, menos únicamente las obligaciones abiertas proyectables dentro del horizonte activo.' },
     },
   }
 }

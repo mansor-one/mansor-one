@@ -6,6 +6,7 @@ const schedule = readFileSync(new URL('../app/components/PaymentScheduleView.tsx
 const drawer = readFileSync(new URL('../app/components/FinancialObligationDrawer.tsx', import.meta.url), 'utf8')
 const nav = readFileSync(new URL('../app/components/PrimaryNav.tsx', import.meta.url), 'utf8')
 const queue = readFileSync(new URL('../app/lab/review-queue/ReviewQueueClient.tsx', import.meta.url), 'utf8')
+const presentation = readFileSync(new URL('../lib/financial-engine/payment-status-presentation.ts', import.meta.url), 'utf8')
 
 test('calendar obligations open the drawer and closing preserves local calendar state', () => {
   assert.match(schedule, /onOpen=\{\(\) => setSelectedPayment\(payment\)\}/)
@@ -14,7 +15,7 @@ test('calendar obligations open the drawer and closing preserves local calendar 
 })
 
 test('drawer exposes Spanish lifecycle and configurable missing information', () => {
-  assert.match(drawer, /Pagado, esperando confirmación/)
+  assert.match(presentation, /Pagado, esperando confirmación/)
   assert.match(drawer, /Información pendiente/)
   assert.match(drawer, /No configurado/)
   assert.match(drawer, /Sí, ya pagué esto|Confirmar pago/)

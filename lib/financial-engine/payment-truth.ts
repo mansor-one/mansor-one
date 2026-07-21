@@ -135,41 +135,41 @@ export function resolveTrustedPayments({
 
     if (!Number.isFinite(amount) || amount <= 0 || !dueDate) {
       truthStatus = 'incomplete'
-      if (!(amount > 0)) reasons.push('Amount is missing, invalid, or zero.')
-      if (!dueDate) reasons.push('Due date is missing.')
+      if (!(amount > 0)) reasons.push('El monto falta, no es válido o es cero.')
+      if (!dueDate) reasons.push('Falta la fecha de vencimiento.')
     } else if (duplicate) {
       truthStatus = 'needs_review'
-      reasons.push('Another payable instance has the same normalized name, amount, and due date.')
+      reasons.push('Otra obligación tiene el mismo nombre normalizado, monto y fecha de vencimiento.')
     } else if (['paid', 'confirmed', 'closed'].includes(rawStatus) || payment.lifecycleIsClosed || payment.lifecycleState === 'reconciled') {
       truthStatus = 'paid'
-      reasons.push('The payment instance is explicitly closed.')
+      reasons.push('El pago fue cerrado explícitamente.')
     } else if (confirmedMatch) {
       truthStatus = 'matched'
-      reasons.push('A unique confirmed-ledger candidate meets the reliable-match threshold.')
+      reasons.push('Una transacción única del historial confirmado cumple el umbral de coincidencia confiable.')
     } else if (payment.lifecycleState === 'pending_settlement' || recentInitiatedPayment) {
       truthStatus = 'in_transit'
-      reasons.push(`Payment was initiated within the last ${IN_TRANSIT_BUSINESS_DAYS} business days and is awaiting bank confirmation.`)
+      reasons.push(`El pago fue reportado en los últimos ${IN_TRANSIT_BUSINESS_DAYS} días laborables y está esperando confirmación bancaria.`)
     } else if (payment.lifecycleState === 'payment_detected' || possibleMatch) {
       truthStatus = 'possible_match'
-      reasons.push('A likely transaction exists, but it still requires confirmation.')
+      reasons.push('Encontramos una posible transacción, pero todavía debes confirmarla.')
     } else if (dueDate > horizonEnd) {
       truthStatus = 'future'
-      reasons.push(`Due after the active horizon ending ${horizonEnd}.`)
+      reasons.push(`Está programado después del horizonte actual, que termina el ${horizonEnd}.`)
     } else if (effectiveGraceDate && effectiveGraceDate < today) {
       truthStatus = 'overdue'
-      reasons.push('The due and grace dates have passed without confirmed payment.')
+      reasons.push('La fecha de vencimiento y el período de gracia ya pasaron sin un pago confirmado.')
     } else if (dueDate < today && effectiveGraceDate && effectiveGraceDate >= today) {
       truthStatus = 'grace_period'
-      reasons.push('The normal due date passed, but the payment is still inside grace.')
+      reasons.push('La fecha de vencimiento pasó, pero el pago todavía está dentro del período de gracia.')
     } else if (dueDate === today) {
       truthStatus = 'due_today'
-      reasons.push('Due today.')
+      reasons.push('Vence hoy.')
     } else if (daysBetween(dueDate, today) <= dueSoonDays) {
       truthStatus = 'due_soon'
-      reasons.push(`Due within ${dueSoonDays} days.`)
+      reasons.push(`Vence dentro de los próximos ${dueSoonDays} días.`)
     } else {
       truthStatus = 'unpaid'
-      reasons.push('Open inside the horizon, but not yet due soon.')
+      reasons.push('Está dentro del horizonte activo, pero todavía no requiere acción.')
     }
 
     const actionable = [
@@ -189,18 +189,18 @@ export function resolveTrustedPayments({
       duplicate,
       sourceOfTruth:
         payment.source === 'obligation'
-          ? 'obligation instance'
+          ? 'instancia de obligación'
           : payment.source === 'scheduled_payment'
-            ? 'generated schedule occurrence'
-            : 'payment instance',
+            ? 'ocurrencia generada del calendario'
+            : 'instancia de pago',
       availableAction:
         truthStatus === 'possible_match' || truthStatus === 'needs_review'
-          ? 'Review transaction'
+          ? 'Revisar transacción'
           : truthStatus === 'paid' || truthStatus === 'matched'
-            ? 'Reopen payment'
+            ? 'Reabrir pago'
             : truthStatus === 'in_transit'
-              ? 'Wait for bank confirmation'
-            : 'Mark paid manually',
+              ? 'Esperar confirmación bancaria'
+            : 'Marcar como pagado',
     }
   })
 }

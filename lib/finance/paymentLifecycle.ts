@@ -84,10 +84,7 @@ function daysBetween(left: Date, right: Date) {
 }
 
 function labelForTimelineState(state: PaymentTimelineState) {
-  return state
-    .split('_')
-    .map((part) => part[0].toUpperCase() + part.slice(1))
-    .join(' ')
+  return ({ expected: 'Programado', detected: 'Posible pago detectado', initiated: 'Pago reportado', closed: 'Conciliado', cancelled: 'Cancelado', duplicate: 'Posible duplicado', overdue: 'Vencido', late: 'Atrasado', missed: 'Pago omitido' } as Record<PaymentTimelineState, string>)[state]
 }
 
 export function buildPaymentLifecycleSnapshot({
@@ -108,30 +105,30 @@ export function buildPaymentLifecycleSnapshot({
 
   if (normalizedStatus === 'cancelled' || normalizedStatus === 'canceled') {
     state = 'cancelled'
-    reasons.push('Payment status is cancelled.')
+    reasons.push('El pago está cancelado.')
   } else if (hasDuplicateCandidate) {
     state = 'duplicate'
-    reasons.push('A duplicate transaction candidate exists for this payment.')
+    reasons.push('Existe una posible transacción duplicada para este pago.')
   } else if (
     hasConfirmedLedgerEntry ||
     CLOSED_PAYMENT_STATUSES.includes(normalizedStatus as PaymentStatus)
   ) {
     state = 'closed'
-    reasons.push('Payment is confirmed in the ledger or explicitly confirmed.')
+    reasons.push('El pago está confirmado en el historial o fue confirmado explícitamente.')
   } else if (daysFromDueDate !== null && daysFromDueDate > 0) {
     state = 'overdue'
-    reasons.push('Payment due date passed without a confirmed payment.')
+    reasons.push('La fecha de vencimiento pasó sin un pago confirmado.')
     if (hasDetectedTransaction) {
-      reasons.push('A possible matching transaction exists but is not confirmed.')
+      reasons.push('Existe una posible transacción coincidente, pero todavía no está confirmada.')
     }
   } else if (hasDetectedTransaction) {
     state = 'detected'
-    reasons.push('A matching transaction has been detected.')
+    reasons.push('Se detectó una transacción que podría corresponder a este pago.')
   } else if (normalizedStatus === 'initiated') {
     state = 'initiated'
-    reasons.push('Payment has been initiated but not confirmed.')
+    reasons.push('El pago fue reportado, pero todavía no está confirmado.')
   } else {
-    reasons.push('Payment is expected and still open.')
+    reasons.push('El pago está programado y continúa abierto.')
   }
 
   return {
@@ -170,15 +167,15 @@ function obligationLifecycleReasons(instance: EnrichedObligationInstance) {
   const reasons: string[] = []
 
   if (instance.isEstimated) {
-    reasons.push('Obligation amount is estimated.')
+    reasons.push('El monto de la obligación es estimado.')
   }
 
   if (instance.isInGracePeriod) {
-    reasons.push('Obligation is inside its grace period.')
+    reasons.push('La obligación está dentro de su período de gracia.')
   }
 
   if (instance.provider) {
-    reasons.push(`Current provider is ${instance.provider.provider_name}.`)
+    reasons.push(`El proveedor actual es ${instance.provider.provider_name}.`)
   }
 
   return reasons

@@ -63,6 +63,7 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
       : null
     const latestLink = links[0] || null
     const missing = [
+      Number(instance.amount_expected || 0) <= 0 ? 'Monto' : null,
       !cardResult.data?.regular_apr && !liabilityResult.data?.apr ? 'APR' : null,
       !instance.effective_due_date ? 'Fecha de vencimiento' : null,
       !obligation?.grace_period_days && !scheduleResult.data?.grace_day ? 'Fecha límite de gracia' : null,

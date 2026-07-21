@@ -237,28 +237,22 @@ async function countPendingImportsFromSync(
   return count ?? 0
 }
 
-export async function POST() {
-  try {
-    const { supabase } = await createServerSupabase()
-    const auth = await requireApiUser(supabase)
-    if (!auth.ok) return auth.response
-    const { user } = auth
-
+export async function syncPlaidImportsForUser(
+  userId: string,
+  options: { reconcile?: boolean } = {}
+) {
     const { data: connections, error: connectionsError } =
       await supabaseAdmin
         .from('plaid_connections')
         .select('*')
-        .eq('user_id', user.id)
+        .eq('user_id', userId)
         .eq('status', 'active')
         .not('encrypted_access_token', 'is', null)
         .is('archived_at', null)
         .order('created_at', { ascending: false })
 
     if (connectionsError || !connections || connections.length === 0) {
-      return NextResponse.json(
-        { error: 'No Plaid connections found' },
-        { status: 404 }
-      )
+      throw new Error('No Plaid connections found')
     }
 
     let transactionsReturnedByPlaid = 0
@@ -305,7 +299,7 @@ export async function POST() {
             last_sync_error: errorCode,
           })
           .eq('id', connection.id)
-          .eq('user_id', user.id)
+          .eq('user_id', userId)
 
         if (syncMetadataError) {
           console.error('Plaid connection sync metadata error:', {
@@ -332,7 +326,7 @@ export async function POST() {
         (transaction) => transaction.transaction_id
       )
       const existingImports = await existingImportsByTransactionId(
-        user.id,
+        userId,
         plaidTransactionIds
       )
 
@@ -346,7 +340,7 @@ export async function POST() {
       const { data: plaidAccounts } = await supabaseAdmin
         .from('plaid_accounts')
         .select('*')
-        .eq('user_id', user.id)
+        .eq('user_id', userId)
         .eq('connection_id', connection.id)
 
       const accountsByPlaidId = new Map(
@@ -419,10 +413,7 @@ export async function POST() {
         if (upsertError) {
           console.error('Plaid imports upsert error:', upsertError)
 
-          return NextResponse.json(
-            { error: 'Could not sync Plaid transactions' },
-            { status: 500 }
-          )
+          throw new Error('Could not sync Plaid transactions')
         }
       }
 
@@ -460,7 +451,7 @@ export async function POST() {
         const { error: lifecycleError } = await supabaseAdmin
           .from('plaid_imports')
           .update(update)
-          .eq('user_id', user.id)
+          .eq('user_id', userId)
           .eq('plaid_transaction_id', action.transactionId)
         if (lifecycleError) throw lifecycleError
         if (action.status === 'superseded') pendingReplacedByPosted += 1
@@ -475,7 +466,7 @@ export async function POST() {
           transactions_cursor: nextCursor || connection.transactions_cursor,
         })
         .eq('id', connection.id)
-        .eq('user_id', user.id)
+        .eq('user_id', userId)
 
       if (syncMetadataError) {
         console.error('Plaid connection sync metadata error:', {
@@ -486,17 +477,18 @@ export async function POST() {
     }
 
     const account_context_backfilled =
-      await backfillPlaidImportAccountContext(user.id)
+      await backfillPlaidImportAccountContext(userId)
     const already_confirmed_imports_cleaned =
-      await markAlreadyPromotedImportsImported(user.id)
+      await markAlreadyPromotedImportsImported(userId)
     const pending_imports_from_sync = await countPendingImportsFromSync(
-      user.id,
+      userId,
       returnedPlaidTransactionIds
     )
-    const obligation_reconciliation =
-      await reconcileOpenObligationsAfterPlaidSync(supabaseAdmin, user.id)
+    const obligation_reconciliation = options.reconcile === false
+      ? null
+      : await reconcileOpenObligationsAfterPlaidSync(supabaseAdmin, userId)
 
-    return NextResponse.json({
+    return {
       imported_count: transactionsReturnedByPlaid,
       transactions_returned_by_plaid: transactionsReturnedByPlaid,
       new_imports_created: newImportsCreated,
@@ -508,7 +500,16 @@ export async function POST() {
       rows_marked_removed: rowsMarkedRemoved,
       obligation_reconciliation,
       failed_connections: failedConnections,
-    })
+    }
+}
+
+export async function POST(request: Request) {
+  try {
+    const { supabase } = await createServerSupabase()
+    const auth = await requireApiUser(supabase)
+    if (!auth.ok) return auth.response
+    const body = await request.json().catch(() => ({})) as { reconcile?: boolean }
+    return NextResponse.json(await syncPlaidImportsForUser(auth.user.id, body))
   } catch (error) {
     console.error('Plaid sync-imports error:', error)
 

@@ -8,12 +8,12 @@ import {
   type FinancialAsset,
   getCategoryByCode,
   getDashboardSummary,
+  getRobototinaContext,
   getPortfolioSummary,
   getReviewQueue,
   type LedgerSummaryTransaction,
   type FinancialImpactResult,
   type MovementReconciliationContext,
-  type PaymentInstance,
   transactionContext,
   type TransactionContext,
 } from '@/lib/financial-engine'
@@ -22,6 +22,7 @@ import AppShell from './components/AppShell'
 import InstitutionLogo from './components/InstitutionLogo'
 import PaymentScheduleView from './components/PaymentScheduleView'
 import FinancialHealthDrawer from './components/FinancialHealthDrawer'
+import ExplainableInsight, { type ExplainableInsightData } from './components/ExplainableInsight'
 import { reviewQueueDrilldown, spendingDrilldown, timelineDrilldown } from '@/lib/financial-engine/dashboard-drilldowns'
 
 export const dynamic = 'force-dynamic'
@@ -53,12 +54,6 @@ type HealthStatus = {
   label: 'Estable' | 'Ajustado' | 'Riesgo'
   tone: 'green' | 'yellow' | 'red'
   detail: string
-}
-
-type PaymentTrafficLight = {
-  payment: PaymentInstance
-  tone: 'green' | 'yellow' | 'red'
-  label: string
 }
 
 const monthNames = [
@@ -130,18 +125,6 @@ function cashIncludedReason(asset: FinancialAsset) {
   }
 
   return 'Included as active manual account marked spendable.'
-}
-
-function daysBetween(from: Date, toDateString: string | null | undefined) {
-  if (!toDateString) return null
-
-  const dueDate = new Date(`${toDateString}T00:00:00`)
-  const currentDate = new Date(from)
-  currentDate.setHours(0, 0, 0, 0)
-
-  return Math.ceil(
-    (dueDate.getTime() - currentDate.getTime()) / (1000 * 60 * 60 * 24)
-  )
 }
 
 function categoryFromCode(code: string | null) {
@@ -349,54 +332,6 @@ function financialHealth(
   }
 }
 
-function paymentTrafficLight(
-  payment: PaymentInstance,
-  now: Date
-): PaymentTrafficLight {
-  const days = daysBetween(now, payment.effective_due_date)
-
-  if (payment.lifecycleState === 'overdue') {
-    return {
-      payment,
-      tone: 'red',
-      label:
-        payment.daysFromDueDate && payment.daysFromDueDate > 0
-          ? `Venció hace ${payment.daysFromDueDate} días`
-          : 'Venció',
-    }
-  }
-
-  if (days === null) {
-    return {
-      payment,
-      tone: 'yellow',
-      label: 'Sin fecha confirmada',
-    }
-  }
-
-  if (days < 0) {
-    return {
-      payment,
-      tone: 'red',
-      label: `Venció hace ${Math.abs(days)} días`,
-    }
-  }
-
-  if (days <= 7) {
-    return {
-      payment,
-      tone: 'yellow',
-      label: days === 0 ? 'Vence hoy' : `Vence en ${days} días`,
-    }
-  }
-
-  return {
-    payment,
-    tone: 'green',
-    label: `Vence en ${days} días`,
-  }
-}
-
 function toneClasses(tone: 'green' | 'yellow' | 'red') {
   if (tone === 'green') return 'border-emerald-700 bg-emerald-950/40'
   if (tone === 'yellow') return 'border-amber-700 bg-amber-950/40'
@@ -409,13 +344,6 @@ function toneDot(tone: 'green' | 'yellow' | 'red') {
   if (tone === 'yellow') return '🟡'
 
   return '🔴'
-}
-
-function tonePriority(tone: 'green' | 'yellow' | 'red') {
-  if (tone === 'red') return 0
-  if (tone === 'yellow') return 1
-
-  return 2
 }
 
 function paymentMethodSplit(movements: Movement[]) {
@@ -439,56 +367,6 @@ function reviewProgress(confirmedCount: number, pendingCount: number) {
   const total = confirmedCount + pendingCount
 
   return total > 0 ? Math.round((confirmedCount / total) * 100) : 100
-}
-
-function robototinaBriefing({
-  greeting,
-  household,
-  trafficLights,
-  reviewPercent,
-  pendingCount,
-  topCategory,
-  monthlySpent,
-}: {
-  greeting: string
-  household: string
-  trafficLights: PaymentTrafficLight[]
-  reviewPercent: number
-  pendingCount: number
-  topCategory: ReturnType<typeof topCategories>[number] | undefined
-  monthlySpent: number
-}) {
-  const lines = [`${greeting} ${household}. Estas son las cosas importantes de hoy:`]
-  const urgentPayment =
-    trafficLights.find((item) => item.tone === 'red') ||
-    trafficLights.find((item) => item.tone === 'yellow')
-
-  if (urgentPayment) {
-    lines.push(
-      `${toneDot(urgentPayment.tone)} ${
-        urgentPayment.payment.name || 'Un pago'
-      } ${urgentPayment.label.toLowerCase()}.`
-    )
-  }
-
-  lines.push(
-    `🟢 Ya clasificaron el ${reviewPercent}% de los movimientos del mes.`
-  )
-
-  if (pendingCount > 0) {
-    lines.push(
-      `📝 Solo faltan ${pendingCount} movimientos para completar este mes.`
-    )
-  }
-
-  if (topCategory && monthlySpent > 0) {
-    const share = Math.round((topCategory.amount / monthlySpent) * 100)
-    lines.push(
-      `💡 ${topCategory.category} representa el ${share}% del gasto mensual.`
-    )
-  }
-
-  return lines
 }
 
 function CashBalanceBreakdown({
@@ -602,10 +480,11 @@ export default async function Home() {
   const spendingPeriod = { year: now.getFullYear(), month: now.getMonth() + 1 }
   const incomeMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
 
-  const [dashboardSummary, portfolioSummary, reviewQueue] = await Promise.all([
+  const [dashboardSummary, portfolioSummary, reviewQueue, robototinaContext] = await Promise.all([
     getDashboardSummary(supabase, user.id),
     getPortfolioSummary(supabase, user.id),
     getReviewQueue(supabase, user.id),
+    getRobototinaContext(supabase, user.id),
   ])
 
   const { liquidity, planning } = dashboardSummary
@@ -695,19 +574,6 @@ export default async function Home() {
         String(b.effective_due_date || '')
       )
     )
-  const upcomingPaymentCards = upcomingPayments.map((payment) =>
-    paymentTrafficLight(payment, now)
-  )
-  const paymentLights = upcomingPaymentCards
-    .slice()
-    .sort(
-      (a, b) =>
-        tonePriority(a.tone) - tonePriority(b.tone) ||
-        String(a.payment.effective_due_date || '').localeCompare(
-          String(b.payment.effective_due_date || '')
-        )
-    )
-    .slice(0, 3)
   const planningItems = planning.planningItems.slice(0, 3)
   const nextPlanningItem = planningItems[0]
   const health = financialHealth(
@@ -729,14 +595,47 @@ export default async function Home() {
     currentMonthMovements.length,
     reviewQueue.statistics.totalCandidates
   )
-  const briefingLines = robototinaBriefing({
-    greeting,
-    household,
-    trafficLights: paymentLights,
-    reviewPercent,
-    pendingCount: reviewQueue.statistics.totalCandidates,
-    topCategory,
-    monthlySpent,
+  const robototinaRecommendations = robototinaContext.advisorRecommendations.slice(0, 2).map((item) => ({ id: item.id, title: item.recommendation, reason: item.reason }))
+  const categoryInsight: ExplainableInsightData = {
+    id: 'top-category', label: 'Mayor categoría', value: topCategory?.category || 'Sin datos', detail: topCategory ? money(topCategory.amount) : undefined,
+    why: topCategory ? 'Apareció porque esta categoría acumula el mayor gasto confirmado del mes actual.' : 'Todavía no hay gastos confirmados suficientes para identificar una categoría principal.',
+    classification: 'informativo',
+    facts: [{ label: 'Período', value: currentMonth }, { label: 'Total de la categoría', value: money(topCategory?.amount || 0) }, { label: 'Movimientos incluidos', value: String(topCategory?.count || 0) }, { label: 'Gasto confirmado del mes', value: money(monthlySpent) }],
+    related: topCategory ? spendingMovements.filter((movement) => movement.category === topCategory.category).map((movement) => ({ id: movement.id, title: movement.merchant, detail: `${movement.date} · ${money(movement.amount)}` })) : [], recommendations: robototinaRecommendations,
+  }
+  const merchantInsight: ExplainableInsightData = {
+    id: 'top-merchant', label: 'Mayor comercio', value: topMerchant?.merchant || 'Sin datos', detail: topMerchant ? money(topMerchant.amount) : undefined,
+    why: topMerchant ? 'Apareció porque este comercio concentra el mayor monto de gastos confirmados del mes.' : 'Todavía no hay gastos confirmados suficientes para identificar un comercio principal.',
+    classification: 'informativo', facts: [{ label: 'Período', value: currentMonth }, { label: 'Total del comercio', value: money(topMerchant?.amount || 0) }, { label: 'Movimientos incluidos', value: String(topMerchant?.count || 0) }],
+    related: topMerchant ? spendingMovements.filter((movement) => movement.merchant === topMerchant.merchant).map((movement) => ({ id: movement.id, title: movement.merchant, detail: `${movement.date} · ${movement.category} · ${money(movement.amount)}` })) : [], recommendations: robototinaRecommendations,
+  }
+  const purchaseInsight: ExplainableInsightData = {
+    id: 'largest-purchase', label: 'Mayor compra', value: largestTransaction?.merchant || 'Sin datos', detail: largestTransaction ? money(largestTransaction.amount) : undefined,
+    why: largestTransaction ? 'Apareció porque es la transacción de gasto confirmado con el importe individual más alto del mes.' : 'Todavía no hay compras confirmadas para comparar.',
+    classification: 'informativo', facts: [{ label: 'Período', value: currentMonth }, { label: 'Importe', value: money(largestTransaction?.amount || 0) }, { label: 'Fecha', value: largestTransaction?.date || 'Sin datos' }, { label: 'Categoría', value: largestTransaction?.category || 'Sin datos' }],
+    related: largestTransaction ? [{ id: largestTransaction.id, title: largestTransaction.merchant, detail: `${largestTransaction.date} · ${largestTransaction.category} · ${money(largestTransaction.amount)}` }] : [], recommendations: robototinaRecommendations,
+  }
+  const creditInsight: ExplainableInsightData = {
+    id: 'credit-over-cash', label: 'Uso de crédito', value: 'Este mes usas más crédito que efectivo', detail: `Crédito ${methodSplit.creditPercent}% · débito ${methodSplit.debitPercent}%`,
+    why: 'Apareció porque el importe de gastos confirmados pagados con crédito supera el importe pagado con débito o efectivo durante el mes.', classification: 'riesgo',
+    facts: [{ label: 'Gasto con crédito', value: money(methodSplit.credit) }, { label: 'Gasto con débito o efectivo', value: money(methodSplit.debit) }, { label: 'Participación de crédito', value: `${methodSplit.creditPercent}%` }, { label: 'Período', value: currentMonth }],
+    related: spendingMovements.filter((movement) => String(movement.context.paymentMethod || '').toLowerCase().includes('credit')).map((movement) => ({ id: movement.id, title: movement.merchant, detail: `${movement.date} · ${money(movement.amount)}` })), recommendations: robototinaRecommendations,
+  }
+  const planningInsight: ExplainableInsightData = {
+    id: 'next-planning-fund', label: '🎯 Fondo más cercano', value: nextPlanningItem?.name || 'Sin configurar', detail: nextPlanningItem ? `${nextPlanningItem.due_date || 'Sin fecha'} · ${money(nextPlanningItem.target_amount)}` : 'Planning todavía necesita configuración',
+    why: nextPlanningItem ? 'Apareció porque es el primer fondo activo devuelto por la planificación actual del hogar.' : 'Apareció para señalar que todavía no existe un fondo activo configurado.', classification: 'informativo',
+    facts: [{ label: 'Fondos activos', value: String(planning.planningItems.length) }, { label: 'Monto objetivo', value: money(nextPlanningItem?.target_amount || 0) }, { label: 'Fecha objetivo', value: nextPlanningItem?.due_date || 'Sin configurar' }, { label: 'Obligaciones futuras', value: money(planning.totalFutureObligations) }],
+    related: nextPlanningItem ? [{ id: nextPlanningItem.id, title: nextPlanningItem.name || 'Fondo', detail: `${nextPlanningItem.due_date || 'Sin fecha'} · objetivo ${money(nextPlanningItem.target_amount)}` }] : [], recommendations: robototinaRecommendations,
+  }
+  const dashboardRobototinaInsights: ExplainableInsightData[] = robototinaContext.insights.map((insight) => {
+    const relatedPayments = insight.id === 'grace-period' ? robototinaContext.liquidity.gracePeriodPayments : insight.id === 'lowest-point' ? robototinaContext.timeline.lowestPointPayments : insight.id === 'open-payments' ? robototinaContext.liquidity.openPayments : []
+    return {
+      id: insight.id, label: 'Robototina', value: insight.title,
+      why: insight.message, classification: ['critical', 'warning'].includes(insight.tone) ? 'riesgo' : 'informativo',
+      facts: [{ label: 'Efectivo disponible', value: money(robototinaContext.liquidity.availableCash) }, { label: 'Pagos abiertos', value: String(robototinaContext.liquidity.openPaymentsCount) }, { label: 'Compromisos abiertos', value: money(robototinaContext.liquidity.openPaymentsTotal) }, { label: 'Generado', value: formatDateTime(robototinaContext.generatedAt) }],
+      related: relatedPayments.map((payment) => ({ id: payment.id, title: payment.name || 'Obligación', detail: `${payment.effective_due_date || payment.due_date || 'Sin fecha'} · ${money(payment.amount)}` })),
+      recommendations: robototinaRecommendations,
+    }
   })
   const includedCashAccounts = portfolioSummary.liquidAssets
   const lastUpdated = now.toLocaleString('es-PR', {
@@ -905,36 +804,10 @@ export default async function Home() {
         </section>
 
         <section className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          <SummaryCard
-            label="🏆 Mayor gasto"
-            value={largestTransaction?.merchant || 'Sin datos'}
-            detail={largestTransaction ? money(largestTransaction.amount) : ''}
-            href={largestTransaction ? spendingDrilldown({ ...spendingPeriod, view: 'confirmed-expenses', merchant: largestTransaction.merchant, date: largestTransaction.date, amount: largestTransaction.amount }) : undefined}
-          />
-          <SummaryCard
-            label="🍽 Categoría principal"
-            value={topCategory?.category || 'Sin datos'}
-            detail={topCategory ? money(topCategory.amount) : ''}
-            href={topCategory ? spendingDrilldown({ ...spendingPeriod, view: 'confirmed-expenses', category: spendingMovements.find((movement) => movement.category === topCategory.category)?.categoryCode }) : undefined}
-          />
-          <SummaryCard
-            label="💳 Uso de crédito"
-            value={`${methodSplit.creditPercent}%`}
-            detail={`Débito ${methodSplit.debitPercent}%`}
-            href={spendingDrilldown({ ...spendingPeriod, view: 'confirmed-expenses', paymentMethod: 'Credit' })}
-          />
-          <SummaryCard
-            label="🎯 Fondo más cercano"
-            value={nextPlanningItem?.name || 'Sin configurar'}
-            detail={
-              nextPlanningItem
-                ? `${nextPlanningItem.due_date || 'Sin fecha'} · ${money(
-                    nextPlanningItem.target_amount
-                  )}`
-                : 'Planning todavía necesita configuración'
-            }
-            href={nextPlanningItem ? `/planning#fund-${nextPlanningItem.id}` : '/planning#funds'}
-          />
+          <ExplainableInsight insight={{ ...purchaseInsight, label: '🏆 Mayor gasto' }} />
+          <ExplainableInsight insight={{ ...categoryInsight, label: '🍽 Categoría principal' }} />
+          <ExplainableInsight insight={{ ...creditInsight, label: '💳 Uso de crédito', value: `${methodSplit.creditPercent}%` }} />
+          <ExplainableInsight insight={planningInsight} />
           <SummaryCard
             label="🏦 Net worth"
             value={money(portfolioSummary.netWorth)}
@@ -945,11 +818,7 @@ export default async function Home() {
           />
         </section>
 
-        {methodSplit.credit > methodSplit.debit && (
-          <section className="rounded-lg border border-amber-700 bg-amber-950/40 p-4 text-sm">
-            ⚠️ Este mes estás utilizando más crédito que efectivo.
-          </section>
-        )}
+        {methodSplit.credit > methodSplit.debit && <section className="rounded-lg border border-amber-700 bg-amber-950/40 p-2 text-sm"><ExplainableInsight insight={creditInsight} /></section>}
 
         <div className="grid grid-cols-1 gap-6 xl:grid-cols-[1.4fr_0.9fr]">
           <section className="rounded-lg border border-neutral-800 bg-neutral-900 p-4">
@@ -988,24 +857,9 @@ export default async function Home() {
             </div>
 
             <div className="mt-5 grid grid-cols-1 gap-3 border-t border-neutral-800 pt-4 md:grid-cols-3">
-              <InsightBlock
-                label="Mayor categoría"
-                value={topCategory?.category || 'Sin datos'}
-                detail={topCategory ? money(topCategory.amount) : ''}
-                href={topCategory ? spendingDrilldown({ ...spendingPeriod, view: 'confirmed-expenses', category: spendingMovements.find((movement) => movement.category === topCategory.category)?.categoryCode }) : undefined}
-              />
-              <InsightBlock
-                label="Mayor comercio"
-                value={topMerchant?.merchant || 'Sin datos'}
-                detail={topMerchant ? money(topMerchant.amount) : ''}
-                href={topMerchant ? spendingDrilldown({ ...spendingPeriod, view: 'confirmed-expenses', merchant: topMerchant.merchant }) : undefined}
-              />
-              <InsightBlock
-                label="Mayor compra"
-                value={largestTransaction?.merchant || 'Sin datos'}
-                detail={largestTransaction ? money(largestTransaction.amount) : ''}
-                href={largestTransaction ? spendingDrilldown({ ...spendingPeriod, view: 'confirmed-expenses', merchant: largestTransaction.merchant, date: largestTransaction.date, amount: largestTransaction.amount }) : undefined}
-              />
+              <ExplainableInsight insight={categoryInsight} />
+              <ExplainableInsight insight={merchantInsight} />
+              <ExplainableInsight insight={purchaseInsight} />
             </div>
           </section>
 
@@ -1176,9 +1030,7 @@ export default async function Home() {
             </div>
 
             <div className="space-y-3 text-sm">
-              {briefingLines.map((line) => (
-                <p key={line}>{line}</p>
-              ))}
+              {dashboardRobototinaInsights.length ? dashboardRobototinaInsights.map((insight) => <ExplainableInsight insight={insight} key={insight.id} />) : <p className="text-neutral-400">No hay insights activos con el contexto financiero actual.</p>}
             </div>
           </section>
         </div>
@@ -1234,27 +1086,6 @@ function SummaryCard({
       {content}
     </div>
   )
-}
-
-function InsightBlock({
-  label,
-  value,
-  detail,
-  href,
-}: {
-  label: string
-  value: string
-  detail: string
-  href?: string
-}) {
-  const content = (
-    <>
-      <p className="text-xs text-neutral-500">{label}</p>
-      <p className="mt-1 font-bold">{value}</p>
-      {detail ? <p className="text-sm text-neutral-400">{detail}</p> : null}
-    </>
-  )
-  return href ? <Link className="rounded border border-neutral-800 p-3" href={href}>{content}</Link> : <div className="rounded border border-neutral-800 p-3">{content}</div>
 }
 
 function Metric({ label, value, href }: { label: string; value: number; href: string }) {

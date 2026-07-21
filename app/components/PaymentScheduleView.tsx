@@ -3,10 +3,9 @@
 import {
   friendlyLifecyclePaymentNotes,
   lifecyclePaymentDueDate,
-  lifecyclePaymentGraceDays,
   lifecyclePaymentGraceUntilDate,
 } from '@/lib/finance/lifecycleDisplay'
-import type { PaymentInstance } from '@/lib/financial-engine'
+import { paymentStatusPresentation, type PaymentInstance } from '@/lib/financial-engine'
 import { useMemo, useState } from 'react'
 import FinancialObligationDrawer from './FinancialObligationDrawer'
 
@@ -98,59 +97,19 @@ function paymentHasGraceWindow(payment: PaymentInstance) {
   return Boolean(dueTime !== null && graceTime !== null && graceTime > dueTime)
 }
 
-function statusLabel(payment: PaymentInstance) {
-  const value = payment.lifecycleState || payment.truthStatus || payment.status || 'scheduled'
-  return ({
-    scheduled: 'Programado', future: 'Programado', pending: 'Programado', unpaid: 'Programado',
-    due_soon: 'Próximo a vencer', due_today: 'Próximo a vencer', overdue: 'Vencido',
-    detected: 'Pago detectado', payment_detected: 'Pago detectado', possible_match: 'Pago detectado',
-    pending_settlement: 'Pagado, esperando confirmación', in_transit: 'Pagado, esperando confirmación',
-    reconciled: 'Conciliado', matched: 'Conciliado', paid: 'Conciliado', closed: 'Conciliado',
-    cancelled: 'Cancelado', grace: 'En período de gracia', grace_period: 'En período de gracia',
-  } as Record<string, string>)[value] || 'Programado'
-}
-
-function statusClasses(payment: PaymentInstance) {
-  if (payment.lifecycleIsClosed || payment.lifecycleState === 'closed') {
-    return 'border-emerald-800 bg-emerald-950/50 text-emerald-100'
-  }
-
-  if (payment.isOverdue || payment.lifecycleState === 'overdue') {
-    return 'border-red-800 bg-red-950/50 text-red-100'
-  }
-
-  if (payment.isInGracePeriod || payment.lifecycleState === 'grace') {
-    return 'border-amber-800 bg-amber-950/50 text-amber-100'
-  }
-
-  if (payment.status === 'initiated' || payment.lifecycleState === 'detected') {
-    return 'border-sky-800 bg-sky-950/50 text-sky-100'
-  }
-
-  return 'border-neutral-700 bg-neutral-950 text-neutral-300'
-}
-
-function paymentTimingText(payment: PaymentInstance) {
-  const graceUntilDate = lifecyclePaymentGraceUntilDate(payment)
-  const graceDays = lifecyclePaymentGraceDays(payment)
-
-  if (payment.isOverdue || payment.lifecycleState === 'overdue') {
-    return payment.daysFromDueDate && payment.daysFromDueDate > 0
-      ? `Vencido hace ${payment.daysFromDueDate} dias`
-      : 'Vencido'
-  }
-
-  if (payment.isInGracePeriod && graceUntilDate) {
-    return `En gracia hasta ${formatShortDate(graceUntilDate)}`
-  }
-
-  if (graceUntilDate) {
-    return graceDays > 0
-      ? `Gracia ${graceDays} dias hasta ${formatShortDate(graceUntilDate)}`
-      : `Gracia hasta ${formatShortDate(graceUntilDate)}`
-  }
-
-  return null
+function presentationFor(payment: PaymentInstance, today: string) {
+  return paymentStatusPresentation({
+    status: payment.truthStatus || payment.lifecycleState || payment.status,
+    lifecycleState: payment.lifecycleState,
+    amount: payment.amount,
+    dueDate: paymentDate(payment),
+    graceDate: lifecyclePaymentGraceUntilDate(payment),
+    evidenceDate: payment.lifecycleMatchedTransaction?.date || payment.updated_at,
+    reconciledDate: ['paid', 'matched', 'reconciled', 'closed'].includes(payment.truthStatus || payment.lifecycleState || '')
+      ? payment.updated_at || payment.lifecycleMatchedTransaction?.date : null,
+    confidence: payment.lifecycleMatchedTransaction?.confidence,
+    today,
+  })
 }
 
 function GraceWindowMarker({
@@ -189,37 +148,36 @@ function GraceWindowMarker({
   )
 }
 
-function PaymentChip({ payment, onOpen }: { payment: PaymentInstance; onOpen: () => void }) {
+function PaymentChip({ payment, onOpen, today }: { payment: PaymentInstance; onOpen: () => void; today: string }) {
   const dueDate = paymentDate(payment)
-  const timingText = paymentTimingText(payment)
+  const presentation = presentationFor(payment, today)
 
   return (
     <button
       type="button"
       onClick={onOpen}
-      className={`rounded border px-2 py-1.5 text-xs ${statusClasses(payment)}`}
+      className={`w-full rounded border px-2 py-1.5 text-left text-xs ${presentation.classes}`}
     >
       <div className="flex items-start justify-between gap-2">
         <span className="min-w-0 truncate font-medium">
           {payment.name || 'Pago'}
         </span>
-        <span className="shrink-0 font-semibold">{money(payment.amount)}</span>
+        <span className="shrink-0 font-semibold">{Number(payment.amount || 0) > 0 ? money(payment.amount) : 'Monto no configurado'}</span>
       </div>
       <div className="mt-1 flex flex-wrap gap-x-2 gap-y-1 text-[11px] opacity-80">
-        <span>{statusLabel(payment)}</span>
+        <span><span aria-hidden="true">{presentation.icon}</span> {presentation.label}</span>
         <span>{formatShortDate(dueDate)}</span>
       </div>
-      {timingText && (
-        <p className="mt-1 text-[11px] opacity-80">{timingText}</p>
-      )}
+      <p className="mt-1 text-[11px] opacity-90">{presentation.relativeLabel || presentation.explanation}</p>
+      {presentation.confidence !== null && <p className="mt-1 text-[11px] font-semibold">Confianza {presentation.confidence}% · {presentation.confidenceStrength}</p>}
     </button>
   )
 }
 
-function PaymentListRow({ payment, onOpen }: { payment: PaymentInstance; onOpen: () => void }) {
+function PaymentListRow({ payment, onOpen, today }: { payment: PaymentInstance; onOpen: () => void; today: string }) {
   const dueDate = paymentDate(payment)
   const graceUntilDate = lifecyclePaymentGraceUntilDate(payment)
-  const timingText = paymentTimingText(payment)
+  const presentation = presentationFor(payment, today)
   const notes = friendlyLifecyclePaymentNotes(payment)
 
   return (
@@ -234,21 +192,19 @@ function PaymentListRow({ payment, onOpen }: { payment: PaymentInstance; onOpen:
             {graceUntilDate && (
               <span>Gracia: {formatShortDate(graceUntilDate)}</span>
             )}
-            {timingText && <span>{timingText}</span>}
+            {presentation.relativeLabel && <span>{presentation.relativeLabel}</span>}
           </div>
           {notes && <p className="mt-2 text-sm text-neutral-300">{notes}</p>}
         </div>
         <div className="flex shrink-0 flex-row items-center gap-2 sm:flex-col sm:items-end">
-          <span
-            className={`rounded-full border px-2 py-1 text-xs ${statusClasses(
-              payment
-            )}`}
-          >
-            {statusLabel(payment)}
+          <span className={`rounded-full border px-2 py-1 text-xs ${presentation.classes}`}>
+            <span aria-hidden="true">{presentation.icon}</span> {presentation.label}
           </span>
-          <span className="text-lg font-bold">{money(payment.amount)}</span>
+          <span className="text-lg font-bold">{Number(payment.amount || 0) > 0 ? money(payment.amount) : 'Monto no configurado'}</span>
         </div>
       </div>
+      <p className="mt-2 text-sm text-neutral-300">{presentation.explanation}</p>
+      {presentation.confidence !== null && <p className="mt-1 text-xs font-semibold">Confianza {presentation.confidence}% · {presentation.confidenceStrength}</p>}
     </button>
   )
 }
@@ -428,7 +384,7 @@ export default function PaymentScheduleView({
                   )}
                   <div className="space-y-1.5">
                     {dayPayments.map((payment) => (
-                      <PaymentChip key={payment.id} payment={payment} onOpen={() => setSelectedPayment(payment)} />
+                      <PaymentChip key={payment.id} payment={payment} onOpen={() => setSelectedPayment(payment)} today={today} />
                     ))}
                     {graceWindowPayments.map((payment) => (
                       <GraceWindowMarker
@@ -458,7 +414,7 @@ export default function PaymentScheduleView({
                 </p>
                 <div className="space-y-2">
                   {(paymentsByDate.get(date) || []).map((payment) => (
-                    <PaymentChip key={payment.id} payment={payment} onOpen={() => setSelectedPayment(payment)} />
+                    <PaymentChip key={payment.id} payment={payment} onOpen={() => setSelectedPayment(payment)} today={today} />
                   ))}
                   {(graceWindowsByDate.get(date) || []).map((payment) => (
                     <GraceWindowMarker
@@ -481,7 +437,7 @@ export default function PaymentScheduleView({
       ) : (
         <div className="mt-4 space-y-2">
           {visibleListPayments.map((payment) => (
-            <PaymentListRow key={payment.id} payment={payment} onOpen={() => setSelectedPayment(payment)} />
+            <PaymentListRow key={payment.id} payment={payment} onOpen={() => setSelectedPayment(payment)} today={today} />
           ))}
         </div>
       )}
