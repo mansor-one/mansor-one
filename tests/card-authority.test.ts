@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { selectAuthoritativeCardTerms } from '../lib/financial-engine/card-authority.ts'
+import { cardUtilizationPercent, manualCardCreationFinancials, selectAuthoritativeCardTerms } from '../lib/financial-engine/card-authority.ts'
 
 test('Plaid liabilities outrank manual and recurring minimums', () => {
   const terms = selectAuthoritativeCardTerms({
@@ -55,4 +55,12 @@ test('Timeline due date outranks Plaid while Plaid minimum remains authoritative
   assert.equal(terms.minimumPayment, 361)
   assert.equal(terms.nextDueDate, '2026-08-09')
   assert.equal(terms.dueDateSource, 'Linked Timeline obligation')
+})
+
+test('unused manual card keeps a nonzero limit separate from its zero balance', () => {
+  assert.equal(cardUtilizationPercent(0, 3000), 0)
+  assert.deepEqual(manualCardCreationFinancials(3000), {
+    credit_limit: 3000,
+    balance: null,
+  })
 })

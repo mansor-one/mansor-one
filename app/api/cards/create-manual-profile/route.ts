@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { requireApiUser } from '@/lib/auth/requireApiUser'
 import { createServerSupabase } from '@/lib/supabase/server'
+import { manualCardCreationFinancials } from '@/lib/financial-engine/card-authority'
 
 function textValue(value: unknown) {
   return typeof value === 'string' && value.trim() ? value.trim() : null
@@ -106,6 +107,7 @@ export async function POST(request: Request) {
 
     const name = textValue(body.name) || plaidAccount.name || 'Credit card'
     const bank = textValue(body.bank) || plaidAccount.institution_name || null
+    const financials = manualCardCreationFinancials(body.creditLimit)
 
     const { data, error } = await supabase
       .from('credit_cards')
@@ -115,8 +117,7 @@ export async function POST(request: Request) {
         owner_id: ownerId,
         user_id: user.id,
         plaid_account_id: plaidAccount.id,
-        credit_limit: numberValue(body.creditLimit),
-        balance: null,
+        ...financials,
         minimum_payment: numberValue(body.minimumPayment),
         due_day: dayValue(body.dueDay),
         cutoff_day: dayValue(body.cutoffDay),

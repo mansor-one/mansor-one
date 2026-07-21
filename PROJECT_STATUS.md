@@ -32,7 +32,7 @@ Mansor One is a household financial operating system. It turns connected-bank da
 
 ## Validation status
 
-- Automated suite: 10 test files, 41 tests passing.
+- Automated suite: 10 test files, 42 tests passing.
 - Production build and TypeScript validation: passing.
 - ESLint: zero errors; six known unused-code warnings in Review Queue.
 - `git diff --check`: passing at checkpoint preparation.

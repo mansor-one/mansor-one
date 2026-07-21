@@ -1,5 +1,5 @@
 import { getResolvedAccounts } from './account-resolver'
-import { selectAuthoritativeCardTerms } from './card-authority'
+import { cardUtilizationPercent, selectAuthoritativeCardTerms } from './card-authority'
 import {
   getLiquiditySummary,
   paymentMatchesSchedule,
@@ -440,12 +440,6 @@ function lastPaidPayment(
     )[0] || null
 }
 
-function utilizationPercent(balance: number | null, creditLimit: number | null) {
-  if (!balance || !creditLimit || creditLimit <= 0) return null
-
-  return Math.round((balance / creditLimit) * 100)
-}
-
 function dateOnly(value: string | null | undefined) {
   if (!value) return null
 
@@ -651,7 +645,7 @@ function buildProfile({
     currentBalance,
     availableCredit,
     creditLimit,
-    utilizationPercent: utilizationPercent(currentBalance, creditLimit),
+    utilizationPercent: cardUtilizationPercent(currentBalance, creditLimit),
     minimumPayment: authoritativeTerms.minimumPayment,
     minimumPaymentSource: authoritativeTerms.minimumPaymentSource,
     dueDay: authoritativeTerms.dueDay,

@@ -664,11 +664,13 @@ function CardLiabilityRow({ card }: { card: CardProfile }) {
         </div>
         <div className="text-left sm:text-right">
           <p className="font-bold text-red-200">{money(card.currentBalance)}</p>
-          <p className="text-xs text-neutral-500">Balance · {card.balanceSource}</p>
+          <p className="text-xs text-neutral-500">Current balance · {card.balanceSource}</p>
         </div>
       </div>
-      <div className="mt-3 grid gap-2 text-xs sm:grid-cols-3">
+      <div className="mt-3 grid gap-2 text-xs sm:grid-cols-2 lg:grid-cols-5">
+        <div className="rounded border border-neutral-800 bg-neutral-950 p-2"><p className="text-neutral-400">Credit limit</p><p className="font-semibold text-blue-200">{card.creditLimit === null ? 'Not configured' : money(card.creditLimit)}</p><p className="text-neutral-500">Manual card or Plaid balance + available</p></div>
         <div className="rounded border border-neutral-800 bg-neutral-950 p-2"><p className="text-neutral-400">Available credit</p><p className="font-semibold text-blue-200">{card.availableCredit === null ? 'Not available' : money(card.availableCredit)}</p><p className="text-neutral-500">{card.availableCreditSource}</p></div>
+        <div className="rounded border border-neutral-800 bg-neutral-950 p-2"><p className="text-neutral-400">Utilization</p><p className="font-semibold">{card.utilizationPercent === null ? 'Not available' : `${card.utilizationPercent}%`}</p><p className="text-neutral-500">Current balance ÷ credit limit</p></div>
         <div className="rounded border border-neutral-800 bg-neutral-950 p-2"><p className="text-neutral-400">Minimum payment</p>{card.minimumPayment === null ? <><p className="font-semibold text-neutral-300">Not configured</p><Link className="font-semibold text-blue-300 underline" href="/cards">Configure</Link></> : <><p className="font-semibold">{money(card.minimumPayment)}</p><p className="text-neutral-500">{card.minimumPaymentSource}</p></>}</div>
         <div className="rounded border border-neutral-800 bg-neutral-950 p-2"><p className="text-neutral-400">Due / grace deadline</p>{dueText ? <><p className="font-semibold">{dueText}</p><p className="text-neutral-500">{card.dueDateSource || 'Linked card configuration'}</p></> : <><p className="font-semibold text-neutral-300">Not configured</p><Link className="font-semibold text-blue-300 underline" href="/cards">Configure</Link></>}</div>
       </div>

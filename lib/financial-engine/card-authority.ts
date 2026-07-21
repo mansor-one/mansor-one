@@ -11,6 +11,24 @@ export type AuthoritativeCardTermsInput = {
   timelineDueDate?: string | null
 }
 
+function nullableNumber(value: unknown) {
+  if (value === null || value === undefined || value === '') return null
+  const parsed = Number(value)
+  return Number.isFinite(parsed) ? parsed : null
+}
+
+export function manualCardCreationFinancials(creditLimit: unknown) {
+  return {
+    credit_limit: nullableNumber(creditLimit),
+    balance: null,
+  } as const
+}
+
+export function cardUtilizationPercent(balance: number | null, creditLimit: number | null) {
+  if (balance === null || creditLimit === null || creditLimit <= 0) return null
+  return Math.round((balance / creditLimit) * 100)
+}
+
 function positiveNumber(value: number | string | null | undefined) {
   if (value === null || value === undefined) return null
   const parsed = Number(value)
