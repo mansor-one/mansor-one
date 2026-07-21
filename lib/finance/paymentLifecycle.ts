@@ -1,11 +1,11 @@
 import {
   getObligationsSummary,
   type EnrichedObligationInstance,
-} from '../financial-engine/obligations'
+} from '../financial-engine/obligations.ts'
 import type {
   FinancialSupabaseClient,
   PaymentInstance,
-} from '../financial-engine/types'
+} from '../financial-engine/types.ts'
 
 export const PAYMENT_LIFECYCLE_STATES = [
   'pending',
@@ -281,8 +281,54 @@ export async function getObligationLifecyclePaymentItems(
   const summary = await getObligationsSummary(supabase, userId, {
     today: options.today,
   })
+  const { data: links, error } = await supabase
+    .from('obligation_payment_links')
+    .select('id, obligation_instance_id, reconciliation_status, confidence, confirmed_at, payment_method, confirmation_note, plaid_imports(id, merchant, amount, transaction_date)')
+    .eq('user_id', userId)
+    .in('reconciliation_status', ['detected', 'pending_settlement', 'reconciled'])
+  if (error) throw error
 
-  return summary.allInstances.map((instance) =>
-    obligationInstanceToLifecyclePayment(instance, summary.asOfDate)
-  )
+  const linksByInstance = new Map<string, typeof links>()
+  for (const link of links || []) {
+    const current = linksByInstance.get(link.obligation_instance_id) || []
+    current.push(link)
+    linksByInstance.set(link.obligation_instance_id, current)
+  }
+
+  return summary.allInstances.map((instance) => {
+    const payment = obligationInstanceToLifecyclePayment(instance, summary.asOfDate)
+    const instanceLinks = linksByInstance.get(instance.id) || []
+    const link = [...instanceLinks].sort((left, right) =>
+      (right.reconciliation_status === 'reconciled' ? 3 : right.reconciliation_status === 'pending_settlement' ? 2 : 1) -
+      (left.reconciliation_status === 'reconciled' ? 3 : left.reconciliation_status === 'pending_settlement' ? 2 : 1) ||
+      Number(right.confidence || 0) - Number(left.confidence || 0)
+    )[0]
+    if (!link) return payment
+
+    const plaidImport = Array.isArray(link.plaid_imports) ? link.plaid_imports[0] : link.plaid_imports
+    const lifecycleState = link.reconciliation_status === 'reconciled'
+      ? 'reconciled'
+      : link.reconciliation_status === 'pending_settlement'
+        ? 'pending_settlement'
+        : 'payment_detected'
+    return {
+      ...payment,
+      paymentMethod: link.payment_method || payment.paymentMethod,
+      lifecycleState,
+      lifecycleLabel: lifecycleState.replaceAll('_', ' ').replace(/\b\w/g, (letter) => letter.toUpperCase()),
+      lifecycleIsOpen: lifecycleState !== 'reconciled',
+      lifecycleIsClosed: lifecycleState === 'reconciled',
+      lifecycleMatchedTransaction: plaidImport ? {
+        id: plaidImport.id,
+        source: 'plaid_imports',
+        name: plaidImport.merchant,
+        amount: Number(plaidImport.amount || 0),
+        date: plaidImport.transaction_date,
+        confidence: Number(link.confidence || 0),
+        confidenceLevel: Number(link.confidence || 0) >= 90 ? 'high' : Number(link.confidence || 0) >= 70 ? 'likely' : 'possible',
+      } : null,
+      lifecycleReconciliationConfidence: Number(link.confidence || 0) || null,
+      lifecycleReconciliationReasons: link.confirmation_note ? [link.confirmation_note] : payment.lifecycleReconciliationReasons,
+    }
+  })
 }

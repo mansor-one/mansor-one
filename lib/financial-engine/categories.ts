@@ -1,4 +1,4 @@
-import { normalizeMerchantAlias } from './merchant-normalization'
+import { normalizeMerchantAlias } from './merchant-normalization.ts'
 
 export type CanonicalCategoryKind =
   | 'expense'
@@ -91,6 +91,7 @@ const systemCategories = [
   { id: 'education_school', parentId: 'education', code: 'education_school', displayName: 'School / Education', kind: 'expense', isSystem: true, sortOrder: 1402 },
   { id: 'education_tutoring', parentId: 'education', code: 'education_tutoring', displayName: 'Tutoring', kind: 'expense', isSystem: true, sortOrder: 1403 },
   { id: 'education_books_supplies', parentId: 'education', code: 'education_books_supplies', displayName: 'Books & Supplies', kind: 'expense', isSystem: true, sortOrder: 1404 },
+  { id: 'education_school_supplies', parentId: 'education', code: 'education_school_supplies', displayName: 'School Supplies', kind: 'expense', isSystem: true, sortOrder: 1405 },
 
   { id: 'entertainment', parentId: null, code: 'entertainment', displayName: 'Entertainment', kind: 'expense', isSystem: true, sortOrder: 1500 },
   { id: 'entertainment_events', parentId: 'entertainment', code: 'entertainment_events', displayName: 'Events', kind: 'expense', isSystem: true, sortOrder: 1501 },

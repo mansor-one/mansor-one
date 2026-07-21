@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { generateExpectedIncomeInstances, resolveTrustedPayments, threePaycheckMonths } from '../lib/financial-engine/payment-truth.ts'
+import { businessDaysBetween, generateExpectedIncomeInstances, resolveTrustedPayments, threePaycheckMonths } from '../lib/financial-engine/payment-truth.ts'
 import { buildTimelineProjectionFromLiquidity } from '../lib/financial-engine/timeline.ts'
 
 const today = '2026-07-19'
@@ -26,6 +26,36 @@ test('a confirmed ledger transaction cannot automatically match multiple payment
     { id: 'b', name: 'Power', amount: 100, due_date: '2026-07-21', status: 'pending', lifecycleMatchedTransaction: match },
   ] })
   assert.equal(rows.every((row) => row.truthStatus === 'possible_match'), true)
+})
+
+test('recent initiated payments are in transit for three business days', () => {
+  assert.equal(businessDaysBetween('2026-07-17', '2026-07-19'), 0)
+  assert.equal(businessDaysBetween('2026-07-16', '2026-07-21'), 3)
+
+  const rows = resolveTrustedPayments({ today, payments: [
+    { id: 'recent', name: 'Chase', amount: 947.78, due_date: '2026-07-18', status: 'initiated', updated_at: '2026-07-17T12:00:00Z' },
+    { id: 'old', name: 'Old initiated', amount: 100, due_date: '2026-07-10', status: 'initiated', updated_at: '2026-07-10T12:00:00Z' },
+  ] })
+
+  assert.equal(rows[0].truthStatus, 'in_transit')
+  assert.equal(rows[0].actionable, false)
+  assert.equal(rows[1].truthStatus, 'overdue')
+})
+
+test('payments in transit reduce adjusted risk and are not subtracted twice', () => {
+  const projection = buildTimelineProjectionFromLiquidity({
+    cashAvailableTotal: 1000, cashAvailablePlaid: 1000, cashAvailableManual: 0,
+    income: { allIncome: [], expectedIncome: [], receivedIncome: [], missedIncome: [], cancelledIncome: [], projectedIncome: [], totalProjectedIncome: 0 },
+    lifecyclePayments: [
+      { id: 'transit', name: 'Card payment', amount: 300, due_date: '2026-07-20', status: 'initiated', updated_at: '2026-07-17T12:00:00Z' },
+      { id: 'open', name: 'Mortgage', amount: 500, due_date: '2026-07-20', status: 'pending' },
+    ],
+  }, { today, horizonDays: 45 })
+
+  assert.equal(projection.openObligationTotal, 500)
+  assert.equal(projection.inTransitPaymentTotal, 300)
+  assert.equal(projection.adjustedRiskTotal, 500)
+  assert.equal(projection.finalBalance, 500)
 })
 
 test('biweekly schedules generate occurrences and detect three-paycheck months', () => {

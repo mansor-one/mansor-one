@@ -18,6 +18,7 @@ export type PlanningFund = {
   status: string
   target_amount: number | null
   current_amount: number | null
+  spent_amount: number | null
   due_date: string | null
   owner: string | null
   category: string | null
@@ -46,6 +47,10 @@ export type PlanningFundMovement = {
   notes: string | null
   created_at: string | null
   user_id: string | null
+  quick_entry_id: string | null
+  plaid_import_id: string | null
+  canonical_category: string | null
+  household_owner: string | null
 }
 
 export type UpsertPlanningFundInput = {

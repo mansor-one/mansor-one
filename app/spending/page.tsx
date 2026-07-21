@@ -4,7 +4,7 @@ import {
   commonMerchantDefaultCategoryCode,
   getCategoryByCode,
   type LedgerSummaryTransaction,
-  getLedgerSummary,
+  getReviewQueue,
   transactionContext,
   type TransactionContext,
 } from '@/lib/financial-engine'
@@ -22,6 +22,13 @@ type PageProps = {
   searchParams?: Promise<{
     month?: string
     year?: string
+    view?: string
+    from?: string
+    category?: string
+    merchant?: string
+    date?: string
+    amount?: string
+    paymentMethod?: string
   }>
 }
 
@@ -223,7 +230,8 @@ export default async function SpendingPage({ searchParams }: PageProps) {
     (_, index) => currentYear - 5 + index
   )
 
-  const ledgerSummary = await getLedgerSummary(supabase, user.id)
+  const reviewQueue = await getReviewQueue(supabase, user.id)
+  const ledgerSummary = reviewQueue.source.ledgerSummary
 
   // Spending uses confirmed ledger only. Plaid import candidates are excluded
   // until promoted into quick_entries.
@@ -253,6 +261,21 @@ export default async function SpendingPage({ searchParams }: PageProps) {
 
     return Boolean(category && category.kind !== 'expense')
   })
+  const drilldownBase = params?.view === 'non-spending' ? nonSpendingEntries : entries
+  const drilldownEntries = drilldownBase.filter((entry) => {
+    const requestedAmount = params?.amount ? Number(params.amount) : null
+
+    return (
+      (!params?.from || entry.date >= params.from) &&
+      (!params?.category || entry.categoryCode === params.category) &&
+      (!params?.merchant || entry.context.normalizedMerchant === params.merchant) &&
+      (!params?.date || entry.date === params.date) &&
+      (requestedAmount === null || Math.abs(entry.amount - requestedAmount) < 0.005) &&
+      (!params?.paymentMethod || entry.context.paymentMethod === params.paymentMethod)
+    )
+  })
+  const isDashboardDrilldown = Boolean(params?.view)
+  const drilldownTotal = drilldownEntries.reduce((sum, entry) => sum + entry.amount, 0)
 
   const monthlyTotals: Record<string, { total: number; count: number }> = {}
   const quincenaTotals: Record<string, { total: number; count: number }> = {}
@@ -295,9 +318,24 @@ export default async function SpendingPage({ searchParams }: PageProps) {
     0
   )
 
-  const hasPendingImportReview =
-    ledgerSummary.importReviewCandidates.length > 0 ||
-    ledgerSummary.athReviewCandidates.length > 0
+  const inSelectedPeriod = (date: string | null) => Boolean(
+    date && date >= period.startDate && date <= period.endDate
+  )
+  const pendingBankAuthorization = ledgerSummary.importCandidates.filter(
+    (transaction) =>
+      inSelectedPeriod(transaction.date) &&
+      (transaction.metadata.pending === true ||
+        transaction.metadata.transactionStatus === 'pending')
+  )
+  const actionableReviewCandidates = reviewQueue.candidates.filter(
+    (candidate) =>
+      inSelectedPeriod(candidate.transaction.date) &&
+      candidate.transaction.metadata.pending !== true &&
+      candidate.transaction.metadata.transactionStatus !== 'pending'
+  )
+  const excludedForReviewCount =
+    actionableReviewCandidates.length + pendingBankAuthorization.length
+  const reviewQueueHref = `/lab/review-queue?tab=all&subset=spending-excluded&year=${period.year}&month=${period.month}#queue`
 
   return (
     <AppShell
@@ -317,6 +355,29 @@ export default async function SpendingPage({ searchParams }: PageProps) {
           <p>Filas excluidas: {ledgerSummary.spendingDiagnostics.rowsExcludedFromSpending}</p>
         </div>
       </details>
+
+      {isDashboardDrilldown && (
+        <section id="dashboard-calculation" className="space-y-3 rounded border border-blue-500 p-4">
+          <div>
+            <p className="text-sm font-semibold text-blue-700">Cálculo del Dashboard</p>
+            <h2 className="text-2xl font-bold">{drilldownEntries.length} movimientos · {formatMoney(drilldownTotal)}</h2>
+            <p className="text-sm opacity-70">
+              {params?.view === 'non-spending' ? 'Movimientos confirmados no-gasto' : 'Gastos confirmados'} entre {params?.from || period.startDate} y {period.endDate}.
+            </p>
+          </div>
+          <div className="space-y-1">
+            {drilldownEntries.map((entry) => (
+              <div className="grid grid-cols-1 gap-1 border-t pt-2 text-sm md:grid-cols-5" key={entry.id}>
+                <span>{entry.date}</span>
+                <span className="font-medium">{entry.context.normalizedMerchant}</span>
+                <strong>{formatMoney(entry.amount)}</strong>
+                <span>{entry.category}</span>
+                <span>{displayPaymentMethod(entry.context)}</span>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
 
       <section className="border rounded p-4 space-y-3">
         <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
@@ -375,10 +436,39 @@ export default async function SpendingPage({ searchParams }: PageProps) {
         </div>
       </section>
 
-      {hasPendingImportReview && (
-        <section className="border rounded p-4">
-          Hay transacciones pendientes de revisión que todavía no están
-          incluidas en este resumen.
+      {excludedForReviewCount > 0 && (
+        <section className="space-y-4 rounded border-2 border-amber-500 bg-amber-50 p-5 text-amber-950">
+          <div>
+            <p className="text-sm font-semibold uppercase tracking-wide">Transacciones excluidas del gasto</p>
+            <h2 className="text-2xl font-bold">{excludedForReviewCount} transacciones no están incluidas</h2>
+          </div>
+
+          {actionableReviewCandidates.length > 0 && (
+            <div className="space-y-2">
+              <p><strong>{actionableReviewCandidates.length} requieren acción.</strong> Necesitan clasificación, confirmación de duplicado, interpretación de ATH o revisión manual antes de contar como gasto confirmado.</p>
+              <div className="flex flex-wrap gap-2">
+                {actionableReviewCandidates.slice(0, 10).map((candidate) => (
+                  <Link
+                    className="rounded border border-amber-700 bg-white px-3 py-2 text-sm font-semibold"
+                    href={`/lab/review-queue?tab=all&subset=transaction&transaction=${candidate.transaction.id}#transaction-${candidate.transaction.id}`}
+                    key={candidate.transaction.id}
+                  >
+                    {candidate.merchant || candidate.transaction.description || 'Transaction'} · {formatMoney(candidate.transaction.amount)}
+                  </Link>
+                ))}
+              </div>
+              <Link className="inline-flex rounded bg-amber-900 px-4 py-3 font-bold text-white hover:bg-amber-800" href={reviewQueueHref}>
+                Review Transactions
+              </Link>
+            </div>
+          )}
+
+          {pendingBankAuthorization.length > 0 && (
+            <p>
+              <strong>{pendingBankAuthorization.length} no requieren acción.</strong>{' '}
+              Están pendientes de autorización bancaria y se incluirán automáticamente cuando Plaid las reporte como finalizadas y entren al historial confirmado.
+            </p>
+          )}
         </section>
       )}
 

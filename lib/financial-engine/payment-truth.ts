@@ -2,11 +2,13 @@ import type { IncomeSchedule, PaymentInstance } from './types'
 
 export const DEFAULT_PLANNING_HORIZON_DAYS = 45
 export const DUE_SOON_DAYS = 7
+export const IN_TRANSIT_BUSINESS_DAYS = 3
 
 export type PaymentTruthStatus =
   | 'paid'
   | 'matched'
   | 'possible_match'
+  | 'in_transit'
   | 'unpaid'
   | 'due_soon'
   | 'due_today'
@@ -55,6 +57,20 @@ export function addDays(value: Date | string, days: number) {
 
 function daysBetween(left: string, right: string) {
   return Math.round((dateOnly(left).getTime() - dateOnly(right).getTime()) / 86_400_000)
+}
+
+export function businessDaysBetween(left: string, right: string) {
+  const start = dateOnly(left)
+  const end = dateOnly(right)
+  if (start > end) return businessDaysBetween(right, left)
+
+  let days = 0
+  const cursor = new Date(start)
+  while (cursor < end) {
+    cursor.setDate(cursor.getDate() + 1)
+    if (cursor.getDay() !== 0 && cursor.getDay() !== 6) days += 1
+  }
+  return days
 }
 
 function normalized(value: string | null | undefined) {
@@ -109,6 +125,11 @@ export function resolveTrustedPayments({
       Number(match.confidence || 0) >= 70 &&
       (transactionCandidateCounts.get(match.id) || 0) === 1
     const possibleMatch = Boolean(match && !confirmedMatch && Number(match.confidence || 0) >= 50)
+    const transitEvidenceDate = match?.date || payment.updated_at?.slice(0, 10) || null
+    const recentInitiatedPayment =
+      rawStatus === 'initiated' &&
+      Boolean(transitEvidenceDate) &&
+      businessDaysBetween(transitEvidenceDate as string, today) <= IN_TRANSIT_BUSINESS_DAYS
     const reasons: string[] = []
     let truthStatus: PaymentTruthStatus
 
@@ -119,13 +140,16 @@ export function resolveTrustedPayments({
     } else if (duplicate) {
       truthStatus = 'needs_review'
       reasons.push('Another payable instance has the same normalized name, amount, and due date.')
-    } else if (['paid', 'confirmed', 'closed'].includes(rawStatus) || payment.lifecycleIsClosed) {
+    } else if (['paid', 'confirmed', 'closed'].includes(rawStatus) || payment.lifecycleIsClosed || payment.lifecycleState === 'reconciled') {
       truthStatus = 'paid'
       reasons.push('The payment instance is explicitly closed.')
     } else if (confirmedMatch) {
       truthStatus = 'matched'
       reasons.push('A unique confirmed-ledger candidate meets the reliable-match threshold.')
-    } else if (possibleMatch) {
+    } else if (payment.lifecycleState === 'pending_settlement' || recentInitiatedPayment) {
+      truthStatus = 'in_transit'
+      reasons.push(`Payment was initiated within the last ${IN_TRANSIT_BUSINESS_DAYS} business days and is awaiting bank confirmation.`)
+    } else if (payment.lifecycleState === 'payment_detected' || possibleMatch) {
       truthStatus = 'possible_match'
       reasons.push('A likely transaction exists, but it still requires confirmation.')
     } else if (dueDate > horizonEnd) {
@@ -174,6 +198,8 @@ export function resolveTrustedPayments({
           ? 'Review transaction'
           : truthStatus === 'paid' || truthStatus === 'matched'
             ? 'Reopen payment'
+            : truthStatus === 'in_transit'
+              ? 'Wait for bank confirmation'
             : 'Mark paid manually',
     }
   })

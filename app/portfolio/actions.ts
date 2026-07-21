@@ -78,6 +78,7 @@ export async function updatePlaidAccountAction(formData: FormData) {
       ownerScope: stringValue(formData, 'ownerScope'),
       status: statusValue(stringValue(formData, 'status')),
       includeInDashboard: booleanValue(formData, 'includeInDashboard'),
+      isSpendable: booleanValue(formData, 'isSpendable'),
       archiveReason: stringValue(formData, 'archiveReason') || null,
     })
   } catch {

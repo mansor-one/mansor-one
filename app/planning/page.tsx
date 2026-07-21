@@ -307,12 +307,13 @@ function FundCard({
 }) {
   const targetAmount = Number(item.target_amount || 0)
   const currentAmount = Number(item.current_amount || 0)
+  const spentAmount = Number(item.spent_amount || 0)
   const percent =
     targetAmount > 0 ? Math.round((currentAmount / targetAmount) * 100) : 0
   const remaining = Math.max(0, targetAmount - currentAmount)
 
   return (
-    <article className="space-y-4 rounded border p-4">
+    <article className="space-y-4 rounded border p-4" id={`fund-${item.id}`}>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h3 className="text-xl font-semibold">{item.name}</h3>
@@ -326,9 +327,10 @@ function FundCard({
         </span>
       </div>
 
-      <div className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-3">
+      <div className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-4">
         <Metric label="Target" value={money(targetAmount)} />
         <Metric label="Allocated" value={money(currentAmount)} />
+        <Metric label="Spent" value={money(spentAmount)} />
         <Metric label="Remaining" value={money(remaining)} />
       </div>
 

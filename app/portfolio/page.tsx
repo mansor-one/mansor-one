@@ -2,6 +2,7 @@ import { requireUser } from '@/lib/auth/requireUser'
 import {
   getPortfolioManagementData,
   getPortfolioSummary,
+  getCardsSummary,
   manualAccountOwnerOptions,
   manualAccountStatusOptions,
   plaidConnectionStatusOptions,
@@ -10,7 +11,7 @@ import {
   type ManualAccount,
   type PlaidConnectionSummary,
   type PortfolioPlaidAccount,
-  type PortfolioLiability,
+  type CardProfile,
 } from '@/lib/financial-engine'
 import { createServerSupabase } from '@/lib/supabase/server'
 import type { Metadata } from 'next'
@@ -261,8 +262,8 @@ function HistoricalPlaidAccountCard({
             {account.type || 'type'} / {account.subtype || 'subtype'}
           </p>
         </div>
-        <span className="w-fit rounded-full border border-amber-900 px-2 py-1 text-xs text-amber-100">
-          Historical account
+        <span className="w-fit rounded-full border border-neutral-700 bg-neutral-800 px-2 py-1 text-xs text-neutral-300">
+          ◷ Historical account
         </span>
       </div>
 
@@ -383,6 +384,18 @@ function PlaidAccountCard({ account }: { account: ConnectedAccount }) {
         />
         Include in Dashboard and Portfolio active totals when active
       </label>
+
+      {account.type === 'investment' && (
+        <label className="flex items-start gap-2 rounded border border-blue-900 bg-blue-950/20 p-3 text-sm text-neutral-200">
+          <input
+            type="checkbox"
+            name="isSpendable"
+            defaultChecked={account.is_spendable === true}
+            className="mt-0.5 size-4"
+          />
+          <span><span className="block font-medium text-blue-200">Spendable investment cash</span><span className="block text-xs text-neutral-400">Include this investment account in usable cash. Leave off for retirement or invested balances.</span></span>
+        </label>
+      )}
 
       <div className="flex flex-col gap-2 text-xs text-neutral-500 sm:flex-row sm:justify-between">
         <span>Original Plaid name: {account.name || 'Unknown'}</span>
@@ -597,15 +610,17 @@ function SummaryCard({
   label,
   value,
   detail,
+  valueClassName = 'text-neutral-100',
 }: {
   label: string
   value: string | number
   detail: string
+  valueClassName?: string
 }) {
   return (
     <div className="rounded border border-neutral-800 bg-neutral-900 p-4">
       <p className="text-sm text-neutral-400">{label}</p>
-      <p className="mt-2 text-2xl font-bold">{value}</p>
+      <p className={`mt-2 text-2xl font-bold ${valueClassName}`}>{value}</p>
       <p className="mt-1 text-xs text-neutral-500">{detail}</p>
     </div>
   )
@@ -623,7 +638,7 @@ function AssetRow({ asset }: { asset: FinancialAsset }) {
           </p>
         </div>
         <div className="text-left sm:text-right">
-          <p className="font-bold">{money(asset.balance)}</p>
+          <p className="font-bold text-blue-200">{money(asset.balance)}</p>
           <p className="text-xs text-neutral-500">
             Usable:{' '}
             {asset.usableBalance === null
@@ -636,26 +651,26 @@ function AssetRow({ asset }: { asset: FinancialAsset }) {
   )
 }
 
-function LiabilityRow({ liability }: { liability: PortfolioLiability }) {
+function CardLiabilityRow({ card }: { card: CardProfile }) {
+  const dueText = card.graceDeadline || card.nextDueDate || (card.dueDay ? `Day ${card.dueDay}` : null)
   return (
-    <div className="rounded border border-neutral-800 bg-neutral-900 p-3">
+    <div className="rounded border border-red-950 bg-neutral-900 p-3">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <p className="font-medium">{liability.name || 'Unnamed liability'}</p>
+          <p className="font-medium">💳 {card.displayName}</p>
           <p className="text-sm text-neutral-400">
-            {liability.institution || liability.source} -{' '}
-            {liability.liabilityType}
+            {card.institution || 'Unknown institution'} · {card.source}
           </p>
         </div>
         <div className="text-left sm:text-right">
-          <p className="font-bold">{money(liability.balance)}</p>
-          <p className="text-xs text-neutral-500">
-            Min:{' '}
-            {liability.minimumPayment === null
-              ? 'N/A'
-              : money(liability.minimumPayment)}
-          </p>
+          <p className="font-bold text-red-200">{money(card.currentBalance)}</p>
+          <p className="text-xs text-neutral-500">Balance · {card.balanceSource}</p>
         </div>
+      </div>
+      <div className="mt-3 grid gap-2 text-xs sm:grid-cols-3">
+        <div className="rounded border border-neutral-800 bg-neutral-950 p-2"><p className="text-neutral-400">Available credit</p><p className="font-semibold text-blue-200">{card.availableCredit === null ? 'Not available' : money(card.availableCredit)}</p><p className="text-neutral-500">{card.availableCreditSource}</p></div>
+        <div className="rounded border border-neutral-800 bg-neutral-950 p-2"><p className="text-neutral-400">Minimum payment</p>{card.minimumPayment === null ? <><p className="font-semibold text-neutral-300">Not configured</p><Link className="font-semibold text-blue-300 underline" href="/cards">Configure</Link></> : <><p className="font-semibold">{money(card.minimumPayment)}</p><p className="text-neutral-500">{card.minimumPaymentSource}</p></>}</div>
+        <div className="rounded border border-neutral-800 bg-neutral-950 p-2"><p className="text-neutral-400">Due / grace deadline</p>{dueText ? <><p className="font-semibold">{dueText}</p><p className="text-neutral-500">{card.dueDateSource || 'Linked card configuration'}</p></> : <><p className="font-semibold text-neutral-300">Not configured</p><Link className="font-semibold text-blue-300 underline" href="/cards">Configure</Link></>}</div>
       </div>
     </div>
   )
@@ -679,10 +694,17 @@ export default async function PortfolioPage({
     params.error === 'plaid-connection-revoke'
   const { supabase } = await createServerSupabase()
   const { user } = await requireUser(supabase)
-  const [portfolio, management] = await Promise.all([
+  const [portfolio, management, cards] = await Promise.all([
     getPortfolioSummary(supabase, user.id),
     getPortfolioManagementData(supabase, user.id),
+    getCardsSummary(supabase, user.id),
   ])
+  const authoritativeCardBalance = cards.activeCards.reduce((sum, card) => sum + Number(card.currentBalance || 0), 0)
+  const authoritativeNetWorth = portfolio.totalAssetBalance - authoritativeCardBalance
+  const authoritativeCreditLimit = cards.activeCards.reduce((sum, card) => sum + Number(card.creditLimit || 0), 0)
+  const authoritativeUtilization = authoritativeCreditLimit > 0
+    ? (authoritativeCardBalance / authoritativeCreditLimit) * 100
+    : 0
 
   return (
     <AppShell
@@ -710,23 +732,26 @@ export default async function PortfolioPage({
           )}
           <SummaryCard
             label="Net worth"
-            value={money(portfolio.netWorth)}
+            value={money(authoritativeNetWorth)}
             detail="Assets minus liabilities"
           />
           <SummaryCard
             label="Cash"
             value={money(portfolio.totalLiquidAvailable)}
             detail="Usable liquid cash"
+            valueClassName="text-blue-200"
           />
           <SummaryCard
             label="Assets"
             value={money(portfolio.totalAssetBalance)}
             detail={`${portfolio.totalAssets} tracked assets`}
+            valueClassName="text-blue-200"
           />
           <SummaryCard
             label="Liabilities"
-            value={money(portfolio.totalLiabilities)}
-            detail={`${percent(portfolio.creditUtilizationPercent)} credit utilization`}
+            value={money(authoritativeCardBalance)}
+            detail={`${percent(authoritativeUtilization)} credit utilization`}
+            valueClassName="text-red-200"
           />
         </section>
 
@@ -958,8 +983,8 @@ export default async function PortfolioPage({
           <div className="space-y-3">
             <h2 className="text-2xl font-bold">Credit Cards</h2>
             <div className="space-y-2">
-              {portfolio.liabilities.map((liability) => (
-                <LiabilityRow key={liability.id} liability={liability} />
+              {cards.activeCards.map((card) => (
+                <CardLiabilityRow key={card.id} card={card} />
               ))}
             </div>
           </div>
@@ -970,14 +995,14 @@ export default async function PortfolioPage({
               {management.loans.map((loan) => (
                 <div
                   key={loan.id}
-                  className="rounded border border-neutral-800 bg-neutral-900 p-3"
+                  className="rounded border border-red-950 bg-neutral-900 p-3"
                 >
                   <p className="font-medium">{loan.name || 'Loan'}</p>
                   <p className="text-sm text-neutral-400">
                     {loan.lender || 'Unknown lender'} -{' '}
                     {loan.owner || 'unknown'}
                   </p>
-                  <p className="mt-2 font-bold">{money(loan.balance)}</p>
+                  <p className="mt-2 font-bold text-red-200">{money(loan.balance)}</p>
                   <p className="text-xs text-neutral-500">
                     Payment {money(loan.monthly_payment)} - due day{' '}
                     {loan.due_day || 'N/A'}

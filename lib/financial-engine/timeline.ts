@@ -36,16 +36,22 @@ export type TimelineProjectionSummary = {
   finalBalance: number
   minimumBalance: number
   events: TimelineProjectionEvent[]
+  trustedPayments: TrustedPayment[]
   sections: {
     needsAttention: TimelineProjectionEvent[]
     upcoming: TimelineProjectionEvent[]
     possibleMatches: TimelineProjectionEvent[]
     paidOrReconciled: TrustedPayment[]
     later: TrustedPayment[]
+    inTransit: TrustedPayment[]
   }
   paymentCounts: Record<PaymentTruthStatus, number>
   expectedIncomeTotal: number
   actionablePaymentTotal: number
+  openObligationTotal: number
+  inTransitPaymentTotal: number
+  reconciledRecentlyTotal: number
+  adjustedRiskTotal: number
   paidOrMatchedTotal: number
   threePaycheckMonths: Array<{ owner: string; month: string; count: number }>
   diagnostics: {
@@ -68,7 +74,7 @@ export type TimelineProjectionSummary = {
 }
 
 const paymentStatuses: PaymentTruthStatus[] = [
-  'paid', 'matched', 'possible_match', 'unpaid', 'due_soon', 'due_today',
+  'paid', 'matched', 'possible_match', 'in_transit', 'unpaid', 'due_soon', 'due_today',
   'grace_period', 'overdue', 'needs_review', 'incomplete', 'future',
 ]
 
@@ -151,15 +157,24 @@ export function buildTimelineProjectionFromLiquidity(
 
   return {
     asOfDate: today, horizonDays, horizonEnd, startingCash: liquidity.cashAvailableTotal,
-    finalBalance: balance, minimumBalance: lowest?.balanceAfter ?? liquidity.cashAvailableTotal, events,
+    finalBalance: balance, minimumBalance: lowest?.balanceAfter ?? liquidity.cashAvailableTotal, events, trustedPayments,
     sections: {
       needsAttention,
       upcoming: events.filter((event) => event.type === 'income' || ['unpaid', 'due_soon'].includes(event.status)),
       possibleMatches,
       paidOrReconciled: trustedPayments.filter((payment) => ['paid', 'matched'].includes(payment.truthStatus)),
       later: trustedPayments.filter((payment) => payment.truthStatus === 'future'),
+      inTransit: trustedPayments.filter((payment) => payment.truthStatus === 'in_transit'),
     },
     paymentCounts: counts, expectedIncomeTotal: totalIncome,
+    openObligationTotal: trustedPayments.filter((payment) => ['possible_match', 'unpaid', 'due_soon', 'due_today', 'grace_period', 'overdue', 'needs_review'].includes(payment.truthStatus)).reduce((sum, payment) => sum + Number(payment.amount || 0), 0),
+    inTransitPaymentTotal: trustedPayments.filter((payment) => payment.truthStatus === 'in_transit').reduce((sum, payment) => sum + Number(payment.amount || 0), 0),
+    reconciledRecentlyTotal: trustedPayments.filter((payment) =>
+      ['paid', 'matched'].includes(payment.truthStatus) &&
+      Boolean(payment.updated_at) &&
+      payment.updated_at!.slice(0, 10) >= addDays(today, -30)
+    ).reduce((sum, payment) => sum + Number(payment.amount || 0), 0),
+    adjustedRiskTotal: trustedPayments.filter((payment) => ['possible_match', 'unpaid', 'due_soon', 'due_today', 'grace_period', 'overdue', 'needs_review'].includes(payment.truthStatus)).reduce((sum, payment) => sum + Number(payment.amount || 0), 0),
     actionablePaymentTotal: trustedPayments.filter((payment) => payment.actionable).reduce((sum, payment) => sum + Number(payment.amount || 0), 0),
     paidOrMatchedTotal: trustedPayments.filter((payment) => ['paid', 'matched'].includes(payment.truthStatus)).reduce((sum, payment) => sum + Number(payment.amount || 0), 0),
     threePaycheckMonths: threePaycheckMonths(income.instances),

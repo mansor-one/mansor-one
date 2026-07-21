@@ -148,10 +148,6 @@ export default function PrimaryNav() {
       )}
 
       <div className="mt-auto hidden space-y-3 border-t border-white/8 pt-5 lg:block">
-        <div className="flex items-center justify-between rounded-xl border border-white/8 bg-white/4 px-3 py-3 text-sm text-slate-300">
-          <span>Modo oscuro</span>
-          <span className="text-slate-500">›</span>
-        </div>
         <div className="flex items-center gap-3 rounded-xl border border-white/8 bg-white/4 px-3 py-3">
           <span className="grid h-9 w-9 place-items-center rounded-full bg-indigo-500/30 text-sm font-semibold text-indigo-100">
             M

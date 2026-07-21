@@ -1,4 +1,4 @@
-import { normalizeMerchantAlias } from './merchant-normalization'
+import { normalizeMerchantAlias } from './merchant-normalization.ts'
 
 export type FinancialIdentityType =
   | 'merchant'

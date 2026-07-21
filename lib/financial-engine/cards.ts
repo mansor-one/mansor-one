@@ -1,4 +1,5 @@
 import { getResolvedAccounts } from './account-resolver'
+import { selectAuthoritativeCardTerms } from './card-authority'
 import {
   getLiquiditySummary,
   paymentMatchesSchedule,
@@ -34,6 +35,8 @@ const CARD_ALIASES: Record<string, string[]> = {
   'US BANK': ['U S BANK', 'CREDIT CARD 4910', 'CARD 4910'],
   'U S BANK': ['US BANK', 'CREDIT CARD 4910', 'CARD 4910'],
   'CREDIT CARD 4910': ['US BANK', 'U S BANK'],
+  CHASE: ['CHASE CREDIT CARD'],
+  'CHASE CREDIT CARD': ['CHASE'],
   SYNCHRONY: ['SYNCHRONY'],
 }
 
@@ -138,6 +141,15 @@ function isUsBankCard(manual: CreditCard, account: ConnectedAccount) {
   )
 }
 
+function isChaseCard(manual: CreditCard, account: ConnectedAccount) {
+  const manualSignal = normalize(`${manual.bank || ''} ${manual.name || ''}`)
+  const accountSignal = normalize(
+    `${account.institution_name || ''} ${account.name || ''}`
+  )
+
+  return manualSignal.includes('CHASE') && accountSignal.includes('CHASE')
+}
+
 function manualPlaidConfidence(manual: CreditCard, account: ConnectedAccount) {
   const manualName = normalize(manual.name)
   const manualBank = normalize(manual.bank)
@@ -158,6 +170,7 @@ function manualPlaidConfidence(manual: CreditCard, account: ConnectedAccount) {
 
   if (isPopularVisa(manual, account)) score = Math.max(score, 95)
   if (isUsBankCard(manual, account)) score = Math.max(score, 90)
+  if (isChaseCard(manual, account)) score = Math.max(score, 95)
 
   return Math.min(score, 100)
 }
@@ -576,6 +589,18 @@ function buildProfile({
   const plaidAvailable = numberValue(account?.available_balance)
   const manualLimit = numberValue(manual?.credit_limit)
   const currentBalance = plaidBalance ?? manualBalance
+  const authoritativeTerms = selectAuthoritativeCardTerms({
+    plaidMinimumPayment: account?.plaid_minimum_payment_amount,
+    plaidDueDate: account?.plaid_next_payment_due_date,
+    manualMinimumPayment: manual?.minimum_payment,
+    manualName: manual?.name,
+    manualDueDay: manual?.due_day,
+    scheduleMinimumPayment: schedule?.amount,
+    scheduleName: schedule?.name,
+    scheduleDueDay: schedule?.due_day,
+    timelineMinimumPayment: currentPayment?.amount,
+    timelineDueDate: currentPayment?.effective_due_date,
+  })
   const creditLimit =
     manualLimit ??
     (plaidBalance !== null && plaidAvailable !== null
@@ -586,10 +611,6 @@ function buildProfile({
     (creditLimit !== null && currentBalance !== null
       ? Math.max(creditLimit - currentBalance, 0)
       : null)
-  const dueDay =
-    schedule?.due_day ??
-    manual?.due_day ??
-    null
   const manualOwner =
     manual?.owner_id && peopleById.has(manual.owner_id)
       ? peopleById.get(manual.owner_id) || null
@@ -631,12 +652,14 @@ function buildProfile({
     availableCredit,
     creditLimit,
     utilizationPercent: utilizationPercent(currentBalance, creditLimit),
-    minimumPayment:
-      numberValue(currentPayment?.amount) ??
-      numberValue(manual?.minimum_payment) ??
-      numberValue(schedule?.amount),
-    dueDay,
-    nextDueDate: currentPayment?.effective_due_date || null,
+    minimumPayment: authoritativeTerms.minimumPayment,
+    minimumPaymentSource: authoritativeTerms.minimumPaymentSource,
+    dueDay: authoritativeTerms.dueDay,
+    nextDueDate: authoritativeTerms.nextDueDate,
+    dueDateSource: authoritativeTerms.dueDateSource,
+    graceDeadline: currentPayment?.grace_until || currentPayment?.grace_due_date || currentPayment?.effective_due_date || null,
+    balanceSource: account ? 'Plaid balance' : `Manual card: ${manual?.name || 'card'}`,
+    availableCreditSource: account ? 'Plaid available credit' : 'Manual credit limit minus manual balance',
     paymentStatus: lifecyclePaymentStatus(currentPayment, today),
     lastPaymentDate: paidPayment?.effective_due_date || null,
     interestNotes: manual?.interest_notes || null,

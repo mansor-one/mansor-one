@@ -3,6 +3,7 @@
 import { useMemo, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { ReviewQueueCandidateActions } from './ReviewQueueCandidateActions'
+import { ActionableTransactionCard } from './ActionableTransactionCard'
 import type {
   LedgerSummaryTransaction,
   ReviewQueueCandidate,
@@ -23,6 +24,12 @@ type ReviewQueueClientProps = {
   paymentConfirmation: ReviewQueueCandidate[]
   needsManualReview: ReviewQueueCandidate[]
   categoryOptions: CategoryOption[]
+  initialTab?: ReviewTab
+  initialSubset?: 'needs-category' | 'spending-excluded' | 'transaction'
+  spendingPeriod?: string
+  transactionId?: string
+  planningFunds: Array<{ id: string; name: string }>
+  owners: string[]
 }
 
 type ReviewTab =
@@ -716,105 +723,23 @@ function CandidateCard({
   group,
   categoryOptions,
   onSkip,
+  planningFunds,
+  owners,
 }: {
   group: CandidateGroup
   categoryOptions: CategoryOption[]
   onSkip: () => void
+  planningFunds: Array<{ id: string; name: string }>
+  owners: string[]
 }) {
-  const candidate = group.primary
-  const happens = whatHappens(candidate)
-  const [showTechnicalDetails, setShowTechnicalDetails] = useState(false)
-  const confidence = confidenceExplanation(candidate.confidence)
-  const duplicateDecision = isPossibleDuplicate(candidate)
-  const categoryDecision =
-    needsCategoryAnswer(candidate) || candidate.classification === 'athReview'
-
   return (
-    <div className="border rounded p-4 space-y-4">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <p className="text-sm font-semibold opacity-70">{whatIsThis(candidate)}</p>
-          <h3 className="text-xl font-bold">{looksLikeMessage(candidate)}</h3>
-          {group.candidates.length > 1 && (
-            <p className="text-sm opacity-70">
-              Agrupamos {group.candidates.length} filas relacionadas.
-            </p>
-          )}
-        </div>
-        <div className="max-w-xs text-right text-sm">
-          <p className="font-semibold">{confidence.label}</p>
-          <p className="opacity-70">{confidence.helper}</p>
-        </div>
-      </div>
-
-      {(duplicateDecision || categoryDecision) && (
-        <div className="rounded border p-3 text-sm">
-          <p className="font-semibold">Decision needed</p>
-          <p>
-            {duplicateDecision
-              ? 'Is this the same transaction or a separate purchase?'
-              : 'Should this movement be added with this suggested category?'}
-          </p>
-        </div>
-      )}
-
-      <div className="grid grid-cols-1 md:grid-cols-6 gap-3 text-sm">
-        <div className="md:col-span-2">
-          <p className="font-semibold">{subjectLabel(candidate)}</p>
-          <p>{normalizedName(candidate)}</p>
-        </div>
-        <div>
-          <p className="font-semibold">Monto</p>
-          <p>{signedMoney(candidate.transaction.amount)}</p>
-        </div>
-        <div>
-          <p className="font-semibold">Fecha</p>
-          <p>{candidate.transaction.date || 'Sin fecha'}</p>
-        </div>
-        <div className="md:col-span-2">
-          <p className="font-semibold">Banco / cuenta</p>
-          <p>{accountLabel(candidate.transaction)}</p>
-        </div>
-        <div className="md:col-span-2">
-          <p className="font-semibold">What did we detect?</p>
-          <p>{whatIsThis(candidate)}</p>
-        </div>
-        <div className="md:col-span-2">
-          <p className="font-semibold">Why do we need your help?</p>
-          <p>{whyIsItHere(candidate)}</p>
-        </div>
-        <div className="md:col-span-2">
-          <p className="font-semibold">What decision should you make?</p>
-          <p>{whatShouldIDo(candidate)}</p>
-        </div>
-        <div className="md:col-span-2">
-          <p className="font-semibold">Categoría sugerida</p>
-          <p>{categoryLabel(candidate)}</p>
-        </div>
-      </div>
-
-      {candidate.duplicateContext && <DuplicateComparison candidate={candidate} />}
-
-      <div className="border rounded p-3 text-sm">
-        <p className="font-semibold">Qué pasa al hacer clic?</p>
-        <ul className="list-disc pl-5">
-          {happens.map((item) => (
-            <li key={item}>{item}</li>
-          ))}
-        </ul>
-      </div>
-
-      <CandidateActions
-        categoryOptions={categoryOptions}
-        group={group}
-        onSkip={onSkip}
-        onReviewDetails={() => setShowTechnicalDetails(true)}
-      />
-
-      <div id={`details-${group.key}`}>
-        <TechnicalDetails candidate={candidate} open={showTechnicalDetails} />
-      </div>
-    </div>
+    <ActionableTransactionCard
+      candidate={group.primary}
+      categories={categoryOptions}
+      onReviewLater={onSkip}
+      owners={owners}
+      planningFunds={planningFunds}
+    />
   )
 }
 
@@ -827,8 +752,14 @@ export function ReviewQueueClient({
   paymentConfirmation,
   needsManualReview,
   categoryOptions,
+  initialTab = 'toReview',
+  initialSubset,
+  spendingPeriod,
+  transactionId,
+  planningFunds,
+  owners,
 }: ReviewQueueClientProps) {
-  const [activeTab, setActiveTab] = useState<ReviewTab>('toReview')
+  const [activeTab, setActiveTab] = useState<ReviewTab>(initialTab)
   const [showFilters, setShowFilters] = useState(false)
   const [query, setQuery] = useState('')
   const [categoryFilter, setCategoryFilter] = useState('')
@@ -854,11 +785,25 @@ export function ReviewQueueClient({
   const tabCandidates: Record<ReviewTab, ReviewQueueCandidate[]> = {
     toReview,
     ready: readyToConfirm,
-    duplicates: possibleDuplicates,
+    duplicates: possibleDuplicate,
     ath: athReview,
-    all: visibleCandidates,
+    all: candidates,
   }
-  const filteredCandidates = tabCandidates[activeTab].filter((candidate) => {
+  const selectedCandidates = initialSubset === 'needs-category' && activeTab === 'toReview'
+    ? needsCategory
+    : initialSubset === 'spending-excluded' && activeTab === 'all'
+      ? candidates.filter((candidate) =>
+          Boolean(
+            spendingPeriod &&
+            candidate.transaction.date?.startsWith(spendingPeriod) &&
+            candidate.transaction.metadata.pending !== true &&
+            candidate.transaction.metadata.transactionStatus !== 'pending'
+          )
+        )
+      : initialSubset === 'transaction' && activeTab === 'all'
+        ? candidates.filter((candidate) => candidate.transaction.id === transactionId)
+      : tabCandidates[activeTab]
+  const filteredCandidates = selectedCandidates.filter((candidate) => {
     const text = [
       normalizedName(candidate),
       accountLabel(candidate.transaction),
@@ -878,30 +823,26 @@ export function ReviewQueueClient({
     (group) => !skippedKeys.includes(group.key)
   )
   const tabs: { id: ReviewTab; label: string; count: number }[] = [
-    { id: 'toReview', label: 'Por revisar', count: toReview.length },
-    { id: 'ready', label: 'Listos para confirmar', count: readyToConfirm.length },
-    { id: 'duplicates', label: 'Posibles duplicados', count: possibleDuplicates.length },
-    { id: 'ath', label: 'ATH por interpretar', count: athReview.length },
-    { id: 'all', label: 'Todo', count: visibleCandidates.length },
+    { id: 'toReview', label: 'Needs review', count: toReview.length },
+    { id: 'ready', label: 'Ready', count: readyToConfirm.length },
+    { id: 'duplicates', label: 'Possible duplicates', count: possibleDuplicate.length },
+    { id: 'ath', label: 'ATH transactions', count: athReview.length },
+    { id: 'all', label: 'All', count: candidates.length },
   ]
   const summaryCards = [
-    { label: 'Por revisar', value: toReview.length },
-    { label: 'Listos para confirmar', value: readyToConfirm.length },
-    { label: 'Posibles duplicados', value: possibleDuplicates.length },
-    { label: 'ATH por interpretar', value: athReview.length },
-    { label: 'Todo visible', value: visibleCandidates.length },
-    { label: 'Diagnóstico exacto', value: exactDuplicates.length },
+    { label: 'Needs review', value: toReview.length },
+    { label: 'Ready', value: readyToConfirm.length },
+    { label: 'Possible duplicates', value: possibleDuplicates.length },
+    { label: 'ATH transactions', value: athReview.length },
+    { label: 'Visible transactions', value: visibleCandidates.length },
   ]
+
+  if (candidates.length === 0 && athReview.length === 0 && paymentConfirmation.length === 0) {
+    return <section className="rounded-2xl border border-emerald-900/60 bg-emerald-950/20 p-8 text-center shadow-[0_20px_70px_rgba(0,0,0,0.18)]"><div className="mx-auto grid h-12 w-12 place-items-center rounded-full border border-emerald-700 bg-emerald-900/40 text-emerald-200" aria-hidden="true">✓</div><h2 className="mt-4 text-2xl font-bold text-white">Todo está al día</h2><p className="mt-2 text-slate-300">No hay movimientos que requieran tu revisión.</p></section>
+  }
 
   return (
     <div className="space-y-6">
-      <section className="border rounded p-4 bg-yellow-50 text-yellow-950">
-        <h2 className="font-semibold">Validation Mode</h2>
-        <p className="text-sm">
-          No automatic decisions. You control what gets added.
-        </p>
-      </section>
-
       <section className="grid grid-cols-1 md:grid-cols-3 gap-4">
         {summaryCards.map((card) => (
           <div className="border rounded p-4" key={card.label}>
@@ -932,14 +873,14 @@ export function ReviewQueueClient({
             onClick={() => setShowFilters((value) => !value)}
             type="button"
           >
-            Filtros
+            Filters
           </button>
         </div>
 
         {showFilters && (
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
             <label className="text-sm">
-              Buscar
+              Search
               <input
                 className="mt-1 w-full border rounded px-3 py-2"
                 onChange={(event) => setQuery(event.target.value)}
@@ -947,7 +888,7 @@ export function ReviewQueueClient({
               />
             </label>
             <label className="text-sm">
-              Categoría
+              Category
               <input
                 className="mt-1 w-full border rounded px-3 py-2"
                 onChange={(event) => setCategoryFilter(event.target.value)}
@@ -963,7 +904,7 @@ export function ReviewQueueClient({
                 }}
                 type="button"
               >
-                Limpiar filtros
+                Clear filters
               </button>
             </div>
           </div>
@@ -976,7 +917,7 @@ export function ReviewQueueClient({
           onClick={() => downloadCsv('review-queue.csv', exportRows(visibleCandidates))}
           type="button"
         >
-          Exportar Review Queue CSV
+          Export review queue CSV
         </button>
         <button
           className="border rounded px-3 py-2 text-sm font-medium"
@@ -985,7 +926,7 @@ export function ReviewQueueClient({
           }
           type="button"
         >
-          Exportar posibles duplicados CSV
+          Export possible duplicates CSV
         </button>
       </section>
 
@@ -996,17 +937,19 @@ export function ReviewQueueClient({
             group={group}
             key={group.key}
             onSkip={() => setSkippedKeys((keys) => [...keys, group.key])}
+            owners={owners}
+            planningFunds={planningFunds}
           />
         ))}
         {groups.length === 0 && (
-          <div className="border rounded p-4 opacity-70">No hay movimientos en esta vista.</div>
+          <div className="border rounded p-4 opacity-70">No transactions in this view.</div>
         )}
       </section>
 
       {exactDuplicates.length > 0 && (
         <details className="border rounded p-4">
           <summary className="font-semibold">
-            Dev / Diagnostics: exact Plaid duplicates ({exactDuplicates.length})
+            View technical details ({exactDuplicates.length} exact source duplicates)
           </summary>
           <div className="mt-3 space-y-3">
             {groupCandidates(exactDuplicates).map((group) => (
@@ -1015,6 +958,8 @@ export function ReviewQueueClient({
                 group={group}
                 key={group.key}
                 onSkip={() => setSkippedKeys((keys) => [...keys, group.key])}
+                owners={owners}
+                planningFunds={planningFunds}
               />
             ))}
           </div>

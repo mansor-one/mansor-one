@@ -19,6 +19,12 @@ export type ConnectedAccount = {
   account_status?: 'active' | 'hidden' | 'archived' | string | null
   is_hidden?: boolean | null
   include_in_dashboard?: boolean | null
+  is_spendable?: boolean | null
+  plaid_minimum_payment_amount?: number | null
+  plaid_next_payment_due_date?: string | null
+  plaid_last_statement_balance?: number | null
+  plaid_liability_is_overdue?: boolean | null
+  plaid_liability_updated_at?: string | null
   hidden_at?: string | null
   archived_at?: string | null
   archive_reason?: string | null
@@ -208,8 +214,13 @@ export type CardProfile = {
   creditLimit: number | null
   utilizationPercent: number | null
   minimumPayment: number | null
+  minimumPaymentSource: string | null
   dueDay: number | null
   nextDueDate: string | null
+  dueDateSource: string | null
+  graceDeadline: string | null
+  balanceSource: string
+  availableCreditSource: string
   paymentStatus: string | null
   lastPaymentDate: string | null
   interestNotes: string | null
@@ -298,6 +309,8 @@ export type PaymentInstance = {
     confidenceLevel: string
   } | null
   lifecycleReconciliationReasons?: string[]
+  truthStatus?: string | null
+  truthReasons?: string[]
 }
 
 export type ScheduledPayment = {

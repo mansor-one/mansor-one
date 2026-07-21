@@ -8,6 +8,7 @@ import {
 } from '@/lib/finance/lifecycleDisplay'
 import type { PaymentInstance } from '@/lib/financial-engine'
 import { useMemo, useState } from 'react'
+import FinancialObligationDrawer from './FinancialObligationDrawer'
 
 type ViewMode = 'calendar' | 'list'
 
@@ -97,22 +98,16 @@ function paymentHasGraceWindow(payment: PaymentInstance) {
   return Boolean(dueTime !== null && graceTime !== null && graceTime > dueTime)
 }
 
-function paymentIsInGraceWindowOnDate(payment: PaymentInstance, date: string) {
-  const dueTime = dateTime(paymentDate(payment))
-  const graceTime = dateTime(lifecyclePaymentGraceUntilDate(payment))
-  const targetTime = dateTime(date)
-
-  return Boolean(
-    dueTime !== null &&
-      graceTime !== null &&
-      targetTime !== null &&
-      targetTime > dueTime &&
-      targetTime <= graceTime
-  )
-}
-
 function statusLabel(payment: PaymentInstance) {
-  return payment.lifecycleLabel || payment.status || 'pending'
+  const value = payment.lifecycleState || payment.truthStatus || payment.status || 'scheduled'
+  return ({
+    scheduled: 'Programado', future: 'Programado', pending: 'Programado', unpaid: 'Programado',
+    due_soon: 'Próximo a vencer', due_today: 'Próximo a vencer', overdue: 'Vencido',
+    detected: 'Pago detectado', payment_detected: 'Pago detectado', possible_match: 'Pago detectado',
+    pending_settlement: 'Pagado, esperando confirmación', in_transit: 'Pagado, esperando confirmación',
+    reconciled: 'Conciliado', matched: 'Conciliado', paid: 'Conciliado', closed: 'Conciliado',
+    cancelled: 'Cancelado', grace: 'En período de gracia', grace_period: 'En período de gracia',
+  } as Record<string, string>)[value] || 'Programado'
 }
 
 function statusClasses(payment: PaymentInstance) {
@@ -161,16 +156,20 @@ function paymentTimingText(payment: PaymentInstance) {
 function GraceWindowMarker({
   payment,
   date,
+  onOpen,
 }: {
   payment: PaymentInstance
   date: string
+  onOpen: () => void
 }) {
   const graceUntilDate = dateKey(lifecyclePaymentGraceUntilDate(payment))
   const isLastGraceDay = graceUntilDate === date
   const dueDate = paymentDate(payment)
 
   return (
-    <div
+    <button
+      type="button"
+      onClick={onOpen}
       className={`rounded border px-2 py-1 text-[11px] ${
         isLastGraceDay
           ? 'border-amber-500 bg-amber-950/70 text-amber-100'
@@ -186,16 +185,18 @@ function GraceWindowMarker({
       <p className="mt-0.5 truncate opacity-80">
         {formatShortDate(dueDate)} - {formatShortDate(graceUntilDate)}
       </p>
-    </div>
+    </button>
   )
 }
 
-function PaymentChip({ payment }: { payment: PaymentInstance }) {
+function PaymentChip({ payment, onOpen }: { payment: PaymentInstance; onOpen: () => void }) {
   const dueDate = paymentDate(payment)
   const timingText = paymentTimingText(payment)
 
   return (
-    <div
+    <button
+      type="button"
+      onClick={onOpen}
       className={`rounded border px-2 py-1.5 text-xs ${statusClasses(payment)}`}
     >
       <div className="flex items-start justify-between gap-2">
@@ -211,18 +212,18 @@ function PaymentChip({ payment }: { payment: PaymentInstance }) {
       {timingText && (
         <p className="mt-1 text-[11px] opacity-80">{timingText}</p>
       )}
-    </div>
+    </button>
   )
 }
 
-function PaymentListRow({ payment }: { payment: PaymentInstance }) {
+function PaymentListRow({ payment, onOpen }: { payment: PaymentInstance; onOpen: () => void }) {
   const dueDate = paymentDate(payment)
   const graceUntilDate = lifecyclePaymentGraceUntilDate(payment)
   const timingText = paymentTimingText(payment)
   const notes = friendlyLifecyclePaymentNotes(payment)
 
   return (
-    <div className="rounded border border-neutral-800 bg-neutral-950 p-3">
+    <button type="button" onClick={onOpen} className="w-full rounded border border-neutral-800 bg-neutral-950 p-3 text-left">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0">
           <p className="truncate font-medium text-neutral-100">
@@ -248,16 +249,18 @@ function PaymentListRow({ payment }: { payment: PaymentInstance }) {
           <span className="text-lg font-bold">{money(payment.amount)}</span>
         </div>
       </div>
-    </div>
+    </button>
   )
 }
 
 export default function PaymentScheduleView({
   payments,
   today,
+  initialMonth,
 }: {
   payments: PaymentInstance[]
   today: string
+  initialMonth?: string
 }) {
   const sortedPayments = useMemo(() => sortPayments(payments), [payments])
   const monthKeys = useMemo(() => {
@@ -271,11 +274,13 @@ export default function PaymentScheduleView({
   }, [sortedPayments])
   const todayMonthKey = today.slice(0, 7)
   const initialMonthKey =
+    (initialMonth && monthKeys.includes(initialMonth) ? initialMonth : null) ||
     monthKeys.find((key) => key >= todayMonthKey) ||
     monthKeys[0] ||
     todayMonthKey
   const [viewMode, setViewMode] = useState<ViewMode>('calendar')
   const [selectedMonthKey, setSelectedMonthKey] = useState(initialMonthKey)
+  const [selectedPayment, setSelectedPayment] = useState<PaymentInstance | null>(null)
   const paymentsByDate = useMemo(() => {
     const groups = new Map<string, PaymentInstance[]>()
 
@@ -292,19 +297,11 @@ export default function PaymentScheduleView({
   }, [selectedMonthKey, sortedPayments])
   const graceWindowsByDate = useMemo(() => {
     const groups = new Map<string, PaymentInstance[]>()
-    const days = calendarDays(selectedMonthKey).filter(
-      (day): day is number => day !== null
-    )
-
-    for (const day of days) {
-      const key = `${selectedMonthKey}-${String(day).padStart(2, '0')}`
-      const gracePayments = sortedPayments.filter(
-        (payment) =>
-          paymentHasGraceWindow(payment) &&
-          paymentIsInGraceWindowOnDate(payment, key)
-      )
-
-      if (gracePayments.length) groups.set(key, gracePayments)
+    for (const payment of sortedPayments) {
+      if (!paymentHasGraceWindow(payment)) continue
+      const key = dateKey(lifecyclePaymentGraceUntilDate(payment))
+      if (!key?.startsWith(selectedMonthKey)) continue
+      groups.set(key, [...(groups.get(key) || []), payment])
     }
 
     return groups
@@ -431,13 +428,14 @@ export default function PaymentScheduleView({
                   )}
                   <div className="space-y-1.5">
                     {dayPayments.map((payment) => (
-                      <PaymentChip key={payment.id} payment={payment} />
+                      <PaymentChip key={payment.id} payment={payment} onOpen={() => setSelectedPayment(payment)} />
                     ))}
                     {graceWindowPayments.map((payment) => (
                       <GraceWindowMarker
                         key={`${payment.id}:grace:${key}`}
                         payment={payment}
                         date={key}
+                        onOpen={() => setSelectedPayment(payment)}
                       />
                     ))}
                   </div>
@@ -460,13 +458,14 @@ export default function PaymentScheduleView({
                 </p>
                 <div className="space-y-2">
                   {(paymentsByDate.get(date) || []).map((payment) => (
-                    <PaymentChip key={payment.id} payment={payment} />
+                    <PaymentChip key={payment.id} payment={payment} onOpen={() => setSelectedPayment(payment)} />
                   ))}
                   {(graceWindowsByDate.get(date) || []).map((payment) => (
                     <GraceWindowMarker
                       key={`${payment.id}:mobile-grace:${date}`}
                       payment={payment}
                       date={date}
+                      onOpen={() => setSelectedPayment(payment)}
                     />
                   ))}
                 </div>
@@ -482,10 +481,11 @@ export default function PaymentScheduleView({
       ) : (
         <div className="mt-4 space-y-2">
           {visibleListPayments.map((payment) => (
-            <PaymentListRow key={payment.id} payment={payment} />
+            <PaymentListRow key={payment.id} payment={payment} onOpen={() => setSelectedPayment(payment)} />
           ))}
         </div>
       )}
+      {selectedPayment && <FinancialObligationDrawer payment={selectedPayment} onClose={() => setSelectedPayment(null)} />}
     </section>
   )
 }

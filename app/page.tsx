@@ -4,12 +4,15 @@ import {
   canonicalCategoryCodeForText,
   buildTimelineProjectionFromLiquidity,
   commonMerchantDefaultCategoryCode,
+  classifyRecentMovementImpact,
   type FinancialAsset,
   getCategoryByCode,
   getDashboardSummary,
   getPortfolioSummary,
   getReviewQueue,
   type LedgerSummaryTransaction,
+  type FinancialImpactResult,
+  type MovementReconciliationContext,
   type PaymentInstance,
   transactionContext,
   type TransactionContext,
@@ -18,6 +21,8 @@ import Link from 'next/link'
 import AppShell from './components/AppShell'
 import InstitutionLogo from './components/InstitutionLogo'
 import PaymentScheduleView from './components/PaymentScheduleView'
+import FinancialHealthDrawer from './components/FinancialHealthDrawer'
+import { reviewQueueDrilldown, spendingDrilldown, timelineDrilldown } from '@/lib/financial-engine/dashboard-drilldowns'
 
 export const dynamic = 'force-dynamic'
 
@@ -33,6 +38,15 @@ type Movement = {
   category: string
   categoryCode: string | null
   context: TransactionContext
+  impact: FinancialImpactResult
+}
+
+type ReconciliationLinkRow = {
+  quick_entry_id: string | null
+  plaid_import_id: string | null
+  reconciliation_status: string
+  plaid_imports: { plaid_transaction_id: string | null } | Array<{ plaid_transaction_id: string | null }> | null
+  obligation_instances: { obligations: { name: string | null } | Array<{ name: string | null }> | null } | Array<{ obligations: { name: string | null } | Array<{ name: string | null }> | null }> | null
 }
 
 type HealthStatus = {
@@ -224,7 +238,8 @@ function dedupeMovements(movements: Movement[]) {
 }
 
 function movementFromTransaction(
-  transaction: LedgerSummaryTransaction
+  transaction: LedgerSummaryTransaction,
+  reconciliation: MovementReconciliationContext | null
 ): Movement | null {
   if (!transaction.date) return null
 
@@ -239,7 +254,19 @@ function movementFromTransaction(
     category: displayCategory(categoryCode),
     categoryCode,
     context,
+    impact: classifyRecentMovementImpact(transaction, reconciliation),
   }
+}
+
+function impactTone(impact: FinancialImpactResult['impact']) {
+  if (impact === 'debt_reduction' || impact === 'refund_or_statement_credit') {
+    return 'border-emerald-700 bg-emerald-950/50 text-emerald-200'
+  }
+  if (impact === 'income') return 'border-teal-700 bg-teal-950/50 text-teal-100'
+  if (impact === 'expense') return 'border-neutral-600 bg-neutral-800 text-neutral-100'
+  if (impact === 'internal_transfer') return 'border-blue-700 bg-blue-950/50 text-blue-100'
+  if (impact === 'pending') return 'border-amber-700 bg-amber-950/50 text-amber-100'
+  return 'border-neutral-600 bg-neutral-800 text-neutral-200'
 }
 
 function topCategories(movements: Movement[]) {
@@ -572,6 +599,8 @@ export default async function Home() {
     new Date(now.getFullYear(), now.getMonth(), now.getDate() > 15 ? 16 : 1)
   )
   const currentMonth = `${monthNames[now.getMonth()]} ${now.getFullYear()}`
+  const spendingPeriod = { year: now.getFullYear(), month: now.getMonth() + 1 }
+  const incomeMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
 
   const [dashboardSummary, portfolioSummary, reviewQueue] = await Promise.all([
     getDashboardSummary(supabase, user.id),
@@ -584,11 +613,43 @@ export default async function Home() {
     today: dateOnly(now),
   })
   const ledgerSummary = reviewQueue.source.ledgerSummary
+  const { data: reconciliationLinks, error: reconciliationLinksError } = await supabase
+    .from('obligation_payment_links')
+    .select('quick_entry_id, plaid_import_id, reconciliation_status, plaid_imports(plaid_transaction_id), obligation_instances(obligations(name))')
+    .eq('user_id', user.id)
+    .in('reconciliation_status', ['pending_settlement', 'reconciled'])
+  if (reconciliationLinksError) throw reconciliationLinksError
+  const reconciliationByTransaction = new Map<string, MovementReconciliationContext>()
+  for (const link of (reconciliationLinks || []) as ReconciliationLinkRow[]) {
+    const instance = Array.isArray(link.obligation_instances)
+      ? link.obligation_instances[0]
+      : link.obligation_instances
+    const obligation = Array.isArray(instance?.obligations)
+      ? instance.obligations[0]
+      : instance?.obligations
+    const plaidImport = Array.isArray(link.plaid_imports)
+      ? link.plaid_imports[0]
+      : link.plaid_imports
+    const context = {
+      status: link.reconciliation_status,
+      obligationName: obligation?.name || null,
+    }
+    if (link.quick_entry_id) reconciliationByTransaction.set(`quick_entries:${link.quick_entry_id}`, context)
+    if (link.plaid_import_id) reconciliationByTransaction.set(`plaid_imports:${link.plaid_import_id}`, context)
+    if (plaidImport?.plaid_transaction_id) reconciliationByTransaction.set(`plaid:${plaidImport.plaid_transaction_id}`, context)
+  }
   const household = householdGreeting()
   const greeting = timeOfDayGreeting(now)
   const confirmedMovements = dedupeMovements(
     ledgerSummary.confirmedLedgerEntries
-      .map(movementFromTransaction)
+      .map((transaction) => movementFromTransaction(
+        transaction,
+        reconciliationByTransaction.get(`${transaction.sourceTable}:${transaction.id}`) ||
+          (transaction.plaidTransactionId
+            ? reconciliationByTransaction.get(`plaid:${transaction.plaidTransactionId}`)
+            : null) ||
+          null
+      ))
       .filter((movement): movement is Movement => movement !== null)
   )
   const currentMonthMovements = confirmedMovements.filter(
@@ -655,6 +716,15 @@ export default async function Home() {
     timeline.finalBalance
   )
   const methodSplit = paymentMethodSplit(spendingMovements)
+  const healthObligations = timeline.events
+    .filter((event) => event.type === 'payment')
+    .slice()
+    .sort((left, right) => Math.abs(right.amount) - Math.abs(left.amount))
+  const primaryHealthObligations = healthObligations.slice(0, 3)
+  const projectedHealthMargin = timeline.finalBalance
+  const currentMonthIncome = timeline.events
+    .filter((event) => event.type === 'income' && event.date.startsWith(incomeMonth))
+    .reduce((sum, event) => sum + event.amount, 0)
   const reviewPercent = reviewProgress(
     currentMonthMovements.length,
     reviewQueue.statistics.totalCandidates
@@ -710,41 +780,127 @@ export default async function Home() {
               {toneDot(health.tone)} {health.label}
             </p>
             <p className="mt-1 text-xs text-neutral-300">{health.detail}</p>
+            <FinancialHealthDrawer>
+            <div className="space-y-3 rounded border border-neutral-700 bg-neutral-950/40 p-3 text-sm">
+              <div>
+                <p className="font-semibold">¿Por qué?</p>
+                <p className="mt-1 text-neutral-300">
+                  {money(timeline.startingCash)} disponibles +{' '}
+                  {money(timeline.expectedIncomeTotal)} de ingresos esperados −{' '}
+                  {money(timeline.explanation.finalBalance.totalPayments)} en obligaciones abiertas.
+                </p>
+              </div>
+
+              <div>
+                <p className="font-semibold">
+                  {projectedHealthMargin < 0 ? 'Déficit proyectado' : 'Margen proyectado'}
+                </p>
+                <p className={`text-xl font-bold ${projectedHealthMargin < 0 ? 'text-red-200' : 'text-emerald-200'}`}>
+                  {money(Math.abs(projectedHealthMargin))}
+                </p>
+                <p className="text-xs text-neutral-400">
+                  Al final del horizonte activo de {timeline.horizonDays} días.
+                </p>
+              </div>
+
+              <div>
+                <p className="font-semibold">Obligaciones que más pesan</p>
+                {primaryHealthObligations.length > 0 ? (
+                  <ul className="mt-1 space-y-1 text-neutral-300">
+                    {primaryHealthObligations.map((event) => (
+                      <li className="flex justify-between gap-3" key={`health:${event.id}`}>
+                        <span>{event.title} · {event.dueDate}</span>
+                        <strong>{money(Math.abs(event.amount))}</strong>
+                      </li>
+                    ))}
+                    {healthObligations.length > primaryHealthObligations.length ? (
+                      <li className="text-xs text-neutral-400">
+                        + {healthObligations.length - primaryHealthObligations.length} obligaciones adicionales
+                      </li>
+                    ) : null}
+                  </ul>
+                ) : (
+                  <p className="mt-1 text-neutral-400">No hay obligaciones abiertas dentro del horizonte.</p>
+                )}
+              </div>
+
+              <div className="flex flex-wrap gap-2 pt-1">
+                <Link
+                  className="rounded border border-neutral-600 px-3 py-2 text-xs font-semibold hover:bg-neutral-800"
+                  href={timelineDrilldown({ horizon: timeline.horizonDays, view: 'actionable' })}
+                >
+                  Revisar obligaciones
+                </Link>
+                <Link
+                  className="rounded border border-neutral-600 px-3 py-2 text-xs font-semibold hover:bg-neutral-800"
+                  href={`/timeline?horizon=${timeline.horizonDays}#lowest-point`}
+                >
+                  Ver punto más bajo
+                </Link>
+              </div>
+            </div>
             <CashBalanceBreakdown accounts={includedCashAccounts} now={now} />
             <Link
               className="mt-3 inline-flex rounded border border-neutral-600 px-3 py-2 text-xs font-semibold transition hover:border-neutral-300 hover:bg-neutral-800"
-              href="/portfolio"
+              href="/portfolio#cash"
             >
               Ver cuentas en Portfolio
             </Link>
+            </FinancialHealthDrawer>
           </div>
           <SummaryCard
             label="Gastado este mes"
             value={money(monthlySpent)}
             detail={`${spendingMovements.length} movimientos`}
+            href={spendingDrilldown({ ...spendingPeriod, view: 'confirmed-expenses' })}
           />
           <SummaryCard
             label="Gastado esta quincena"
             value={money(quincenaSpent)}
             detail={`Desde ${startOfQuincena}`}
+            href={spendingDrilldown({ ...spendingPeriod, view: 'confirmed-expenses', from: startOfQuincena })}
           />
           <SummaryCard
             label="Pendientes por clasificar"
             value={reviewQueue.statistics.totalCandidates}
             detail="Pendientes por clasificar"
-            href="/lab/review-queue"
+            href={reviewQueueDrilldown('all')}
           />
           <SummaryCard
             label="Movimientos no-gasto"
             value={nonSpendingMovements.length}
             detail="Pagos y transferencias"
+            href={spendingDrilldown({ ...spendingPeriod, view: 'non-spending' })}
           />
           <SummaryCard
-            label="Pagos que requieren acción"
-            value={timeline.diagnostics.overduePayments + timeline.paymentCounts.due_soon + timeline.paymentCounts.due_today + timeline.paymentCounts.grace_period + timeline.paymentCounts.needs_review + timeline.paymentCounts.possible_match}
-            detail={`${timeline.diagnostics.overduePayments} vencidos · ${timeline.paymentCounts.due_soon + timeline.paymentCounts.due_today} próximos`}
-            helper={`${timeline.paymentCounts.grace_period} en gracia · ${timeline.paymentCounts.possible_match} posibles matches · ${timeline.paymentCounts.needs_review} por revisar. Horizonte ${timeline.horizonDays} días.`}
-            href="/timeline"
+            label="Obligaciones abiertas"
+            value={money(timeline.openObligationTotal)}
+            detail={`${timeline.trustedPayments.filter((payment) => ['possible_match', 'unpaid', 'due_soon', 'due_today', 'grace_period', 'overdue', 'needs_review'].includes(payment.truthStatus)).length} obligaciones sin liquidar`}
+            helper="No incluye pagos que ya confirmaste y están pendientes de liquidación."
+            href={timelineDrilldown({ horizon: timeline.horizonDays, view: 'open' })}
+          />
+          <SummaryCard
+            label="Pending settlement"
+            value={money(timeline.inTransitPaymentTotal)}
+            detail={`${timeline.paymentCounts.in_transit} pagos iniciados recientemente`}
+            helper={timeline.paymentCounts.in_transit > 0 ? 'Se detectó un pago reciente que todavía no ha sido confirmado por el banco.' : 'No hay pagos recientes esperando confirmación bancaria.'}
+            href={`/timeline?horizon=${timeline.horizonDays}#in-transit`}
+            valueClassName="text-amber-200"
+          />
+          <SummaryCard
+            label="Reconciliado recientemente"
+            value={money(timeline.reconciledRecentlyTotal)}
+            detail="Últimos 30 días"
+            helper="Pagos cerrados por confirmación explícita o evidencia bancaria confiable."
+            href={`/timeline?horizon=${timeline.horizonDays}#payments`}
+            valueClassName="text-emerald-200"
+          />
+          <SummaryCard
+            label="Ingresos este mes"
+            value={money(currentMonthIncome)}
+            detail="Eventos de ingreso en Timeline"
+            href={timelineDrilldown({ horizon: timeline.horizonDays, view: 'income', month: incomeMonth })}
+            valueClassName="text-emerald-200"
           />
         </section>
 
@@ -753,16 +909,19 @@ export default async function Home() {
             label="🏆 Mayor gasto"
             value={largestTransaction?.merchant || 'Sin datos'}
             detail={largestTransaction ? money(largestTransaction.amount) : ''}
+            href={largestTransaction ? spendingDrilldown({ ...spendingPeriod, view: 'confirmed-expenses', merchant: largestTransaction.merchant, date: largestTransaction.date, amount: largestTransaction.amount }) : undefined}
           />
           <SummaryCard
             label="🍽 Categoría principal"
             value={topCategory?.category || 'Sin datos'}
             detail={topCategory ? money(topCategory.amount) : ''}
+            href={topCategory ? spendingDrilldown({ ...spendingPeriod, view: 'confirmed-expenses', category: spendingMovements.find((movement) => movement.category === topCategory.category)?.categoryCode }) : undefined}
           />
           <SummaryCard
             label="💳 Uso de crédito"
             value={`${methodSplit.creditPercent}%`}
             detail={`Débito ${methodSplit.debitPercent}%`}
+            href={spendingDrilldown({ ...spendingPeriod, view: 'confirmed-expenses', paymentMethod: 'Credit' })}
           />
           <SummaryCard
             label="🎯 Fondo más cercano"
@@ -774,7 +933,7 @@ export default async function Home() {
                   )}`
                 : 'Planning todavía necesita configuración'
             }
-            href="/planning"
+            href={nextPlanningItem ? `/planning#fund-${nextPlanningItem.id}` : '/planning#funds'}
           />
           <SummaryCard
             label="🏦 Net worth"
@@ -782,7 +941,7 @@ export default async function Home() {
             detail={`${portfolioSummary.totalAssets} activos · ${money(
               portfolioSummary.totalLiabilities
             )} deudas`}
-            href="/portfolio"
+            href="/portfolio#net-worth"
           />
         </section>
 
@@ -801,7 +960,7 @@ export default async function Home() {
                   Top 5 del mes actual
                 </p>
               </div>
-              <Link className="rounded border border-neutral-700 px-3 py-2 text-sm" href="/spending">
+              <Link className="rounded border border-neutral-700 px-3 py-2 text-sm" href={spendingDrilldown({ ...spendingPeriod, view: 'confirmed-expenses' })}>
                 Ver gastos
               </Link>
             </div>
@@ -809,8 +968,9 @@ export default async function Home() {
             <div className="space-y-2">
               {categoryRows.length > 0 ? (
                 categoryRows.map((row) => (
-                  <div
+                  <Link
                     className="grid grid-cols-3 gap-3 border-t border-neutral-800 py-3 text-sm"
+                    href={spendingDrilldown({ ...spendingPeriod, view: 'confirmed-expenses', category: spendingMovements.find((movement) => movement.category === row.category)?.categoryCode })}
                     key={row.category}
                   >
                     <span className="font-medium">{row.category}</span>
@@ -818,7 +978,7 @@ export default async function Home() {
                     <span className="text-neutral-400">
                       {row.count} movimientos
                     </span>
-                  </div>
+                  </Link>
                 ))
               ) : (
                 <p className="text-sm text-neutral-400">
@@ -832,16 +992,19 @@ export default async function Home() {
                 label="Mayor categoría"
                 value={topCategory?.category || 'Sin datos'}
                 detail={topCategory ? money(topCategory.amount) : ''}
+                href={topCategory ? spendingDrilldown({ ...spendingPeriod, view: 'confirmed-expenses', category: spendingMovements.find((movement) => movement.category === topCategory.category)?.categoryCode }) : undefined}
               />
               <InsightBlock
                 label="Mayor comercio"
                 value={topMerchant?.merchant || 'Sin datos'}
                 detail={topMerchant ? money(topMerchant.amount) : ''}
+                href={topMerchant ? spendingDrilldown({ ...spendingPeriod, view: 'confirmed-expenses', merchant: topMerchant.merchant }) : undefined}
               />
               <InsightBlock
                 label="Mayor compra"
                 value={largestTransaction?.merchant || 'Sin datos'}
                 detail={largestTransaction ? money(largestTransaction.amount) : ''}
+                href={largestTransaction ? spendingDrilldown({ ...spendingPeriod, view: 'confirmed-expenses', merchant: largestTransaction.merchant, date: largestTransaction.date, amount: largestTransaction.amount }) : undefined}
               />
             </div>
           </section>
@@ -856,18 +1019,18 @@ export default async function Home() {
               </div>
               <Link
                 className="rounded border border-neutral-700 px-3 py-2 text-sm"
-                href="/lab/review-queue"
+                href={reviewQueueDrilldown('toReview')}
               >
                 Revisar movimientos
               </Link>
             </div>
 
             <div className="grid grid-cols-2 gap-3 text-sm">
-              <Metric label="Total" value={reviewQueue.statistics.totalCandidates} />
-              <Metric label="Categoría" value={reviewQueue.needsCategory.length} />
-              <Metric label="ATH" value={reviewQueue.athReview.length} />
-              <Metric label="Similitudes" value={reviewQueue.possibleDuplicate.length} />
-              <Metric label="Listos" value={reviewQueue.readyToConfirm.length} />
+              <Metric href={reviewQueueDrilldown('all')} label="Total" value={reviewQueue.statistics.totalCandidates} />
+              <Metric href={reviewQueueDrilldown('toReview', 'needs-category')} label="Categoría" value={reviewQueue.needsCategory.length} />
+              <Metric href={reviewQueueDrilldown('ath')} label="ATH" value={reviewQueue.athReview.length} />
+              <Metric href={reviewQueueDrilldown('duplicates')} label="Similitudes" value={reviewQueue.possibleDuplicate.length} />
+              <Metric href={reviewQueueDrilldown('ready')} label="Listos" value={reviewQueue.readyToConfirm.length} />
             </div>
 
             <div className="mt-4 rounded border border-neutral-800 p-3">
@@ -892,20 +1055,20 @@ export default async function Home() {
           </div>
 
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-            <div className="rounded border border-neutral-800 p-3">
+            <Link className="rounded border border-neutral-800 p-3" href={spendingDrilldown({ ...spendingPeriod, view: 'confirmed-expenses', paymentMethod: 'Credit' })}>
               <p className="text-sm text-neutral-400">Crédito</p>
               <p className="text-3xl font-bold">{methodSplit.creditPercent}%</p>
               <p className="text-sm text-neutral-400">
                 {money(methodSplit.credit)}
               </p>
-            </div>
-            <div className="rounded border border-neutral-800 p-3">
+            </Link>
+            <Link className="rounded border border-neutral-800 p-3" href={spendingDrilldown({ ...spendingPeriod, view: 'confirmed-expenses', paymentMethod: 'Debit' })}>
               <p className="text-sm text-neutral-400">Débito</p>
               <p className="text-3xl font-bold">{methodSplit.debitPercent}%</p>
               <p className="text-sm text-neutral-400">
                 {money(methodSplit.debit)}
               </p>
-            </div>
+            </Link>
           </div>
         </section>
 
@@ -920,13 +1083,23 @@ export default async function Home() {
           <div className="space-y-2">
             {recentMovements.map((movement) => (
               <div
-                className="grid grid-cols-1 gap-1 border-t border-neutral-800 py-3 text-sm md:grid-cols-[0.8fr_1.4fr_0.7fr_1fr_1.2fr]"
+                className="grid grid-cols-1 gap-2 border-t border-neutral-800 py-3 text-sm md:grid-cols-[0.7fr_1.25fr_0.65fr_1fr_1.15fr_1.25fr] md:items-center"
                 key={movement.id}
               >
                 <span className="text-neutral-400">{movement.date}</span>
-                <span className="font-medium">{movement.merchant}</span>
+                <span className="min-w-0">
+                  <span className="block truncate font-medium">{movement.merchant}</span>
+                  {movement.impact.contextText && <span className="block text-xs text-neutral-300">{movement.impact.contextText}</span>}
+                </span>
                 <span>{money(movement.amount)}</span>
                 <span>{movement.category}</span>
+                <span
+                  className={`inline-flex w-fit items-center gap-2 rounded-full border px-2.5 py-1 text-xs font-semibold ${impactTone(movement.impact.impact)}`}
+                  title={movement.impact.reason}
+                >
+                  <span aria-hidden="true">{movement.impact.icon}</span>
+                  <span>{movement.impact.label}</span>
+                </span>
                 <span className="flex min-w-0 items-center gap-2 text-neutral-400">
                   <InstitutionLogo
                     institution={displayInstitution(movement.context)}
@@ -1021,19 +1194,21 @@ function SummaryCard({
   detail,
   helper,
   href,
+  valueClassName = 'text-neutral-100',
 }: {
   label: string
   value: string | number
   detail: string
   helper?: string
   href?: string
+  valueClassName?: string
 }) {
   const className =
     'rounded-lg border border-neutral-800 bg-neutral-900 p-4 transition hover:border-neutral-500 hover:bg-neutral-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-300'
   const content = (
     <>
       <p className="text-sm text-neutral-400">{label}</p>
-      <p className="mt-2 text-2xl font-bold">{value}</p>
+      <p className={`mt-2 text-2xl font-bold ${valueClassName}`}>{value}</p>
       <p className="mt-1 text-xs text-neutral-500">{detail}</p>
       {helper ? (
         <p className="mt-2 text-xs text-neutral-500">{helper}</p>
@@ -1065,25 +1240,28 @@ function InsightBlock({
   label,
   value,
   detail,
+  href,
 }: {
   label: string
   value: string
   detail: string
+  href?: string
 }) {
-  return (
-    <div className="rounded border border-neutral-800 p-3">
+  const content = (
+    <>
       <p className="text-xs text-neutral-500">{label}</p>
       <p className="mt-1 font-bold">{value}</p>
       {detail ? <p className="text-sm text-neutral-400">{detail}</p> : null}
-    </div>
+    </>
   )
+  return href ? <Link className="rounded border border-neutral-800 p-3" href={href}>{content}</Link> : <div className="rounded border border-neutral-800 p-3">{content}</div>
 }
 
-function Metric({ label, value }: { label: string; value: number }) {
+function Metric({ label, value, href }: { label: string; value: number; href: string }) {
   return (
-    <div className="rounded border border-neutral-800 p-3">
+    <Link className="rounded border border-neutral-800 p-3" href={href}>
       <p className="text-xs text-neutral-500">{label}</p>
       <p className="mt-1 text-xl font-bold">{value}</p>
-    </div>
+    </Link>
   )
 }

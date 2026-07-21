@@ -93,6 +93,8 @@ export async function POST() {
     }
 
     let syncedAccounts = 0
+    let syncedCreditLiabilities = 0
+    const unavailableLiabilities: PlaidSyncFailure[] = []
     const failedConnections: PlaidSyncFailure[] = []
 
     for (const connection of connections) {
@@ -133,6 +135,37 @@ export async function POST() {
           if (upsertError) {
             throw upsertError
           }
+        }
+
+        try {
+          const liabilitiesResponse = await plaidClient.liabilitiesGet({
+            access_token: accessToken,
+          })
+          const creditLiabilities = liabilitiesResponse.data.liabilities.credit || []
+          const liabilityUpdatedAt = new Date().toISOString()
+
+          for (const liability of creditLiabilities) {
+            const { error: liabilityError } = await supabase
+              .from('plaid_accounts')
+              .update({
+                plaid_minimum_payment_amount: liability.minimum_payment_amount,
+                plaid_next_payment_due_date: liability.next_payment_due_date,
+                plaid_last_statement_balance: liability.last_statement_balance,
+                plaid_liability_is_overdue: liability.is_overdue,
+                plaid_liability_updated_at: liabilityUpdatedAt,
+              })
+              .eq('user_id', user.id)
+              .eq('connection_id', connection.id)
+              .eq('plaid_account_id', liability.account_id)
+            if (liabilityError) throw liabilityError
+            syncedCreditLiabilities += 1
+          }
+        } catch (liabilityError: unknown) {
+          unavailableLiabilities.push({
+            id: connection.id,
+            institution_name: connection.institution_name,
+            ...plaidErrorDetails(liabilityError),
+          })
         }
 
         syncedAccounts += accounts.length
@@ -181,6 +214,8 @@ export async function POST() {
 
     return NextResponse.json({
       synced_accounts: syncedAccounts,
+      synced_credit_liabilities: syncedCreditLiabilities,
+      unavailable_liabilities: unavailableLiabilities,
       failed_connections: failedConnections,
     })
   } catch (error) {

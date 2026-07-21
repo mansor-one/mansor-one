@@ -3,12 +3,12 @@ import {
   buildPaymentLifecycleSnapshot,
   type PaymentLifecycleSnapshot,
   type PaymentStatus,
-} from '../finance/paymentLifecycle'
+} from '../finance/paymentLifecycle.ts'
 import {
   analyzeFinancialIdentity,
   normalizeFinancialIdentityName,
-} from './financial-identity'
-import { normalizeMerchantAlias } from './merchant-normalization'
+} from './financial-identity.ts'
+import { normalizeMerchantAlias } from './merchant-normalization.ts'
 
 export type ReconciliationTransactionSource = 'plaid_imports' | 'quick_entries'
 
@@ -40,6 +40,7 @@ export type ReconciliationPaymentInstance = {
   updated_at?: string | null
   notes?: string | null
   scheduled_payment_id?: string | null
+  recurrence?: string | null
 }
 
 export type ReconciliationScoreFactor = {
@@ -609,6 +610,7 @@ function scoreMatch(
   const institution = institutionReasons(transaction, payment)
   const account = accountReasons(transaction, payment)
   const statusScore = payment.status === 'initiated' ? 10 : 0
+  const recurrenceScore = payment.recurrence || payment.scheduled_payment_id ? 5 : 0
   const statusReason =
     payment.status === 'initiated'
       ? ['Payment is initiated, so a matching transaction is likely confirmation.']
@@ -620,6 +622,7 @@ function scoreMatch(
     name.score +
     amount.score +
     date.score +
+    recurrenceScore +
     statusScore
   const hasNonAmountSignal =
     identity.score > 0 ||
@@ -650,6 +653,15 @@ function scoreMatch(
     ...name.factors,
     ...amount.factors,
     ...date.factors,
+    factor({
+      code: recurrenceScore ? 'recurrence_cycle' : 'recurrence_missing',
+      label: 'Recurrence',
+      score: recurrenceScore,
+      passed: recurrenceScore > 0,
+      details: recurrenceScore
+        ? 'The transaction falls against a generated recurring obligation cycle.'
+        : 'No recurring-cycle signal is available.',
+    }),
     factor({
       code: payment.status === 'initiated' ? 'status_initiated' : 'status_open',
       label: 'Payment status',

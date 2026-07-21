@@ -6,6 +6,7 @@ import { createClient } from '@supabase/supabase-js'
 import { Configuration, PlaidApi, PlaidEnvironments } from 'plaid'
 import { decrypt } from '@/lib/security/encryption'
 import { lifecycleActionsForSync } from '@/lib/financial-engine/plaid-transaction-lifecycle'
+import { reconcileOpenObligationsAfterPlaidSync } from '@/lib/financial-engine/obligation-reconciliation-engine'
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -492,6 +493,8 @@ export async function POST() {
       user.id,
       returnedPlaidTransactionIds
     )
+    const obligation_reconciliation =
+      await reconcileOpenObligationsAfterPlaidSync(supabaseAdmin, user.id)
 
     return NextResponse.json({
       imported_count: transactionsReturnedByPlaid,
@@ -503,6 +506,7 @@ export async function POST() {
       pending_replaced_by_posted: pendingReplacedByPosted,
       modified_imports_updated: modifiedImportsUpdated,
       rows_marked_removed: rowsMarkedRemoved,
+      obligation_reconciliation,
       failed_connections: failedConnections,
     })
   } catch (error) {

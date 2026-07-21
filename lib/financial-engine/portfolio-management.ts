@@ -101,6 +101,7 @@ export type UpdatePlaidAccountInput = {
   ownerScope: string
   status: ManualAccountStatus
   includeInDashboard: boolean
+  isSpendable: boolean
   archiveReason: string | null
 }
 
@@ -365,6 +366,7 @@ export async function updatePlaidAccount(
     account_status: status,
     is_hidden: status !== 'active',
     include_in_dashboard: includeInDashboard,
+    is_spendable: input.isSpendable,
     hidden_at: status === 'hidden' ? now : null,
     archived_at: status === 'archived' ? now : null,
     archive_reason:
