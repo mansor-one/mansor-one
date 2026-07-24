@@ -2,7 +2,7 @@ import ReviewQueuePage, { type ReviewQueueSearchParams } from '@/app/components/
 
 export const dynamic = 'force-dynamic'
 
-export default function LabReviewQueuePage({
+export default function RobototinaReviewPage({
   searchParams,
 }: {
   searchParams?: Promise<ReviewQueueSearchParams>

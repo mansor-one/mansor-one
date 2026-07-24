@@ -6,6 +6,8 @@ import {
   lifecyclePaymentGraceUntilDate,
 } from '@/lib/finance/lifecycleDisplay'
 import { paymentStatusPresentation, type PaymentInstance } from '@/lib/financial-engine'
+import { paymentCalendarActions } from '@/lib/financial-engine/payment-calendar-actions'
+import Link from 'next/link'
 import { useMemo, useState } from 'react'
 import FinancialObligationDrawer from './FinancialObligationDrawer'
 
@@ -151,13 +153,11 @@ function GraceWindowMarker({
 function PaymentChip({ payment, onOpen, today }: { payment: PaymentInstance; onOpen: () => void; today: string }) {
   const dueDate = paymentDate(payment)
   const presentation = presentationFor(payment, today)
+  const actions = paymentCalendarActions(payment)
 
   return (
-    <button
-      type="button"
-      onClick={onOpen}
-      className={`w-full rounded border px-2 py-1.5 text-left text-xs ${presentation.classes}`}
-    >
+    <div className={`w-full rounded border px-2 py-1.5 text-left text-xs ${presentation.classes}`}>
+      <button type="button" onClick={onOpen} className="w-full text-left">
       <div className="flex items-start justify-between gap-2">
         <span className="min-w-0 truncate font-medium">
           {payment.name || 'Pago'}
@@ -170,7 +170,12 @@ function PaymentChip({ payment, onOpen, today }: { payment: PaymentInstance; onO
       </div>
       <p className="mt-1 text-[11px] opacity-90">{presentation.relativeLabel || presentation.explanation}</p>
       {presentation.confidence !== null && <p className="mt-1 text-[11px] font-semibold">Confianza {presentation.confidence}% · {presentation.confidenceStrength}</p>}
-    </button>
+      </button>
+      {actions.possibleMatch && <div className="mt-2 flex flex-wrap gap-1.5 border-t border-current/20 pt-2">
+        {actions.canEditReportedPayment && <Link className="rounded border border-current px-2 py-1 font-semibold" href={actions.editPaymentHref!}>Editar pago reportado</Link>}
+        <Link className="rounded border border-current px-2 py-1 font-semibold" href={actions.reviewMatchHref!}>Revisar coincidencia</Link>
+      </div>}
+    </div>
   )
 }
 
@@ -179,9 +184,11 @@ function PaymentListRow({ payment, onOpen, today }: { payment: PaymentInstance; 
   const graceUntilDate = lifecyclePaymentGraceUntilDate(payment)
   const presentation = presentationFor(payment, today)
   const notes = friendlyLifecyclePaymentNotes(payment)
+  const actions = paymentCalendarActions(payment)
 
   return (
-    <button type="button" onClick={onOpen} className="w-full rounded border border-neutral-800 bg-neutral-950 p-3 text-left">
+    <div className="w-full rounded border border-neutral-800 bg-neutral-950 p-3 text-left">
+      <button type="button" onClick={onOpen} className="w-full text-left">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0">
           <p className="truncate font-medium text-neutral-100">
@@ -205,7 +212,12 @@ function PaymentListRow({ payment, onOpen, today }: { payment: PaymentInstance; 
       </div>
       <p className="mt-2 text-sm text-neutral-300">{presentation.explanation}</p>
       {presentation.confidence !== null && <p className="mt-1 text-xs font-semibold">Confianza {presentation.confidence}% · {presentation.confidenceStrength}</p>}
-    </button>
+      </button>
+      {actions.possibleMatch && <div className="mt-3 flex flex-wrap gap-2 border-t border-neutral-800 pt-3">
+        {actions.canEditReportedPayment && <Link className="rounded border px-3 py-2 text-sm font-semibold" href={actions.editPaymentHref!}>Editar pago reportado</Link>}
+        <Link className="rounded border px-3 py-2 text-sm font-semibold" href={actions.reviewMatchHref!}>Revisar coincidencia</Link>
+      </div>}
+    </div>
   )
 }
 
@@ -213,10 +225,12 @@ export default function PaymentScheduleView({
   payments,
   today,
   initialMonth,
+  initialObligationId,
 }: {
   payments: PaymentInstance[]
   today: string
   initialMonth?: string
+  initialObligationId?: string
 }) {
   const sortedPayments = useMemo(() => sortPayments(payments), [payments])
   const monthKeys = useMemo(() => {
@@ -236,7 +250,9 @@ export default function PaymentScheduleView({
     todayMonthKey
   const [viewMode, setViewMode] = useState<ViewMode>('calendar')
   const [selectedMonthKey, setSelectedMonthKey] = useState(initialMonthKey)
-  const [selectedPayment, setSelectedPayment] = useState<PaymentInstance | null>(null)
+  const [selectedPayment, setSelectedPayment] = useState<PaymentInstance | null>(() =>
+    sortedPayments.find((payment) => payment.obligationInstanceId === initialObligationId) || null
+  )
   const paymentsByDate = useMemo(() => {
     const groups = new Map<string, PaymentInstance[]>()
 

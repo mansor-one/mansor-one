@@ -24,6 +24,7 @@ type PageProps = {
     year?: string
     view?: string
     from?: string
+    to?: string
     category?: string
     merchant?: string
     date?: string
@@ -267,6 +268,7 @@ export default async function SpendingPage({ searchParams }: PageProps) {
 
     return (
       (!params?.from || entry.date >= params.from) &&
+      (!params?.to || entry.date <= params.to) &&
       (!params?.category || entry.categoryCode === params.category) &&
       (!params?.merchant || entry.context.normalizedMerchant === params.merchant) &&
       (!params?.date || entry.date === params.date) &&

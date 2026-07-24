@@ -1,5 +1,6 @@
 import { requireApiUser } from '@/lib/auth/requireApiUser'
 import { paymentAccountOptions, strongPaymentAccountSuggestion } from '@/lib/financial-engine/payment-account-options'
+import { obligationPaymentEditState } from '@/lib/financial-engine/obligation-payment-edit-state'
 import { createServerSupabase } from '@/lib/supabase/server'
 import { NextResponse } from 'next/server'
 
@@ -62,6 +63,7 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
       ? (plaidResult.data || []).find((account) => account.id === cardResult.data.plaid_account_id) || null
       : null
     const latestLink = links[0] || null
+    const paymentState = obligationPaymentEditState({ instance, obligation, paymentLinks: links })
     const missing = [
       Number(instance.amount_expected || 0) <= 0 ? 'Monto' : null,
       !cardResult.data?.regular_apr && !liabilityResult.data?.apr ? 'APR' : null,
@@ -79,6 +81,7 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
       instance, obligation, provider: providerResult.data, schedule: scheduleResult.data,
       card: cardResult.data, loan: liabilityResult.data, linkedPlaidAccount,
       paymentLinks: links, reconciliationEvents: eventsResult.data || [],
+      paymentState,
       paymentAccounts: options, suggestedPaymentAccount: suggestion, missingInformation: missing,
       lineage: {
         amount: instance.source || 'obligation instance',

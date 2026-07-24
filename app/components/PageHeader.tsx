@@ -7,6 +7,7 @@ export type PageHeaderProps = {
   subtitle?: string
   backHref?: string
   backLabel?: string
+  backAction?: ReactNode
   breadcrumb?: Array<{ label: string; href?: string }>
   primaryAction?: ReactNode
   secondaryAction?: ReactNode
@@ -19,6 +20,7 @@ export default function PageHeader({
   subtitle,
   backHref,
   backLabel = 'Volver',
+  backAction,
   breadcrumb,
   primaryAction,
   secondaryAction,
@@ -45,11 +47,11 @@ export default function PageHeader({
 
       <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div className="space-y-2">
-          {backHref && (
+          {backAction || (backHref && (
             <Link className="text-sm font-medium text-slate-400 hover:text-white" href={backHref}>
               {backLabel}
             </Link>
-          )}
+          ))}
           {eyebrow && (
             <p className="text-xs font-semibold uppercase tracking-normal text-violet-300">
               {eyebrow}

@@ -11,6 +11,8 @@ import {
   getRobototinaContext,
   getPortfolioSummary,
   getReviewQueue,
+  calculateSemiMonthlySpending,
+  HOUSEHOLD_TIME_ZONE,
   type LedgerSummaryTransaction,
   type FinancialImpactResult,
   type MovementReconciliationContext,
@@ -473,9 +475,6 @@ export default async function Home() {
   const now = new Date()
   const startOfMonth = dateOnly(new Date(now.getFullYear(), now.getMonth(), 1))
   const today = dateOnly(now)
-  const startOfQuincena = dateOnly(
-    new Date(now.getFullYear(), now.getMonth(), now.getDate() > 15 ? 16 : 1)
-  )
   const currentMonth = `${monthNames[now.getMonth()]} ${now.getFullYear()}`
   const spendingPeriod = { year: now.getFullYear(), month: now.getMonth() + 1 }
   const incomeMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
@@ -492,6 +491,12 @@ export default async function Home() {
     today: dateOnly(now),
   })
   const ledgerSummary = reviewQueue.source.ledgerSummary
+  const semiMonthlySpending = calculateSemiMonthlySpending(
+    ledgerSummary.confirmedLedgerEntries,
+    now,
+    HOUSEHOLD_TIME_ZONE
+  )
+  const startOfQuincena = semiMonthlySpending.period.startDate
   const { data: reconciliationLinks, error: reconciliationLinksError } = await supabase
     .from('obligation_payment_links')
     .select('quick_entry_id, plaid_import_id, reconciliation_status, plaid_imports(plaid_transaction_id), obligation_instances(obligations(name))')
@@ -542,9 +547,6 @@ export default async function Home() {
 
     return category?.kind === 'expense'
   })
-  const quincenaMovements = spendingMovements.filter(
-    (movement) => movement.date >= startOfQuincena
-  )
   const nonSpendingMovements = currentMonthMovements.filter((movement) => {
     const category = categoryFromCode(movement.categoryCode)
 
@@ -554,10 +556,7 @@ export default async function Home() {
     (sum, movement) => sum + movement.amount,
     0
   )
-  const quincenaSpent = quincenaMovements.reduce(
-    (sum, movement) => sum + movement.amount,
-    0
-  )
+  const quincenaSpent = semiMonthlySpending.amount
   const categoryRows = topCategories(spendingMovements)
   const merchantRows = topMerchants(spendingMovements)
   const recentMovements = confirmedMovements.slice(0, 6)
@@ -757,7 +756,12 @@ export default async function Home() {
             label="Gastado esta quincena"
             value={money(quincenaSpent)}
             detail={`Desde ${startOfQuincena}`}
-            href={spendingDrilldown({ ...spendingPeriod, view: 'confirmed-expenses', from: startOfQuincena })}
+            href={spendingDrilldown({
+              ...spendingPeriod,
+              view: 'confirmed-expenses',
+              from: startOfQuincena,
+              to: semiMonthlySpending.period.endDate,
+            })}
           />
           <SummaryCard
             label="Pendientes por clasificar"

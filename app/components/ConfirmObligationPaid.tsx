@@ -11,6 +11,7 @@ export default function ConfirmObligationPaid({
   paymentAccounts = [],
   suggestedAccount,
   existingPayment,
+  submissionMethod,
 }: {
   obligationInstanceId: string
   amount?: number | null
@@ -25,6 +26,7 @@ export default function ConfirmObligationPaid({
     paymentAccountSource?: string | null
     note?: string | null
   } | null
+  submissionMethod?: 'POST' | 'PATCH'
 }) {
   const router = useRouter()
   const [open, setOpen] = useState(false)
@@ -42,7 +44,7 @@ export default function ConfirmObligationPaid({
     setSaving(true)
     setError(null)
     const response = await fetch('/api/obligations/confirm-paid', {
-      method: existingPayment ? 'PATCH' : 'POST',
+      method: submissionMethod || (existingPayment ? 'PATCH' : 'POST'),
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
         obligationInstanceId,

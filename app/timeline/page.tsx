@@ -58,7 +58,7 @@ function EventSection({ title, events, empty, today }: { title: string; events: 
   return <section className="space-y-3"><h2 className="text-xl font-bold">{title}</h2>{events.length ? <div className="grid gap-3 lg:grid-cols-2">{events.map((event) => <EventCard event={event} today={today} key={`${event.type}:${event.id}`} />)}</div> : <p className="text-sm opacity-70">{empty}</p>}</section>
 }
 
-export default async function TimelinePage({ searchParams }: { searchParams: Promise<{ horizon?: string; view?: string; month?: string }> }) {
+export default async function TimelinePage({ searchParams }: { searchParams: Promise<{ horizon?: string; view?: string; month?: string; obligationId?: string; action?: string }> }) {
   const query = await searchParams
   const requested = Number(query.horizon)
   const horizonDays: TimelineHorizonDays = [30, 45, 90, 365].includes(requested) ? requested as TimelineHorizonDays : 45
@@ -84,7 +84,7 @@ export default async function TimelinePage({ searchParams }: { searchParams: Pro
       {[30, 45, 90, 365].map((days) => <Link className={`rounded border px-3 py-2 text-sm ${days === horizonDays ? 'font-bold' : ''}`} href={`/timeline?horizon=${days}${query.view ? `&view=${query.view}` : ''}${query.month ? `&month=${query.month}` : ''}#dashboard-calculation`} key={days}>{days === 365 ? 'Año completo' : `${days} días`}</Link>)}
     </nav>
 
-    <PaymentScheduleView payments={projection.trustedPayments} today={projection.asOfDate} initialMonth={query.month} />
+    <PaymentScheduleView key={query.action === 'edit-payment' ? query.obligationId || 'payment-calendar' : 'payment-calendar'} payments={projection.trustedPayments} today={projection.asOfDate} initialMonth={query.month} initialObligationId={query.action === 'edit-payment' ? query.obligationId : undefined} />
 
     {(isActionableDrilldown || isOpenDrilldown || isAdjustedRiskDrilldown || isIncomeDrilldown) && (
       <section id="dashboard-calculation" className="space-y-3 rounded border border-blue-500 p-4">

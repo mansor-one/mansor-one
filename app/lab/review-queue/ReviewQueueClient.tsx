@@ -830,11 +830,11 @@ export function ReviewQueueClient({
     { id: 'all', label: 'All', count: candidates.length },
   ]
   const summaryCards = [
-    { label: 'Needs review', value: toReview.length },
-    { label: 'Ready', value: readyToConfirm.length },
-    { label: 'Possible duplicates', value: possibleDuplicates.length },
-    { label: 'ATH transactions', value: athReview.length },
-    { label: 'Visible transactions', value: visibleCandidates.length },
+    { label: 'Needs review', value: toReview.length, icon: '!', accent: 'border-amber-400/30 bg-amber-400/10 text-amber-200' },
+    { label: 'Ready', value: readyToConfirm.length, icon: '✓', accent: 'border-emerald-400/30 bg-emerald-400/10 text-emerald-200' },
+    { label: 'Possible duplicates', value: possibleDuplicates.length, icon: '◇', accent: 'border-violet-400/30 bg-violet-400/10 text-violet-200' },
+    { label: 'ATH transactions', value: athReview.length, icon: 'A', accent: 'border-sky-400/30 bg-sky-400/10 text-sky-200' },
+    { label: 'Visible transactions', value: visibleCandidates.length, icon: '≡', accent: 'border-indigo-400/30 bg-indigo-400/10 text-indigo-200' },
   ]
 
   if (candidates.length === 0 && athReview.length === 0 && paymentConfirmation.length === 0) {
@@ -842,62 +842,94 @@ export function ReviewQueueClient({
   }
 
   return (
-    <div className="space-y-6">
-      <section className="grid grid-cols-1 md:grid-cols-3 gap-4">
+    <div className="space-y-4">
+      <section className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5" aria-label="Queue summary">
         {summaryCards.map((card) => (
-          <div className="border rounded p-4" key={card.label}>
-            <h2 className="font-semibold">{card.label}</h2>
-            <p className="mt-3 text-3xl font-bold">{card.value}</p>
+          <div className="rounded-xl border border-slate-700/70 bg-[#0d1b35] p-3.5 shadow-sm shadow-black/15" key={card.label}>
+            <div className="flex items-center gap-3">
+              <span className={`inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border text-sm font-bold ${card.accent}`} aria-hidden="true">{card.icon}</span>
+              <div className="min-w-0">
+                <h2 className="truncate text-xs font-semibold text-slate-300">{card.label}</h2>
+                <p className="mt-0.5 text-2xl font-bold leading-none text-white">{card.value}</p>
+              </div>
+            </div>
           </div>
         ))}
       </section>
 
-      <section className="border rounded p-4 space-y-3">
-        <div className="flex flex-wrap gap-2">
-          {tabs.map((tab) => (
+      <section className="rounded-xl border border-slate-700/70 bg-[#0b1730] p-3 shadow-sm shadow-black/15">
+        <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+          <div className="max-w-full overflow-x-auto pb-1 xl:pb-0">
+            <div className="inline-flex min-w-max rounded-lg border border-slate-700 bg-[#081225] p-1" role="group" aria-label="Queue views">
+              {tabs.map((tab) => (
+                <button
+                  aria-pressed={activeTab === tab.id}
+                  className={`rounded-md px-3 py-1.5 text-sm font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-300 ${
+                    activeTab === tab.id
+                      ? 'bg-indigo-500/25 text-indigo-100 shadow-sm ring-1 ring-inset ring-indigo-400/40'
+                      : 'text-slate-300 hover:bg-white/[0.06] hover:text-white'
+                  }`}
+                  key={tab.id}
+                  onClick={() => setActiveTab(tab.id)}
+                  type="button"
+                >
+                  {tab.label} <span className="ml-1 text-xs opacity-75">{tab.count}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2 xl:justify-end" aria-label="Queue tools">
             <button
-              className={`rounded border px-3 py-2 text-sm transition-colors ${
-                activeTab === tab.id
-                  ? 'border-slate-500 bg-slate-900 font-bold text-white shadow-sm dark:border-slate-300 dark:bg-slate-100 dark:text-slate-950'
-                  : 'border-slate-300 bg-transparent text-slate-800 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-100 dark:hover:bg-slate-800'
-              }`}
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
+              aria-expanded={showFilters}
+              className="rounded-lg border border-slate-600 bg-slate-800/60 px-3 py-1.5 text-sm font-medium text-slate-200 transition hover:border-slate-500 hover:bg-slate-700/70 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-300"
+              onClick={() => setShowFilters((value) => !value)}
               type="button"
             >
-              {tab.label} ({tab.count})
+              Filtros
             </button>
-          ))}
-          <button
-            className="border rounded px-3 py-2 text-sm"
-            onClick={() => setShowFilters((value) => !value)}
-            type="button"
-          >
-            Filters
-          </button>
+            <div className="flex flex-wrap gap-1.5 rounded-lg border border-slate-700 bg-[#081225] p-1">
+              <button
+                className="rounded-md px-2.5 py-1 text-xs font-semibold text-slate-300 transition hover:bg-white/[0.07] hover:text-white focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-indigo-300"
+                onClick={() => downloadCsv('review-queue.csv', exportRows(visibleCandidates))}
+                type="button"
+              >
+                Exportar cola
+              </button>
+              <button
+                className="rounded-md px-2.5 py-1 text-xs font-semibold text-slate-300 transition hover:bg-white/[0.07] hover:text-white focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-indigo-300"
+                onClick={() =>
+                  downloadCsv('possible-duplicates.csv', exportRows(possibleDuplicate))
+                }
+                type="button"
+              >
+                Exportar duplicados
+              </button>
+            </div>
+          </div>
         </div>
 
         {showFilters && (
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-            <label className="text-sm">
+          <div className="mt-3 grid grid-cols-1 gap-3 border-t border-slate-700/70 pt-3 md:grid-cols-3">
+            <label className="text-sm text-slate-300">
               Search
               <input
-                className="mt-1 w-full border rounded px-3 py-2"
+                className="mt-1 w-full rounded-lg border border-slate-600 bg-[#081225] px-3 py-2 text-slate-100 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-indigo-300"
                 onChange={(event) => setQuery(event.target.value)}
                 value={query}
               />
             </label>
-            <label className="text-sm">
+            <label className="text-sm text-slate-300">
               Category
               <input
-                className="mt-1 w-full border rounded px-3 py-2"
+                className="mt-1 w-full rounded-lg border border-slate-600 bg-[#081225] px-3 py-2 text-slate-100 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-indigo-300"
                 onChange={(event) => setCategoryFilter(event.target.value)}
                 value={categoryFilter}
               />
             </label>
             <div className="flex items-end">
               <button
-                className="border rounded px-3 py-2 text-sm"
+                className="rounded-lg border border-slate-600 px-3 py-2 text-sm text-slate-200 hover:bg-white/[0.06] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-300"
                 onClick={() => {
                   setQuery('')
                   setCategoryFilter('')
@@ -909,25 +941,6 @@ export function ReviewQueueClient({
             </div>
           </div>
         )}
-      </section>
-
-      <section className="border rounded p-4 flex flex-wrap gap-3">
-        <button
-          className="border rounded px-3 py-2 text-sm font-medium"
-          onClick={() => downloadCsv('review-queue.csv', exportRows(visibleCandidates))}
-          type="button"
-        >
-          Export review queue CSV
-        </button>
-        <button
-          className="border rounded px-3 py-2 text-sm font-medium"
-          onClick={() =>
-            downloadCsv('possible-duplicates.csv', exportRows(possibleDuplicate))
-          }
-          type="button"
-        >
-          Export possible duplicates CSV
-        </button>
       </section>
 
       <section className="space-y-3">

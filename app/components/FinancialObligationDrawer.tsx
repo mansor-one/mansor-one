@@ -20,6 +20,21 @@ type Details = {
   suggestedPaymentAccount: { id: string; reason: string } | null
   missingInformation: string[]
   lineage: Record<string, string | null>
+  paymentState: {
+    settlementState: 'pending_settlement' | null
+    candidateState: 'possible_match' | null
+    canEditReportedPayment: boolean
+    submissionMethod: 'POST' | 'PATCH' | null
+    source: 'pending_payment_link' | 'legacy_initiated_instance' | 'possible_match_instance' | null
+    reportedPayment: {
+      reportedAmount: number
+      confirmedAt: string | null
+      paymentMethod: string | null
+      paymentAccountId: string | null
+      paymentAccountSource: string | null
+      note: string | null
+    } | null
+  }
 }
 
 function text(value: unknown, fallback = 'No configurado') {
@@ -64,6 +79,9 @@ export default function FinancialObligationDrawer({ payment, onClose }: { paymen
   const pendingLink = details?.paymentLinks?.find((candidate) =>
     candidate.reconciliation_status === 'pending_settlement' && !candidate.plaid_import_id
   )
+  const editablePayment = details?.paymentState.canEditReportedPayment
+    ? details.paymentState.reportedPayment
+    : null
   const detectedLinks = details?.paymentLinks?.filter((candidate) =>
     candidate.reconciliation_status === 'detected' && candidate.plaid_import_id
   ) || []
@@ -115,8 +133,8 @@ export default function FinancialObligationDrawer({ payment, onClose }: { paymen
         <section><h3 className="mb-3 font-bold">Fechas importantes</h3><div className="grid gap-2 sm:grid-cols-2"><Field label="Vencimiento contractual" value={dueDate} source={details.lineage.dueDate}/><Field label="Fecha límite de gracia" value={grace} source={details.lineage.graceDeadline}/><Field label="Fecha usada por Salud Financiera y Flujo de Caja" value={grace || dueDate} source={grace ? 'Límite de gracia' : 'Vencimiento contractual'}/><Field label="Pago real" value={link?.confirmed_at}/><Field label="Última conciliación" value={link?.reconciled_at}/></div></section>
         {(details.card || details.loan) && <section><h3 className="mb-3 font-bold">Tarjeta o préstamo</h3><div className="grid gap-2 sm:grid-cols-2"><Field label="APR" value={details.card?.regular_apr || details.loan?.apr}/><Field label="Pago mínimo" value={details.linkedPlaidAccount?.plaid_minimum_payment_amount ? money(details.linkedPlaidAccount.plaid_minimum_payment_amount) : details.card?.minimum_payment ? money(details.card.minimum_payment) : details.loan?.monthly_payment ? money(details.loan.monthly_payment) : null}/><Field label="Límite de crédito" value={details.card?.credit_limit ? money(details.card.credit_limit) : null}/><Field label="Crédito disponible" value={details.linkedPlaidAccount?.available_balance ? money(details.linkedPlaidAccount.available_balance) : null}/><Field label="Terminación" value={details.card?.manual_last4}/><Field label="Pago automático" value={details.card?.autopay_enabled === true ? 'Activo' : details.card?.autopay_enabled === false ? 'No activo' : null}/></div></section>}
         <section><h3 className="mb-3 font-bold">Información pendiente</h3>{details.missingInformation.length ? <div className="space-y-2">{details.missingInformation.map((item) => <div className="flex items-center justify-between rounded-lg border border-amber-900/60 bg-amber-950/20 p-3" key={item}><span><strong>{item}</strong><span className="ml-2 text-slate-400">No configurado</span></span><Link className="text-indigo-200 underline" href={item === 'Monto' ? '/repair-center' : details.card ? '/cards' : '/portfolio'}>Configurar</Link></div>)}</div> : <p className="text-sm text-slate-400">La información principal está completa.</p>}</section>
-        {pendingLink && <section><h3 className="font-bold">Pago reportado</h3><p className="text-sm text-slate-400">Puedes corregir el importe, fecha, cuenta, método o nota mientras esperamos evidencia bancaria.</p><ConfirmObligationPaid obligationInstanceId={payment.obligationInstanceId!} amount={Number(pendingLink.reported_amount || instance?.amount_expected || payment.amount || 0)} defaultPaymentMethod={payment.paymentMethod} paymentAccounts={details.paymentAccounts} suggestedAccount={details.suggestedPaymentAccount} existingPayment={{ reportedAmount: Number(pendingLink.reported_amount || instance?.amount_expected || payment.amount || 0), confirmedAt: String(pendingLink.confirmed_at || ''), paymentMethod: String(pendingLink.payment_method || payment.paymentMethod || ''), paymentAccountId: pendingLink.payment_account_id ? String(pendingLink.payment_account_id) : null, paymentAccountSource: pendingLink.payment_account_source ? String(pendingLink.payment_account_source) : null, note: pendingLink.confirmation_note ? String(pendingLink.confirmation_note) : null }}/></section>}
-        {payment.obligationInstanceId && !pendingLink && !['paid', 'matched', 'in_transit'].includes(payment.truthStatus || '') && <section><h3 className="font-bold">Confirmar pago</h3><ConfirmObligationPaid obligationInstanceId={payment.obligationInstanceId} amount={Number(instance?.amount_expected || payment.amount || 0)} defaultPaymentMethod={payment.paymentMethod} paymentAccounts={details.paymentAccounts} suggestedAccount={details.suggestedPaymentAccount}/></section>}
+        {editablePayment && <section><h3 className="font-bold">Pago reportado</h3><p className="text-sm text-slate-400">Puedes corregir el importe, fecha, cuenta, método o nota mientras esperamos evidencia bancaria.</p><ConfirmObligationPaid obligationInstanceId={payment.obligationInstanceId!} amount={editablePayment.reportedAmount} defaultPaymentMethod={payment.paymentMethod} paymentAccounts={details.paymentAccounts} suggestedAccount={details.suggestedPaymentAccount} submissionMethod={details.paymentState.submissionMethod || undefined} existingPayment={editablePayment}/></section>}
+        {payment.obligationInstanceId && !editablePayment && !['paid', 'matched', 'in_transit'].includes(payment.truthStatus || '') && <section><h3 className="font-bold">Confirmar pago</h3><ConfirmObligationPaid obligationInstanceId={payment.obligationInstanceId} amount={Number(instance?.amount_expected || payment.amount || 0)} defaultPaymentMethod={payment.paymentMethod} paymentAccounts={details.paymentAccounts} suggestedAccount={details.suggestedPaymentAccount}/></section>}
         {detectedLinks.length > 0 && <section><h3 className="mb-3 font-bold">Evidencia candidata</h3><div className="space-y-3">{detectedLinks.map((candidate) => {
           const importedValue = candidate.plaid_imports
           const imported = Array.isArray(importedValue) ? importedValue[0] : importedValue as Record<string, unknown> | null

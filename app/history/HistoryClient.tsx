@@ -81,6 +81,13 @@ function displayDate(dateString: string) {
   })
 }
 
+function categoryPillClasses(kind: string) {
+  if (kind === 'payment') return 'border-amber-400/30 bg-amber-400/10 text-amber-100'
+  if (kind === 'transfer') return 'border-sky-400/30 bg-sky-400/10 text-sky-100'
+  if (kind === 'income') return 'border-emerald-400/30 bg-emerald-400/10 text-emerald-100'
+  return 'border-violet-400/30 bg-violet-400/10 text-violet-100'
+}
+
 function monthValue(dateString: string) {
   return new Date(`${dateString}T00:00:00`).getMonth() + 1
 }
@@ -368,37 +375,48 @@ export default function HistoryClient({
       </section>
 
       {resolvedDuplicateMovements.length > 0 && (
-        <section className="rounded border border-amber-200 bg-amber-50 p-4">
-          <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
-            <div>
-              <h2 className="text-xl font-bold">
-                Movimientos preservados como duplicados
-              </h2>
-              <p className="mt-1 text-sm opacity-70">
+        <section className="overflow-hidden rounded-xl border border-amber-400/35 bg-[#0b1730] text-slate-100 shadow-lg shadow-black/20" aria-labelledby="resolved-duplicates-title">
+          <div className="border-l-4 border-amber-400 bg-amber-400/[0.06] p-4 sm:p-5">
+            <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+              <div className="flex min-w-0 items-start gap-3">
+                <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-amber-300/40 bg-amber-400/15 text-lg text-amber-200" aria-hidden="true">!</span>
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-amber-200">Advertencia de auditoría</p>
+                  <h2 className="mt-1 text-lg font-bold text-white sm:text-xl" id="resolved-duplicates-title">
+                    Movimientos preservados como duplicados
+                  </h2>
+                  <p className="mt-1 max-w-3xl text-sm leading-6 text-slate-300">
                 Estos quick_entries siguen guardados para auditoría, pero no
                 cuentan en los totales activos.
-              </p>
+                  </p>
+                </div>
+              </div>
+              <Link
+                className="inline-flex w-full shrink-0 items-center justify-center rounded-lg border border-amber-300/50 bg-amber-300/10 px-4 py-2 text-sm font-semibold text-amber-100 transition hover:border-amber-200 hover:bg-amber-300/20 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-300 md:w-auto"
+                href="/dev/confirmed-ledger-duplicates"
+              >
+                Revisar resoluciones
+              </Link>
             </div>
-            <Link
-              className="rounded border border-amber-300 bg-white px-3 py-2 text-sm"
-              href="/dev/confirmed-ledger-duplicates"
-            >
-              Revisar resoluciones
-            </Link>
           </div>
-          <div className="mt-3 divide-y divide-amber-200">
+          <div className="p-3 sm:p-4">
+            <div className="mb-2 hidden grid-cols-[0.9fr_1.5fr_0.7fr_1fr_1.5fr] gap-3 px-3 text-xs font-semibold uppercase tracking-wide text-slate-400 md:grid" aria-hidden="true">
+              <span>Fecha</span><span>Comercio / Persona</span><span>Monto</span><span>Categoría</span><span>Cuenta / Tarjeta</span>
+            </div>
+            <div className="space-y-2">
             {resolvedDuplicateMovements.slice(0, 5).map((movement) => (
               <div
-                className="grid grid-cols-1 gap-2 py-2 text-sm md:grid-cols-5"
+                className="grid grid-cols-1 gap-3 rounded-lg border border-white/10 bg-[#081225] p-3 text-sm shadow-sm md:grid-cols-[0.9fr_1.5fr_0.7fr_1fr_1.5fr] md:items-center"
                 key={movement.id}
               >
-                <span>{displayDate(movement.date)}</span>
-                <span className="font-medium">{movement.merchant}</span>
-                <strong>{money(movement.amount)}</strong>
-                <span>{movement.category}</span>
-                <span>{movement.bankAccount}</span>
+                <div><span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500 md:hidden">Fecha</span><span className="text-slate-300">{displayDate(movement.date)}</span></div>
+                <div className="min-w-0"><span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500 md:hidden">Comercio / Persona</span><span className="break-words font-semibold text-white">{movement.merchant}</span></div>
+                <div><span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500 md:hidden">Monto</span><strong className="text-slate-100">{money(movement.amount)}</strong></div>
+                <div><span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500 md:hidden">Categoría</span><span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${categoryPillClasses(movement.categoryKind)}`}>{movement.category}</span></div>
+                <div className="min-w-0"><span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500 md:hidden">Cuenta / Tarjeta</span><span className="inline-flex max-w-full break-words rounded-md border border-sky-400/25 bg-sky-400/10 px-2.5 py-1 text-xs font-medium text-sky-100">{movement.bankAccount}</span></div>
               </div>
             ))}
+            </div>
           </div>
         </section>
       )}

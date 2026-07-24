@@ -28,6 +28,19 @@ test('specific spending drill-down preserves encoded record filters', () => {
   assert.match(href, /date=2026-07-10/)
 })
 
+test('semi-monthly spending drill-down preserves both date boundaries', () => {
+  assert.equal(
+    spendingDrilldown({
+      year: 2026,
+      month: 7,
+      view: 'confirmed-expenses',
+      from: '2026-07-16',
+      to: '2026-07-31',
+    }),
+    '/spending?year=2026&month=7&view=confirmed-expenses&from=2026-07-16&to=2026-07-31#dashboard-calculation'
+  )
+})
+
 test('timeline and review queue links preserve dashboard datasets', () => {
   assert.equal(
     timelineDrilldown({ horizon: 45, view: 'actionable' }),

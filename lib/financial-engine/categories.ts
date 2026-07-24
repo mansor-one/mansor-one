@@ -343,6 +343,22 @@ export function getSystemCategories() {
   return [...systemCategories].sort(bySortOrder)
 }
 
+export function getUniqueSystemCategoryOptions() {
+  const options = new Map<string, { value: string; label: string; kind: CanonicalCategoryKind }>()
+
+  for (const category of getSystemCategories()) {
+    if (!options.has(category.displayName)) {
+      options.set(category.displayName, {
+        value: category.displayName,
+        label: category.displayName,
+        kind: category.kind,
+      })
+    }
+  }
+
+  return [...options.values()]
+}
+
 export function getCategoryByCode(code: string) {
   const normalizedCode = normalizeSearch(code)
   return (

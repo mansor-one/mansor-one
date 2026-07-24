@@ -208,7 +208,7 @@ export default async function RobototinaPage() {
           </section>
         </div>
 
-        <section className="space-y-5">
+        <section className="space-y-5" id="recommended-next-moves">
           <div className="rounded border border-slate-200 bg-white p-5 shadow-sm">
             <p className="text-sm font-medium text-slate-500">Advisor cards</p>
             <h2 className="mt-1 text-2xl font-semibold">Recommended next moves</h2>

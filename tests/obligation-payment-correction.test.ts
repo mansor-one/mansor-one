@@ -72,8 +72,9 @@ test('pending correction route persists reported amount and an audit event', () 
 
 test('future default option updates obligations without updating historical instance amounts', () => {
   assert.match(confirmationRoute, /from\('obligations'\)\.update/)
-  assert.doesNotMatch(
-    confirmationRoute,
-    /from\('obligation_instances'\)\.update\(\{[\s\S]*?amount_expected/
+  const instanceUpdate = confirmationRoute.match(
+    /from\('obligation_instances'\)\.update\(\{([\s\S]*?)\}\)\.eq/
   )
+  assert.ok(instanceUpdate)
+  assert.doesNotMatch(instanceUpdate[1], /amount_expected/)
 })
