@@ -1,7 +1,8 @@
-import { supabase } from '@/lib/supabase'
+import { requireUser } from '@/lib/auth/requireUser'
 import Nav from '../components/Nav'
 
 export default async function AssetsPage() {
+  const { supabase } = await requireUser()
   const { data: assets, error } = await supabase
     .from('assets')
     .select('*')

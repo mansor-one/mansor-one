@@ -7,11 +7,6 @@ export default function ConnectPlaidButton() {
   const [linkToken, setLinkToken] = useState<string | null>(null)
   const [message, setMessage] = useState('')
   const [loading, setLoading] = useState(false)
-  const [mounted, setMounted] = useState(false)
-
-  useEffect(() => {
-    setMounted(true)
-  }, [])
 
   useEffect(() => {
     async function createLinkToken() {
@@ -66,20 +61,32 @@ export default function ConnectPlaidButton() {
   })
 
   return (
-    <div className="space-y-4 border rounded p-4">
-      <button
-        className="border rounded p-3"
-        onClick={() => open()}
-        disabled={!mounted || !ready || !linkToken || loading}
-      >
-        {loading
-          ? 'Conectando...'
-          : linkToken
-          ? 'Conectar con Plaid'
-          : 'Cargando Plaid...'}
-      </button>
+    <div className="rounded border border-neutral-800 bg-neutral-900 p-5">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <p className="text-sm text-neutral-400">Nueva conexión</p>
+          <h2 className="text-xl font-bold text-neutral-100">
+            Agregar banco o tarjeta
+          </h2>
+        </div>
+        <button
+          className="w-fit rounded border border-sky-700 bg-sky-950/50 px-4 py-3 text-sm font-medium text-sky-100 transition hover:border-sky-500 disabled:cursor-not-allowed disabled:border-neutral-800 disabled:bg-neutral-950 disabled:text-neutral-500"
+          onClick={() => open()}
+          disabled={!ready || !linkToken || loading}
+        >
+          {loading
+            ? 'Conectando...'
+            : linkToken
+              ? 'Conectar con Plaid'
+              : 'Cargando Plaid...'}
+        </button>
+      </div>
 
-      {message && <p>{message}</p>}
+      {message && (
+        <p className="mt-4 rounded border border-neutral-800 bg-neutral-950 p-3 text-sm text-neutral-200">
+          {message}
+        </p>
+      )}
     </div>
   )
 }

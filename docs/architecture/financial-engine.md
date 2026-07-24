@@ -1,12 +1,14 @@
 # Financial Engine
 
-Last updated: 2026-06-26
+Last updated: 2026-07-02
 
 ## Proposito
 
 El Financial Engine concentra calculos financieros para que las paginas sean capas de presentacion. Recibe un cliente Supabase server-side y `userId`.
 
 No debe contener UI, React, Tailwind, componentes cliente ni mutaciones de datos salvo que una responsabilidad futura lo justifique explicitamente.
+
+El estado financiero compartido debe fluir por engines o helpers de dominio. Dashboard, Cards, Spending, History, Timeline, Planning y Robototina no deben mantener modelos paralelos para lifecycle, categorias, merchant learning, owner context o reconciliacion.
 
 ## Modulos Actuales
 
@@ -21,6 +23,10 @@ No debe contener UI, React, Tailwind, componentes cliente ni mutaciones de datos
 - `planning.ts`: calcula Planning Summary.
 - `dashboard.ts`: compone Dashboard Summary.
 - `categorizeTransaction.ts`: base para categorizacion futura.
+- `ledger-summary.ts`: une imports Plaid y ledger confirmado en una vista normalizada.
+- `review-queue.ts`: clasifica candidatos de revision desde Ledger Summary y contexto de pagos.
+- `ledger-promotion.ts`: promociona imports Plaid a `quick_entries` de forma idempotente.
+- `cards.ts`: construye vista unificada de tarjetas manuales, Plaid y calendarios.
 
 ## Capas Futuras
 
@@ -29,6 +35,7 @@ No debe contener UI, React, Tailwind, componentes cliente ni mutaciones de datos
 - Merchant Knowledge Engine: alimentara Transaction Intelligence con memoria de merchants, estabilidad y confianza.
 - Financial Events / Windfall Planner: modelara ingresos extraordinarios esperados para escenarios, sin contarlos como cash actual.
 - Debt Engine: comparara estrategias de deuda como pagos grandes, balance transfers, consolidacion, cancelacion de tarjetas y preservacion de cash.
+- Household Engine: modelara owner labels, miembros, shared accounts y visibilidad Manuel/Soraya.
 
 ## Account Resolver
 
@@ -72,6 +79,8 @@ Calcula:
 ## Planning Summary
 
 Lee `planning_items` activos y calcula obligaciones futuras visibles para el Dashboard.
+
+Planning v2 debe separar obligaciones recurrentes de proveedores actuales. Servicios del hogar, como recorte de grama o fumigacion, deben preservar pagos historicos aunque cambie el vendor.
 
 ## Goal Engine
 

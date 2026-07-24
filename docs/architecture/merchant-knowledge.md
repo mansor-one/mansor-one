@@ -1,12 +1,12 @@
 # Merchant Knowledge Engine
 
-Last updated: 2026-06-26
+Last updated: 2026-07-02
 
 ## Purpose
 
 Merchant Knowledge Engine v1 defines how Mansor One can remember merchants and learn their financial meaning over time.
 
-It does not categorize transactions directly yet. It does not write to database tables. It provides server-side helper utilities that future Transaction Intelligence, Robototina and review flows can consume.
+It does not categorize transactions directly by itself. It provides server-side helper utilities that Transaction Intelligence, Review Queue, Robototina and future persistent learning flows can consume.
 
 ## Core Ideas
 
@@ -46,6 +46,27 @@ Merchant Rules are future action rules:
 
 Merchant Knowledge can feed Merchant Rules, but it is not the same thing.
 
+## Event-Driven Learning
+
+Merchant Learning should be event-driven.
+
+Confirmed events:
+
+- user confirms a Review Queue candidate into `quick_entries`
+- user confirms or changes category on a ledger movement
+- future explicit merchant/category correction
+
+Weak observations:
+
+- Plaid import candidates
+- suggestions
+- review items
+- raw vendor categories
+
+Weak observations may affect "times seen" or explain why a merchant is unknown, but they must not become confirmed category learning by themselves.
+
+The current read-derived implementation should learn confirmed category only from confirmed ledger rows. A future persistent Learning Engine should store observations, confidence changes, drift and category changes as auditable events.
+
 ## Normalization Examples
 
 Starbucks variants:
@@ -75,6 +96,7 @@ Confidence should increase when:
 - merchant appears multiple times
 - amounts are relatively consistent
 - a known canonical category is attached
+- confirmations repeat the same canonical category
 
 Confidence should stay low when:
 
@@ -82,6 +104,7 @@ Confidence should stay low when:
 - category is missing
 - amount pattern is volatile
 - merchant is ambiguous
+- a user changes category or drift is detected
 
 ## Learning State
 
@@ -120,4 +143,4 @@ Future work may add persistent merchant knowledge tables or derive merchant know
 - `transaction_rules`
 - ATH Movil enrichments
 
-This v1 foundation does not modify those tables.
+Only confirmed ledger or explicit confirmation events should update learned category/confidence. Imports and suggestions remain non-authoritative signals until confirmed.

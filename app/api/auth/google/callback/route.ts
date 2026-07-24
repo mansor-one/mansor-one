@@ -19,16 +19,15 @@ export async function GET(req: NextRequest) {
     }),
   })
 
-  const tokens = await tokenRes.json()
-
   if (!tokenRes.ok) {
-    return NextResponse.json(tokens, { status: 400 })
+    return NextResponse.json(
+      { error: 'Google token exchange failed' },
+      { status: 400 }
+    )
   }
-
-  console.log('GOOGLE TOKENS:', tokens)
 
   return NextResponse.json({
     ok: true,
-    message: 'Google connected. Check terminal for tokens.',
+    message: 'Google connected.',
   })
 }

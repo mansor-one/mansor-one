@@ -1,0 +1,588 @@
+import {
+  getLedgerSummary,
+  type LedgerDuplicateCandidate,
+  type LedgerSummaryTransaction,
+} from './ledger-summary'
+import {
+  canonicalCategoryCodeForText,
+  commonMerchantDefaultCategoryCode,
+  getCategoryByCode,
+  type CanonicalCategory,
+} from './categories'
+import {
+  buildMerchantKnowledge,
+  normalizeMerchantName,
+  type MerchantKnowledge,
+  type MerchantObservation,
+} from './merchant-knowledge'
+import type {
+  FinancialIdentityAnalysis,
+  FinancialIdentityType,
+} from './financial-identity'
+import type { FinancialSupabaseClient } from './types'
+import {
+  buildReconciliationMatches,
+  type ReconciliationMatch,
+  type ReconciliationPaymentInstance,
+  type ReconciliationTransaction,
+} from './reconciliation'
+import { analyzeFinancialIdentity } from './financial-identity'
+import { normalizeMerchantText } from './merchant-normalization'
+
+export type ReviewQueueClassification =
+  | 'readyToConfirm'
+  | 'needsCategory'
+  | 'possibleDuplicate'
+  | 'athReview'
+  | 'paymentConfirmation'
+  | 'needsManualReview'
+
+export type ReviewQueueCandidate = {
+  id: string
+  sourceTable: LedgerSummaryTransaction['sourceTable']
+  transaction: LedgerSummaryTransaction
+  classification: ReviewQueueClassification
+  priority: number
+  merchant: string
+  canonicalCategory: CanonicalCategory | null
+  suggestedCategory: string | null
+  merchantKnowledge: MerchantKnowledge | null
+  financialIdentity: {
+    normalizedIdentity: string
+    identityType: FinancialIdentityType
+    confidence: number
+    shouldReview: boolean
+    canonicalCategoryCode: string | null
+    reasons: string[]
+  }
+  confidence: number
+  paymentLifecycleContext: {
+    status: string | null
+    paymentName: string | null
+    paymentAmount: number | null
+    recommendedActionText: string | null
+  } | null
+  reconciliationContext: {
+    match: ReconciliationMatch
+  } | null
+  duplicateContext: LedgerDuplicateCandidate | null
+  reasons: string[]
+}
+
+export type ReviewQueueStatistics = {
+  totalCandidates: number
+  autoConfirmable: number
+  manualReviewCount: number
+  duplicateCount: number
+  athCount: number
+  paymentMatches: number
+}
+
+export type ReviewQueue = {
+  candidates: ReviewQueueCandidate[]
+  readyToConfirm: ReviewQueueCandidate[]
+  needsCategory: ReviewQueueCandidate[]
+  possibleDuplicate: ReviewQueueCandidate[]
+  athReview: ReviewQueueCandidate[]
+  paymentConfirmation: ReviewQueueCandidate[]
+  needsManualReview: ReviewQueueCandidate[]
+  statistics: ReviewQueueStatistics
+  source: {
+    ledgerSummary: Awaited<ReturnType<typeof getLedgerSummary>>
+    reconciliationMatches: ReconciliationMatch[]
+    payments: ReconciliationPaymentInstance[]
+  }
+}
+
+type PaymentInstanceRow = {
+  id: string
+  name: string | null
+  amount: number | string | null
+  status: string | null
+  effective_due_date: string | null
+  updated_at: string | null
+  notes: string | null
+  scheduled_payment_id: string | null
+}
+
+function transactionMerchant(transaction: LedgerSummaryTransaction) {
+  return transaction.description || 'Unknown merchant'
+}
+
+function transactionDate(transaction: LedgerSummaryTransaction) {
+  return transaction.date || new Date().toISOString().slice(0, 10)
+}
+
+function merchantObservation(
+  transaction: LedgerSummaryTransaction
+): MerchantObservation {
+  return {
+    merchantName: transactionMerchant(transaction),
+    amount: transaction.amount,
+    date: transactionDate(transaction),
+    canonicalCategoryCode: canonicalCategoryCodeForText(transaction.category),
+    source: transaction.sourceTable,
+    isConfirmed: transaction.sourceTable === 'quick_entries',
+  }
+}
+
+function merchantKnowledgeByName(transactions: LedgerSummaryTransaction[]) {
+  const groups = new Map<string, MerchantObservation[]>()
+
+  transactions.forEach((transaction) => {
+    const observation = merchantObservation(transaction)
+    const normalizedName = normalizeMerchantName(observation.merchantName)
+    if (!normalizedName) return
+
+    const group = groups.get(normalizedName) || []
+    group.push(observation)
+    groups.set(normalizedName, group)
+  })
+
+  return new Map(
+    [...groups.entries()].map(([normalizedName, observations]) => [
+      normalizedName,
+      buildMerchantKnowledge(observations),
+    ])
+  )
+}
+
+function paymentFromRow(row: PaymentInstanceRow): ReconciliationPaymentInstance {
+  return {
+    id: row.id,
+    name: row.name,
+    amount: Number(row.amount || 0),
+    status: row.status,
+    effective_due_date: row.effective_due_date,
+    updated_at: row.updated_at,
+    notes: row.notes,
+    scheduled_payment_id: row.scheduled_payment_id,
+  }
+}
+
+function reconciliationTransaction(
+  transaction: LedgerSummaryTransaction
+): ReconciliationTransaction | null {
+  const name = transaction.description || transaction.category
+
+  if (!name || !transaction.date) return null
+
+  return {
+    source: transaction.sourceTable,
+    id: transaction.id,
+    name,
+    amount: transaction.amount,
+    date: transaction.date,
+    institutionName: metadataString(transaction, 'institutionName'),
+    accountName: metadataString(transaction, 'accountName'),
+    accountType: metadataString(transaction, 'accountType'),
+    accountSubtype: metadataString(transaction, 'accountSubtype'),
+    category: transaction.category,
+  }
+}
+
+function metadataString(
+  transaction: LedgerSummaryTransaction,
+  key: string
+) {
+  const value = transaction.metadata[key]
+  return typeof value === 'string' ? value : null
+}
+
+async function getOpenPayments(supabase: FinancialSupabaseClient) {
+  const now = new Date()
+  const month = now.getMonth() + 1
+  const year = now.getFullYear()
+
+  const { data, error } = await supabase
+    .from('payment_instances')
+    .select(
+      'id, name, amount, status, effective_due_date, updated_at, notes, scheduled_payment_id'
+    )
+    .eq('payment_month', month)
+    .eq('payment_year', year)
+    .in('status', ['pending', 'initiated'])
+    .order('effective_due_date', { ascending: true })
+
+  if (error) throw error
+
+  return ((data || []) as PaymentInstanceRow[]).map(paymentFromRow)
+}
+
+function classifyCandidate({
+  transaction,
+  duplicateContext,
+  reconciliationContext,
+  canonicalCategory,
+  merchantKnowledge,
+  financialIdentity,
+}: {
+  transaction: LedgerSummaryTransaction
+  duplicateContext: LedgerDuplicateCandidate | null
+  reconciliationContext: ReconciliationMatch | null
+  canonicalCategory: CanonicalCategory | null
+  merchantKnowledge: MerchantKnowledge | null
+  financialIdentity: FinancialIdentityAnalysis
+}): ReviewQueueClassification {
+  const isAth = Boolean(
+    normalizeMerchantText(transaction.description).match(/\bATH\b|\bATHM\b|ATH MOVIL/)
+  )
+  const hasLearnedMerchantCategory = Boolean(
+    merchantKnowledge?.canonicalCategoryCode &&
+      merchantKnowledge.isAutoConfirmable &&
+      canonicalCategory
+  )
+  const hasIdentityCategory = Boolean(
+    financialIdentity.canonicalCategoryCode && canonicalCategory
+  )
+
+  if (duplicateContext) return 'possibleDuplicate'
+  if (
+    reconciliationContext &&
+    ['high', 'likely'].includes(reconciliationContext.confidenceLevel)
+  ) {
+    return 'paymentConfirmation'
+  }
+  if (
+    hasIdentityCategory &&
+    [
+      'credit_card_payment',
+      'bank_fee',
+      'government',
+      'person_transfer',
+    ].includes(financialIdentity.identityType)
+  ) {
+    return 'readyToConfirm'
+  }
+  if (isAth && hasLearnedMerchantCategory) return 'readyToConfirm'
+  if (isAth) return 'athReview'
+  if (hasLearnedMerchantCategory) return 'readyToConfirm'
+  if (merchantKnowledge?.driftDetected) return 'needsCategory'
+  if (!canonicalCategory) {
+    return 'needsCategory'
+  }
+  if (merchantKnowledge?.shouldAskAgain) return 'needsManualReview'
+
+  return 'readyToConfirm'
+}
+
+function confidenceForCandidate({
+  classification,
+  canonicalCategory,
+  merchantKnowledge,
+  identityConfidence,
+  duplicateContext,
+  reconciliationContext,
+}: {
+  classification: ReviewQueueClassification
+  canonicalCategory: CanonicalCategory | null
+  merchantKnowledge: MerchantKnowledge | null
+  identityConfidence: number
+  duplicateContext: LedgerDuplicateCandidate | null
+  reconciliationContext: ReconciliationMatch | null
+}) {
+  if (duplicateContext) {
+    return Number((duplicateContext.bestDuplicateMatch.confidence / 100).toFixed(2))
+  }
+
+  if (reconciliationContext) {
+    return Number((reconciliationContext.confidence / 100).toFixed(2))
+  }
+
+  let confidence = 0.25
+
+  if (canonicalCategory) confidence += 0.25
+  if (merchantKnowledge) confidence += merchantKnowledge.confidence * 0.3
+  confidence += identityConfidence * 0.2
+
+  if (classification === 'athReview') confidence = Math.min(confidence, 0.45)
+  if (classification === 'needsCategory') confidence = Math.min(confidence, 0.55)
+
+  return Math.min(Number(confidence.toFixed(2)), 0.95)
+}
+
+function priorityForCandidate(
+  classification: ReviewQueueClassification,
+  confidence: number
+) {
+  const basePriority: Record<ReviewQueueClassification, number> = {
+    paymentConfirmation: 100,
+    possibleDuplicate: 90,
+    athReview: 80,
+    needsCategory: 70,
+    needsManualReview: 60,
+    readyToConfirm: 40,
+  }
+
+  return basePriority[classification] + Math.round(confidence * 10)
+}
+
+function reasonsForCandidate({
+  classification,
+  canonicalCategory,
+  merchantKnowledge,
+  duplicateContext,
+  reconciliationContext,
+  financialIdentity,
+}: {
+  classification: ReviewQueueClassification
+  canonicalCategory: CanonicalCategory | null
+  merchantKnowledge: MerchantKnowledge | null
+  duplicateContext: LedgerDuplicateCandidate | null
+  reconciliationContext: ReconciliationMatch | null
+  financialIdentity: FinancialIdentityAnalysis
+}) {
+  const primaryReasonByClassification: Record<ReviewQueueClassification, string> = {
+    readyToConfirm:
+      'Mansor One reconoce este movimiento y puede agregarlo al historial.',
+    needsCategory:
+      'Mansor One necesita una categoría antes de agregarlo al historial.',
+    possibleDuplicate:
+      'Encontramos un movimiento parecido ya confirmado. Revisa si es el mismo o una compra separada.',
+    athReview:
+      'Mansor One necesita confirmar este ATH antes de agregarlo al historial.',
+    paymentConfirmation:
+      'Este movimiento puede cerrar un pago esperado.',
+    needsManualReview:
+      'Mansor One necesita confirmar este movimiento antes de agregarlo al historial.',
+  }
+  const reasons: string[] = [primaryReasonByClassification[classification]]
+
+  if (canonicalCategory) {
+    reasons.push(`Mapped to canonical category ${canonicalCategory.code}.`)
+  } else {
+    reasons.push('No canonical category is available yet.')
+  }
+
+  if (merchantKnowledge) {
+    reasons.push(
+      `Merchant learning status is ${merchantKnowledge.learningStatus} at ${Math.round(
+        merchantKnowledge.confidence * 100
+      )}% confidence.`
+    )
+
+    if (merchantKnowledge.isAutoConfirmable) {
+      reasons.push('Merchant is auto-confirmable from confirmed history.')
+    }
+
+    if (merchantKnowledge.driftDetected) {
+      reasons.push('Merchant drift detected; ask for category again.')
+    }
+  }
+
+  if (financialIdentity.canonicalCategoryCode) {
+    reasons.push(
+      `Identity suggested category ${financialIdentity.canonicalCategoryCode}.`
+    )
+  }
+
+  if (duplicateContext) {
+    reasons.push(
+      `Best duplicate match confidence is ${duplicateContext.bestDuplicateMatch.confidence}%.`
+    )
+  }
+
+  if (reconciliationContext) {
+    reasons.push(
+      `Payment reconciliation confidence is ${reconciliationContext.confidence}%.`
+    )
+  }
+
+  return reasons
+}
+
+function bucketCandidates(candidates: ReviewQueueCandidate[]) {
+  return {
+    readyToConfirm: candidates.filter(
+      (candidate) => candidate.classification === 'readyToConfirm'
+    ),
+    needsCategory: candidates.filter(
+      (candidate) => candidate.classification === 'needsCategory'
+    ),
+    possibleDuplicate: candidates.filter(
+      (candidate) => candidate.classification === 'possibleDuplicate'
+    ),
+    athReview: candidates.filter(
+      (candidate) => candidate.classification === 'athReview'
+    ),
+    paymentConfirmation: candidates.filter(
+      (candidate) => candidate.classification === 'paymentConfirmation'
+    ),
+    needsManualReview: candidates.filter(
+      (candidate) => candidate.classification === 'needsManualReview'
+    ),
+  }
+}
+
+function stableCandidateKey(candidate: ReviewQueueCandidate) {
+  return [
+    candidate.sourceTable,
+    candidate.transaction.plaidTransactionId || '',
+    candidate.transaction.id,
+  ].join(':')
+}
+
+function compareCandidates(
+  left: ReviewQueueCandidate,
+  right: ReviewQueueCandidate
+) {
+  return (
+    right.priority - left.priority ||
+    String(right.transaction.date).localeCompare(String(left.transaction.date)) ||
+    stableCandidateKey(left).localeCompare(stableCandidateKey(right))
+  )
+}
+
+export async function getReviewQueue(
+  supabase: FinancialSupabaseClient,
+  userId: string
+): Promise<ReviewQueue> {
+  const [ledgerSummary, payments] = await Promise.all([
+    getLedgerSummary(supabase, userId),
+    getOpenPayments(supabase),
+  ])
+  const knowledgeByMerchant = merchantKnowledgeByName([
+    ...ledgerSummary.confirmedLedgerEntries,
+    ...ledgerSummary.importedSourceRows,
+    ...ledgerSummary.importCandidates,
+  ])
+  const duplicateByImportId = new Map(
+    ledgerSummary.duplicateCandidates.map((candidate) => [
+      candidate.importCandidate.id,
+      candidate,
+    ])
+  )
+  const transactions = ledgerSummary.importCandidates
+    .map(reconciliationTransaction)
+    .filter(
+      (transaction): transaction is ReconciliationTransaction =>
+        transaction !== null
+    )
+  const reconciliation = buildReconciliationMatches({
+    transactions,
+    payments,
+  })
+  const reconciliationByTransactionId = new Map(
+    reconciliation.allMatches
+      .filter((match) => match.confidence >= 50)
+      .map((match) => [match.transactionId, match])
+  )
+
+  const candidates = ledgerSummary.importCandidates
+    .map((transaction) => {
+      const merchant = transactionMerchant(transaction)
+      const normalizedMerchant = normalizeMerchantName(merchant)
+      const merchantKnowledge =
+        knowledgeByMerchant.get(normalizedMerchant) || null
+      const financialIdentity = analyzeFinancialIdentity({
+        name: merchant,
+        institutionName: metadataString(transaction, 'institutionName'),
+        accountName: metadataString(transaction, 'accountName'),
+        accountType: metadataString(transaction, 'accountType'),
+        accountSubtype: metadataString(transaction, 'accountSubtype'),
+        category: transaction.category,
+        amount: transaction.amount,
+        date: transaction.date,
+      })
+      const categoryCode =
+        merchantKnowledge?.canonicalCategoryCode ||
+        financialIdentity.canonicalCategoryCode ||
+        commonMerchantDefaultCategoryCode(merchant, {
+          amount: transaction.amount,
+        }) ||
+        canonicalCategoryCodeForText(transaction.category) ||
+        null
+      const canonicalCategory = categoryCode
+        ? getCategoryByCode(categoryCode)
+        : null
+      const identityConfidence = financialIdentity.confidence
+      const duplicateContext = duplicateByImportId.get(transaction.id) || null
+      const reconciliationContext =
+        reconciliationByTransactionId.get(transaction.id) || null
+      const classification = classifyCandidate({
+        transaction,
+        duplicateContext,
+        reconciliationContext,
+        canonicalCategory,
+        merchantKnowledge,
+        financialIdentity,
+      })
+      const confidence = confidenceForCandidate({
+        classification,
+        canonicalCategory,
+        merchantKnowledge,
+        identityConfidence,
+        duplicateContext,
+        reconciliationContext,
+      })
+      const paymentLifecycleContext = reconciliationContext
+        ? {
+            status: reconciliationContext.paymentStatus,
+            paymentName: reconciliationContext.paymentName,
+            paymentAmount: reconciliationContext.paymentAmount,
+            recommendedActionText:
+              reconciliationContext.recommendedActionText,
+          }
+        : null
+
+      return {
+        id: `${transaction.sourceTable}:${transaction.id}`,
+        sourceTable: transaction.sourceTable,
+        transaction,
+        classification,
+        priority: priorityForCandidate(classification, confidence),
+        merchant: normalizedMerchant || merchant,
+        canonicalCategory,
+        suggestedCategory:
+          canonicalCategory?.displayName || transaction.category,
+        merchantKnowledge,
+        financialIdentity: {
+          normalizedIdentity:
+            financialIdentity.normalizedIdentity || normalizedMerchant || merchant,
+          identityType: financialIdentity.identityType,
+          confidence: identityConfidence,
+          shouldReview: financialIdentity.shouldReview,
+          canonicalCategoryCode: financialIdentity.canonicalCategoryCode,
+          reasons: financialIdentity.reasons,
+        },
+        confidence,
+        paymentLifecycleContext,
+        reconciliationContext: reconciliationContext
+          ? { match: reconciliationContext }
+          : null,
+        duplicateContext,
+        reasons: reasonsForCandidate({
+          classification,
+          canonicalCategory,
+          merchantKnowledge,
+          duplicateContext,
+          reconciliationContext,
+          financialIdentity,
+        }),
+      }
+    })
+    .sort(compareCandidates)
+
+  const buckets = bucketCandidates(candidates)
+
+  return {
+    candidates,
+    ...buckets,
+    statistics: {
+      totalCandidates: candidates.length,
+      autoConfirmable: buckets.readyToConfirm.length,
+      manualReviewCount:
+        buckets.needsCategory.length +
+        buckets.athReview.length +
+        buckets.needsManualReview.length,
+      duplicateCount: buckets.possibleDuplicate.length,
+      athCount: buckets.athReview.length,
+      paymentMatches: buckets.paymentConfirmation.length,
+    },
+    source: {
+      ledgerSummary,
+      reconciliationMatches: reconciliation.allMatches,
+      payments,
+    },
+  }
+}

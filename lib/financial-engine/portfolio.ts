@@ -48,8 +48,8 @@ function manualCreditCardLiability(card: CreditCard): PortfolioLiability {
       card.due_day === null || card.due_day === undefined
         ? null
         : Number(card.due_day),
-    apr: card.apr ?? null,
-    currency: card.currency || null,
+    apr: null,
+    currency: null,
     isManual: true,
     isConnected: false,
     metadata: {

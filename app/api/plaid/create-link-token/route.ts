@@ -4,6 +4,7 @@ import {
   Configuration,
   PlaidApi,
   PlaidEnvironments,
+  CountryCode,
   Products,
 } from 'plaid'
 
@@ -44,7 +45,7 @@ export async function POST() {
       },
       client_name: 'Mansor One',
       products: [Products.Transactions],
-      country_codes: ['US' as any],
+      country_codes: [CountryCode.Us],
       language: 'en',
     })
 

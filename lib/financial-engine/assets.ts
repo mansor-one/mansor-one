@@ -1,42 +1,15 @@
-import { getResolvedAccounts } from './account-resolver'
-import { getManualAccounts } from './accounts'
+import { getResolvedAccounts } from './account-resolver.ts'
+import { getManualAccounts } from './accounts.ts'
+import { connectedAccountIsLiquid, plaidUsableBalance } from './asset-liquidity-policy.ts'
 import type {
   FinancialAsset,
   FinancialSupabaseClient,
   ManualAccount,
   ResolvedConnectedAccount,
-} from './types'
+} from './types.ts'
 
 function numberValue(value: number | null | undefined) {
   return Number(value || 0)
-}
-
-function nullableNumberValue(value: number | string | null | undefined) {
-  if (value === null || value === undefined) return null
-
-  const number = Number(value)
-  return Number.isFinite(number) ? number : null
-}
-
-function plaidUsableBalance(account: ResolvedConnectedAccount) {
-  if (account.type === 'credit') return null
-
-  const isDepositoryLike =
-    account.type === 'depository' ||
-    account.type === 'cash' ||
-    account.subtype === 'checking' ||
-    account.subtype === 'savings'
-
-  if (!isDepositoryLike) return null
-
-  const balance = nullableNumberValue(account.current_balance)
-  const availableBalance = nullableNumberValue(account.available_balance)
-
-  if (balance !== null && availableBalance !== null) {
-    return Math.min(balance, availableBalance)
-  }
-
-  return balance ?? availableBalance ?? null
 }
 
 function plaidAsset(account: ResolvedConnectedAccount): FinancialAsset {
@@ -45,14 +18,14 @@ function plaidAsset(account: ResolvedConnectedAccount): FinancialAsset {
     source: 'plaid',
     sourceId: account.plaid_account_id || null,
     institution: account.institution_name || null,
-    name: account.name || null,
+    name: account.display_name || account.name || null,
     type: account.type || null,
     subtype: account.subtype || null,
     balance: numberValue(account.current_balance),
     availableBalance: numberValue(account.available_balance),
     usableBalance: plaidUsableBalance(account),
     currency: account.currency || null,
-    isLiquid: ['depository', 'cash'].includes(account.type || ''),
+    isLiquid: connectedAccountIsLiquid(account),
     isCredit: account.type === 'credit',
     isManual: false,
     isConnected: true,
@@ -60,6 +33,12 @@ function plaidAsset(account: ResolvedConnectedAccount): FinancialAsset {
       accountId: account.id || null,
       connectionId: account.connection_id || null,
       updatedAt: account.updated_at || null,
+      originalName: account.name || null,
+      ownerScope: account.owner_scope || null,
+      accountStatus: account.account_status || null,
+      isHidden: account.is_hidden ?? null,
+      includeInDashboard: account.include_in_dashboard ?? null,
+      isSpendable: account.is_spendable ?? null,
       merged: account.merged,
       duplicates: account.duplicates,
       sourceAccounts: account.sourceAccounts,
@@ -68,6 +47,7 @@ function plaidAsset(account: ResolvedConnectedAccount): FinancialAsset {
 }
 
 function manualAsset(account: ManualAccount): FinancialAsset {
+  const spendable = account.is_spendable === true
   return {
     id: `manual:${account.id || 'unknown'}`,
     source: 'manual',
@@ -78,9 +58,9 @@ function manualAsset(account: ManualAccount): FinancialAsset {
     subtype: null,
     balance: numberValue(account.balance),
     availableBalance: numberValue(account.balance),
-    usableBalance: numberValue(account.balance),
+    usableBalance: spendable ? numberValue(account.balance) : null,
     currency: account.currency || null,
-    isLiquid: account.is_spendable === true,
+    isLiquid: spendable,
     isCredit: false,
     isManual: true,
     isConnected: false,

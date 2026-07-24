@@ -1,4 +1,26 @@
 import { NextResponse } from 'next/server'
+import { requireInternalToolAccess } from '@/lib/auth/internal-tools'
+import { createServerSupabase } from '@/lib/supabase/server'
+
+type GmailListMessage = {
+  id: string
+}
+
+type GmailListResponse = {
+  messages?: GmailListMessage[]
+}
+
+type GmailHeader = {
+  name: string
+  value: string
+}
+
+type GmailMessageDetail = {
+  snippet?: string
+  payload?: {
+    headers?: GmailHeader[]
+  }
+}
 
 async function getGoogleAccessToken() {
   const res = await fetch('https://oauth2.googleapis.com/token', {
@@ -18,6 +40,10 @@ async function getGoogleAccessToken() {
 }
 
 export async function GET() {
+  const { supabase } = await createServerSupabase()
+  const auth = await requireInternalToolAccess(supabase, 'gmail_diagnostic')
+  if (!auth.ok) return auth.response
+
   const accessToken = await getGoogleAccessToken()
 
   const q = encodeURIComponent('from:info@notifications.evertecinc.com')
@@ -26,16 +52,16 @@ export async function GET() {
     { headers: { Authorization: `Bearer ${accessToken}` } }
   )
 
-  const listData = await listRes.json()
+  const listData = (await listRes.json()) as GmailListResponse
 
   const messages = await Promise.all(
-    (listData.messages || []).map(async (msg: any) => {
+    (listData.messages || []).map(async (msg) => {
       const detailRes = await fetch(
         `https://gmail.googleapis.com/gmail/v1/users/me/messages/${msg.id}?format=metadata&metadataHeaders=Subject&metadataHeaders=Date&metadataHeaders=From`,
         { headers: { Authorization: `Bearer ${accessToken}` } }
       )
 
-      const detail = await detailRes.json()
+      const detail = (await detailRes.json()) as GmailMessageDetail
 
       return {
         id: msg.id,

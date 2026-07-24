@@ -223,7 +223,6 @@ These pages/components are client-side and can use the public/browser client if 
 - `app/accounts/page.tsx`
 - `app/plaid-import/page.tsx`
 - `app/merchant-rules/page.tsx`
-- `app/advisor/page.tsx`
 - `app/plaid/ConnectPlaidButton.tsx`
 - dev buttons under `app/dev`
 
@@ -241,7 +240,8 @@ Recommendation: Do not treat client public client usage itself as a bug. Fix RLS
 - `app/api/plaid/sync-accounts/route.ts`: checks `supabase.auth.getUser()`, reads/writes scoped by `user_id`.
 - `app/api/dev/transaction-intelligence/generate-plaid-suggestions/route.ts`: checks session and uses `user_id`.
 - `app/api/dev/transaction-intelligence/recategorize-plaid-suggestions/route.ts`: checks session and uses `user_id`.
-- `app/api/pablo/answer/route.ts`: checks session before answering.
+- `app/api/pablo/answer/route.ts`: retired compatibility endpoint returning
+  `410 Gone`; use `app/api/robototina/answer/route.ts`.
 
 Risk: Low to Medium. Continue to ensure every write uses explicit `user_id` predicates.
 

@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { requireInternalToolAccess } from '@/lib/auth/internal-tools'
 import { createServerSupabase } from '@/lib/supabase/server'
 
 type PlaidImportRow = {
@@ -24,14 +25,9 @@ function confidenceScore(category: string) {
 export async function POST() {
   const { supabase } = await createServerSupabase()
 
-  const {
-    data: { user },
-    error: authError,
-  } = await supabase.auth.getUser()
-
-  if (authError || !user) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
+  const auth = await requireInternalToolAccess(supabase, 'dev')
+  if (!auth.ok) return auth.response
+  const { user } = auth
 
   const { data: plaidImports, error: plaidImportsError } = await supabase
     .from('plaid_imports')

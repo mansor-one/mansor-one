@@ -27,6 +27,15 @@ type SummaryInputs = {
   pendingReviewCount: number
 }
 
+type FinancialSummaryParts = {
+  userId: string
+  portfolio: PortfolioSummary
+  dashboard: FinancialSummary['source']['dashboard']
+  planning: PlanningSummary
+  pendingReviewCount?: number
+  generatedAt?: string
+}
+
 export function getLiquidityStatus(
   availableToday: number,
   resultToday: number,
@@ -355,8 +364,24 @@ export async function getFinancialSummary(
     getDashboardSummary(supabase, userId),
     getPlanningSummary(supabase, userId),
   ])
+
+  return buildFinancialSummaryFromParts({
+    userId,
+    portfolio,
+    dashboard,
+    planning,
+  })
+}
+
+export function buildFinancialSummaryFromParts({
+  userId,
+  portfolio,
+  dashboard,
+  planning,
+  pendingReviewCount = 0,
+  generatedAt = new Date().toISOString(),
+}: FinancialSummaryParts): FinancialSummary {
   const liquidity = dashboard.liquidity
-  const pendingReviewCount = 0
   const inputs = {
     portfolio,
     liquidity,
@@ -374,7 +399,7 @@ export async function getFinancialSummary(
   )
 
   return {
-    generatedAt: new Date().toISOString(),
+    generatedAt,
     userId,
     briefing: {
       availableToday: portfolio.totalLiquidAvailable,

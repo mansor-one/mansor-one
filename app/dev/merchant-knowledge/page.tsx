@@ -1,11 +1,18 @@
 import { requireUser } from '@/lib/auth/requireUser'
 import {
   buildMerchantKnowledge,
+  canonicalCategoryCodeForText,
+  getCategoryByCode,
   getMerchantLearningState,
   type MerchantObservation,
   normalizeMerchantName,
 } from '@/lib/financial-engine'
 import { createServerSupabase } from '@/lib/supabase/server'
+import {
+  MerchantKnowledgeExplorer,
+  type MerchantKnowledgeExplorerObservation,
+  type MerchantKnowledgeExplorerRow,
+} from './MerchantKnowledgeExplorer'
 
 export const dynamic = 'force-dynamic'
 
@@ -13,21 +20,25 @@ type SourceName = 'plaid_imports' | 'quick_entries'
 
 type PlaidImportRow = {
   id: string
+  plaid_transaction_id: string | null
   merchant: string | null
   amount: number | string | null
   suggested_category: string | null
   plaid_category: string | null
   transaction_date: string | null
-  created_at: string | null
+  institution_name: string | null
+  account_name: string | null
+  account_mask: string | null
 }
 
 type QuickEntryRow = {
   id: string
+  plaid_transaction_id: string | null
   description: string | null
   amount: number | string | null
   category: string | null
   entry_date: string | null
-  created_at: string | null
+  account_name: string | null
 }
 
 type LiveMerchantObservation = MerchantObservation & {
@@ -35,48 +46,16 @@ type LiveMerchantObservation = MerchantObservation & {
   source: SourceName
   legacyCategoryText: string | null
   rawMerchantName: string | null
+  plaidTransactionId: string | null
+  institutionName: string | null
+  accountName: string | null
+  accountMask: string | null
 }
 
-function asJson(value: unknown) {
-  return JSON.stringify(value, null, 2)
-}
-
-function numberValue(value: number) {
-  return Number(value || 0).toLocaleString(undefined, {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  })
-}
-
-function percentValue(value: number) {
-  return `${Math.round(value * 100)}%`
-}
-
-function normalizeLegacyCategory(value: string | null | undefined) {
-  return String(value || '')
-    .trim()
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-}
-
-function mapLegacyCategoryToCanonicalCode(legacyCategoryText: string | null) {
-  const category = normalizeLegacyCategory(legacyCategoryText)
-
-  if (!category || category === 'revisar') return null
-  if (category === 'comida fuera' || category === 'fast food') {
-    return 'food_dining'
-  }
-  if (category === 'cafeteria') {
-    return 'food_cafeteria'
-  }
-  if (category === 'gasolina') return 'transportation_gas'
-  if (category === 'farmacia') return 'health_pharmacy'
-  if (category === 'pago de tarjeta') return 'finance_credit_card_payment'
-  if (category === 'transferencia') return 'transfers_transfer'
-  if (category === 'ingreso') return 'income_income'
-
-  return null
+function categoryLabel(code: string | null) {
+  if (!code) return 'None'
+  const category = getCategoryByCode(code)
+  return category ? `${category.displayName} (${category.code})` : code
 }
 
 function plaidObservation(row: PlaidImportRow): LiveMerchantObservation | null {
@@ -88,13 +67,18 @@ function plaidObservation(row: PlaidImportRow): LiveMerchantObservation | null {
 
   return {
     id: row.id,
+    plaidTransactionId: row.plaid_transaction_id,
     source: 'plaid_imports',
     rawMerchantName: merchantName,
     merchantName,
     amount: Number(row.amount || 0),
     date,
     legacyCategoryText,
-    canonicalCategoryCode: mapLegacyCategoryToCanonicalCode(legacyCategoryText),
+    canonicalCategoryCode: canonicalCategoryCodeForText(legacyCategoryText),
+    isConfirmed: false,
+    institutionName: row.institution_name,
+    accountName: row.account_name,
+    accountMask: row.account_mask,
   }
 }
 
@@ -109,13 +93,18 @@ function quickEntryObservation(
 
   return {
     id: row.id,
+    plaidTransactionId: row.plaid_transaction_id,
     source: 'quick_entries',
     rawMerchantName: merchantName,
     merchantName,
     amount: Number(row.amount || 0),
     date,
     legacyCategoryText,
-    canonicalCategoryCode: mapLegacyCategoryToCanonicalCode(legacyCategoryText),
+    canonicalCategoryCode: canonicalCategoryCodeForText(legacyCategoryText),
+    isConfirmed: true,
+    institutionName: null,
+    accountName: row.account_name,
+    accountMask: null,
   }
 }
 
@@ -160,6 +149,26 @@ function sourceCounts(observations: LiveMerchantObservation[]) {
   )
 }
 
+function explorerObservation(
+  observation: LiveMerchantObservation
+): MerchantKnowledgeExplorerObservation {
+  return {
+    id: observation.id,
+    source: observation.source,
+    rawMerchantName: observation.rawMerchantName,
+    merchantName: observation.merchantName,
+    plaidTransactionId: observation.plaidTransactionId,
+    institutionName: observation.institutionName,
+    accountName: observation.accountName,
+    accountMask: observation.accountMask,
+    amount: observation.amount,
+    date: observation.date,
+    legacyCategoryText: observation.legacyCategoryText,
+    canonicalCategoryCode: observation.canonicalCategoryCode,
+    isConfirmed: Boolean(observation.isConfirmed),
+  }
+}
+
 export default async function DevMerchantKnowledgePage() {
   const { supabase } = await createServerSupabase()
   const { user } = await requireUser(supabase)
@@ -168,14 +177,14 @@ export default async function DevMerchantKnowledgePage() {
     supabase
       .from('plaid_imports')
       .select(
-        'id, merchant, amount, suggested_category, plaid_category, transaction_date, created_at'
+        'id, plaid_transaction_id, merchant, amount, suggested_category, plaid_category, transaction_date, institution_name, account_name, account_mask'
       )
       .eq('user_id', user.id)
       .order('transaction_date', { ascending: false })
       .limit(300),
     supabase
       .from('quick_entries')
-      .select('id, description, amount, category, entry_date, created_at')
+      .select('id, plaid_transaction_id, description, amount, category, entry_date, account_name')
       .eq('user_id', user.id)
       .order('entry_date', { ascending: false })
       .limit(300),
@@ -196,17 +205,30 @@ export default async function DevMerchantKnowledgePage() {
   const observations = [...plaidObservations, ...quickEntryObservations].sort(
     (a, b) => b.date.localeCompare(a.date)
   )
-
-  const knowledge = groupObservations(observations)
+  const merchants: MerchantKnowledgeExplorerRow[] = groupObservations(
+    observations
+  )
     .map((group) => {
       const merchantKnowledge = buildMerchantKnowledge(group)
+      const learningState = getMerchantLearningState(merchantKnowledge)
 
       return {
         ...merchantKnowledge,
-        learningState: getMerchantLearningState(merchantKnowledge),
+        learningState,
+        canonicalCategoryLabel: categoryLabel(
+          merchantKnowledge.canonicalCategoryCode
+        ),
+        latestCategoryLabel: categoryLabel(merchantKnowledge.latestCategoryCode),
         sourceCounts: sourceCounts(group),
         legacyCategories: legacyCategorySummary(group),
-        sourceMerchants: [...new Set(group.map((item) => item.rawMerchantName))],
+        sourceMerchants: [
+          ...new Set(
+            group
+              .map((item) => item.rawMerchantName)
+              .filter((name): name is string => Boolean(name))
+          ),
+        ],
+        observations: group.map(explorerObservation),
       }
     })
     .sort((a, b) => b.timesSeen - a.timesSeen || b.confidence - a.confidence)
@@ -214,9 +236,10 @@ export default async function DevMerchantKnowledgePage() {
   return (
     <main className="p-8 space-y-6">
       <div>
-        <h1 className="text-3xl font-bold">Dev Merchant Knowledge</h1>
+        <h1 className="text-3xl font-bold">Merchant Knowledge</h1>
         <p className="text-sm opacity-70">
-          Read-only live view for Merchant Knowledge Engine v1.1.
+          Search learned merchants, inspect confidence, and verify which rows
+          count toward learning.
         </p>
       </div>
 
@@ -224,102 +247,19 @@ export default async function DevMerchantKnowledgePage() {
         <section className="border rounded p-4 text-red-600">
           <h2 className="text-xl font-bold">Source errors</h2>
           <pre className="mt-3 overflow-auto text-sm">
-            {asJson({
-              plaid_imports: plaidResult.error,
-              quick_entries: quickEntriesResult.error,
-            })}
+            {JSON.stringify(
+              {
+                plaid_imports: plaidResult.error,
+                quick_entries: quickEntriesResult.error,
+              },
+              null,
+              2
+            )}
           </pre>
         </section>
       )}
 
-      <section className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div className="border rounded p-4">
-          <h2 className="font-semibold">Source rows</h2>
-          <p className="mt-3 text-3xl font-bold">{observations.length}</p>
-        </div>
-        <div className="border rounded p-4">
-          <h2 className="font-semibold">Plaid imports</h2>
-          <p className="mt-3 text-3xl font-bold">
-            {plaidObservations.length}
-          </p>
-        </div>
-        <div className="border rounded p-4">
-          <h2 className="font-semibold">Quick entries</h2>
-          <p className="mt-3 text-3xl font-bold">
-            {quickEntryObservations.length}
-          </p>
-        </div>
-      </section>
-
-      <section className="border rounded p-4 space-y-3">
-        <h2 className="text-xl font-bold">Normalized Merchants</h2>
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          {knowledge.map((merchant) => (
-            <div
-              className="border rounded p-3 space-y-2"
-              key={merchant.normalizedMerchantName}
-            >
-              <div>
-                <h3 className="font-semibold">
-                  {merchant.normalizedMerchantName}
-                </h3>
-                <p className="text-sm opacity-70">
-                  {merchant.sourceMerchants.join(', ')}
-                </p>
-              </div>
-
-              <p>Category: {merchant.canonicalCategoryCode || 'None'}</p>
-              <p>
-                Legacy category:{' '}
-                {merchant.legacyCategories
-                  .map((category) => `${category.label} (${category.count})`)
-                  .join(', ')}
-              </p>
-              <p>Confidence: {percentValue(merchant.confidence)}</p>
-              <p>State: {merchant.learningState.state}</p>
-              <p>Stable: {merchant.isStable ? 'Yes' : 'No'}</p>
-              <p>Should ask again: {merchant.shouldAskAgain ? 'Yes' : 'No'}</p>
-              <p>
-                Sources: plaid_imports {merchant.sourceCounts.plaid_imports},
-                quick_entries {merchant.sourceCounts.quick_entries}
-              </p>
-
-              <div className="grid grid-cols-2 gap-2 text-sm">
-                <p>Times seen: {merchant.timesSeen}</p>
-                <p>Average: {numberValue(merchant.averageAmount)}</p>
-                <p>Minimum: {numberValue(merchant.minimumAmount)}</p>
-                <p>Maximum: {numberValue(merchant.maximumAmount)}</p>
-                <p className="col-span-2">Last seen: {merchant.lastSeen}</p>
-              </div>
-
-              <div className="text-sm">
-                <p className="font-medium">Confidence reasons</p>
-                <ul className="list-disc pl-5">
-                  {merchant.confidenceReasons.map((reason) => (
-                    <li key={reason.code}>
-                      {reason.code}: {reason.description}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            </div>
-          ))}
-
-          {knowledge.length === 0 && (
-            <p className="opacity-70">No merchant observations found.</p>
-          )}
-        </div>
-      </section>
-
-      <details className="border rounded p-4">
-        <summary className="font-semibold">Raw JSON</summary>
-        <pre className="mt-3 overflow-auto text-sm">
-          {asJson({
-            observations,
-            knowledge,
-          })}
-        </pre>
-      </details>
+      <MerchantKnowledgeExplorer merchants={merchants} />
     </main>
   )
 }

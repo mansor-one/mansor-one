@@ -8,12 +8,27 @@ export type ConnectedAccount = {
   connection_id?: string | null
   institution_name?: string | null
   name?: string | null
+  display_name?: string | null
   type?: string | null
   subtype?: string | null
   available_balance?: number | null
   current_balance?: number | null
   currency?: string | null
   updated_at?: string | null
+  owner_scope?: string | null
+  account_status?: 'active' | 'hidden' | 'archived' | string | null
+  is_hidden?: boolean | null
+  include_in_dashboard?: boolean | null
+  is_spendable?: boolean | null
+  plaid_minimum_payment_amount?: number | null
+  plaid_next_payment_due_date?: string | null
+  plaid_last_statement_balance?: number | null
+  plaid_liability_is_overdue?: boolean | null
+  plaid_liability_updated_at?: string | null
+  hidden_at?: string | null
+  archived_at?: string | null
+  archive_reason?: string | null
+  portfolio_updated_at?: string | null
 }
 
 export type ResolvedConnectedAccount = ConnectedAccount & {
@@ -41,10 +56,20 @@ export type ManualAccount = {
   id?: string
   name?: string | null
   account_type?: string | null
+  owner_id?: string | null
+  owner_scope?: string | null
   currency?: string | null
   balance?: number | null
   is_active?: boolean | null
   is_spendable?: boolean | null
+  account_status?: 'active' | 'hidden' | 'archived' | string | null
+  is_hidden?: boolean | null
+  hidden_at?: string | null
+  archived_at?: string | null
+  archive_reason?: string | null
+  replacement_account_id?: string | null
+  created_at?: string | null
+  updated_at?: string | null
 }
 
 export type AssetSource = 'plaid' | 'manual'
@@ -139,12 +164,101 @@ export type CreditCard = {
   id?: string
   name?: string | null
   bank?: string | null
+  owner_id?: string | null
+  plaid_account_id?: string | null
+  scheduled_payment_id?: string | null
+  credit_limit?: number | null
   balance?: number | null
   minimum_payment?: number | null
   due_day?: number | null
-  apr?: number | string | null
-  currency?: string | null
+  cutoff_day?: number | null
   is_active?: boolean | null
+  created_at?: string | null
+  card_type?: string | null
+  use_case?: string | null
+  interest_notes?: string | null
+  promo_end_date?: string | null
+  regular_apr?: number | null
+  promo_apr?: number | null
+  autopay_enabled?: boolean | null
+  autopay_account_label?: string | null
+  payment_account_notes?: string | null
+  manual_last4?: string | null
+  user_id?: string | null
+}
+
+export type PersonOption = {
+  id: string
+  name: string
+}
+
+export type CardProfileSource = 'manual' | 'plaid' | 'merged'
+
+export type CardProfile = {
+  id: string
+  displayName: string
+  institution: string | null
+  owner: string | null
+  ownerId: string | null
+  source: CardProfileSource
+  manualCreditCardId: string | null
+  plaidAccountId: string | null
+  plaidAccountName: string | null
+  manualPlaidAccountId: string | null
+  scheduledPaymentId: string | null
+  manualScheduledPaymentId: string | null
+  currentPaymentInstanceId: string | null
+  currentPaymentSource: PaymentInstance['source'] | null
+  currentBalance: number | null
+  availableCredit: number | null
+  creditLimit: number | null
+  utilizationPercent: number | null
+  minimumPayment: number | null
+  minimumPaymentSource: string | null
+  dueDay: number | null
+  nextDueDate: string | null
+  dueDateSource: string | null
+  graceDeadline: string | null
+  balanceSource: string
+  availableCreditSource: string
+  paymentStatus: string | null
+  lastPaymentDate: string | null
+  interestNotes: string | null
+  regularAprNote: string | null
+  promoAprNote: string | null
+  regularApr: number | null
+  promoApr: number | null
+  promoEndDate: string | null
+  autopayEnabled: boolean | null
+  autopayAccountLabel: string | null
+  paymentAccountNotes: string | null
+  manualLast4: string | null
+  cardType: string | null
+  useCase: string | null
+  cutoffDay: number | null
+  daysUntilPromoEnd: number | null
+  promoEndingSoon: boolean
+  isActive: boolean
+  isConnected: boolean
+  warnings: string[]
+  scheduleLinkDiagnostics: string[]
+  missingDataChecklist: string[]
+  linkConfidence: number
+  duplicatePlaidAccountIds: string[]
+}
+
+export type CardsSummary = {
+  cards: CardProfile[]
+  attentionNeeded: CardProfile[]
+  activeCards: CardProfile[]
+  connectedCards: CardProfile[]
+  archivedCards: CardProfile[]
+  unresolvedCards: CardProfile[]
+  ownerOptions: PersonOption[]
+  totalBalance: number
+  totalAvailableCredit: number
+  totalMinimumPayment: number
+  warnings: string[]
 }
 
 export type PaymentInstance = {
@@ -152,24 +266,113 @@ export type PaymentInstance = {
   name?: string | null
   amount?: number | null
   status?: string | null
+  owner?: string | null
+  due_date?: string | null
+  expected_date?: string | null
   effective_due_date?: string | null
+  grace_until?: string | null
+  grace_days?: number | null
+  grace_due_date?: string | null
+  updated_at?: string | null
+  notes?: string | null
+  displayNotes?: string | null
   payment_month?: number | null
   payment_year?: number | null
+  scheduled_payment_id?: string | null
+  source?: 'payment_instance' | 'scheduled_payment' | 'obligation'
+  lifecycleItemType?: 'card_payment' | 'scheduled_payment' | 'obligation'
+  obligationId?: string | null
+  obligationInstanceId?: string | null
+  obligationProviderId?: string | null
+  obligationType?: string | null
+  obligationCategoryCode?: string | null
+  obligationProviderName?: string | null
+  paymentMethod?: string | null
+  legacySourceIds?: string[]
+  isEstimated?: boolean
+  isInGracePeriod?: boolean
+  lifecycleState?: string | null
+  lifecycleLabel?: string | null
+  settlementState?: string | null
+  userActionRequired?: boolean
+  countsAsUnpaidRisk?: boolean
+  bankConfirmationPending?: boolean
+  lifecycleIsOpen?: boolean
+  lifecycleIsClosed?: boolean
+  isOverdue?: boolean
+  daysFromDueDate?: number | null
+  lifecycleReasons?: string[]
+  lifecycleReconciliationConfidence?: number | null
+  lifecycleMatchedTransaction?: {
+    id: string
+    source: string
+    name: string | null
+    amount: number
+    date: string | null
+    confidence: number
+    confidenceLevel: string
+  } | null
+  lifecycleReconciliationReasons?: string[]
+  truthStatus?: string | null
+  truthReasons?: string[]
+}
+
+export type ScheduledPayment = {
+  id: string
+  name?: string | null
+  amount?: number | null
+  due_day?: number | null
+  credit_card_id?: string | null
+  user_id?: string | null
+  grace_day?: number | null
+  active_months?: string | null
+  owner?: string | null
+  category?: string | null
+  recurrence_type?: string | null
+  is_active?: boolean | null
+  created_at?: string | null
 }
 
 export type IncomeSchedule = {
   id?: string
+  user_id?: string | null
   name?: string | null
   amount?: number | null
   next_expected_date?: string | null
   is_active?: boolean | null
+  income_type?: 'one_time' | 'recurring' | string | null
+  category_code?: string | null
+  amount_is_estimated?: boolean | null
+  confidence?: 'estimated' | 'likely' | 'confirmed' | string | null
+  owner?: string | null
+  owner_scope?: 'household' | 'manuel' | 'soraya' | 'business' | string | null
+  destination_account_id?: string | null
+  destination_account_source?: 'manual' | 'plaid' | string | null
+  cadence?: 'one_time' | 'weekly' | 'biweekly' | 'monthly' | 'irregular' | string | null
+  status?: 'expected' | 'received' | 'missed' | 'cancelled' | string | null
+  received_at?: string | null
+  notes?: string | null
+  created_at?: string | null
+  updated_at?: string | null
+}
+
+export type IncomePlanningSummary = {
+  allIncome: IncomeSchedule[]
+  expectedIncome: IncomeSchedule[]
+  receivedIncome: IncomeSchedule[]
+  missedIncome: IncomeSchedule[]
+  cancelledIncome: IncomeSchedule[]
+  projectedIncome: IncomeSchedule[]
+  totalProjectedIncome: number
 }
 
 export type PlanningItem = {
   id: string
   name?: string | null
   target_amount?: number | null
+  current_amount?: number | null
   due_date?: string | null
+  item_type?: string | null
   is_archived?: boolean | null
   is_completed?: boolean | null
 }
@@ -199,16 +402,25 @@ export type AccountsSummary = {
 }
 
 export type LiquiditySummary = AccountsSummary & {
+  lifecyclePayments: PaymentInstance[]
+  overduePayments: PaymentInstance[]
   pendingActionPayments: PaymentInstance[]
   initiatedPayments: PaymentInstance[]
   committedPayments: PaymentInstance[]
   pendingPayments: PaymentInstance[]
+  income: IncomePlanningSummary
   confirmedIncome: IncomeSchedule[]
+  projectedIncome: IncomeSchedule[]
+  expectedIncome: IncomeSchedule[]
+  receivedIncome: IncomeSchedule[]
+  missedIncome: IncomeSchedule[]
+  cancelledIncome: IncomeSchedule[]
   pendingActionPaymentTotal: number
   initiatedPaymentsTotal: number
   committedPaymentsTotal: number
   totalPendingPayments: number
   totalConfirmedIncome: number
+  totalProjectedIncome: number
   resultToday: number
   resultAfterIncome: number
 }
@@ -216,6 +428,7 @@ export type LiquiditySummary = AccountsSummary & {
 export type PlanningSummary = {
   planningItems: PlanningItem[]
   totalFutureObligations: number
+  overduePayments?: PaymentInstance[]
 }
 
 export type DashboardSummary = {
@@ -346,35 +559,4 @@ export type FinancialSummary = {
     planning: PlanningSummary
     dashboard: DashboardSummary
   }
-}
-
-export type OverallFinancialState = 'calm' | 'watch' | 'pressure' | 'critical'
-
-export type FinancialDecisionSeverity = 'info' | 'warning' | 'critical'
-
-export type FinancialDecisionType =
-  | 'upcoming_payment'
-  | 'initiated_payment_followup'
-  | 'transaction_review'
-  | 'negative_cashflow'
-  | 'planning_pressure'
-
-export type FinancialDecision = {
-  id: string
-  priority: number
-  impactScore: number
-  severity: FinancialDecisionSeverity
-  type: FinancialDecisionType
-  title: string
-  explanation: string
-  recommendation: string
-  confidence: number
-  actionUrl: string
-  generatedAt: string
-}
-
-export type DecisionEngineResult = {
-  overallFinancialState: OverallFinancialState
-  decisions: FinancialDecision[]
-  source: FinancialSummary
 }

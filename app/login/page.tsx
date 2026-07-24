@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { getSafeRedirectPath } from '@/lib/auth/redirects'
 import { createClient } from '@/lib/supabase/client'
 
 export default function LoginPage() {
@@ -8,6 +9,7 @@ export default function LoginPage() {
   const [password, setPassword] = useState('')
   const [message, setMessage] = useState('')
   const supabase = createClient()
+
   async function login() {
     const { error } = await supabase.auth.signInWithPassword({
       email,
@@ -19,7 +21,10 @@ export default function LoginPage() {
       return
     }
 
-    window.location.href = '/'
+    const searchParams = new URLSearchParams(window.location.search)
+    const nextPath = searchParams.get('next')
+    const redirectTo = getSafeRedirectPath(nextPath)
+    window.location.href = redirectTo
   }
 
   async function signup() {

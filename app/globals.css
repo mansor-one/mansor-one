@@ -24,3 +24,70 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+.product-shell {
+  color-scheme: dark;
+}
+
+.product-shell .bg-white,
+.product-shell .bg-slate-50,
+.product-shell .bg-slate-100,
+.product-shell .bg-neutral-50,
+.product-shell .bg-neutral-100 {
+  background-color: rgba(15, 23, 42, 0.58) !important;
+}
+
+.product-shell .bg-white\/45,
+.product-shell .bg-white\/50,
+.product-shell .bg-white\/60,
+.product-shell .bg-white\/70,
+.product-shell .bg-white\/80,
+.product-shell .bg-white\/90,
+.product-shell .bg-slate-50\/90 {
+  background-color: rgba(15, 23, 42, 0.52) !important;
+}
+
+.product-shell .border-slate-100,
+.product-shell .border-slate-200,
+.product-shell .border-slate-300,
+.product-shell .border-neutral-200,
+.product-shell .border-neutral-300 {
+  border-color: rgba(255, 255, 255, 0.09) !important;
+}
+
+.product-shell .text-slate-950,
+.product-shell .text-slate-900,
+.product-shell .text-neutral-950,
+.product-shell .text-neutral-900 {
+  color: rgb(248, 250, 252) !important;
+}
+
+.product-shell .text-slate-800,
+.product-shell .text-slate-700,
+.product-shell .text-neutral-800,
+.product-shell .text-neutral-700 {
+  color: rgb(226, 232, 240) !important;
+}
+
+.product-shell .text-slate-600,
+.product-shell .text-neutral-600 {
+  color: rgb(203, 213, 225) !important;
+}
+
+.product-shell .text-slate-500,
+.product-shell .text-neutral-500 {
+  color: rgb(148, 163, 184) !important;
+}
+
+.product-shell input,
+.product-shell select,
+.product-shell textarea {
+  background-color: rgba(2, 6, 23, 0.74);
+  border-color: rgba(255, 255, 255, 0.12);
+  color: rgb(248, 250, 252);
+}
+
+.product-shell input::placeholder,
+.product-shell textarea::placeholder {
+  color: rgb(100, 116, 139);
+}

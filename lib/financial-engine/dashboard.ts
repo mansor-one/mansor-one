@@ -1,6 +1,24 @@
 import { getLiquiditySummary } from './liquidity'
 import { getPlanningSummary } from './planning'
-import type { DashboardSummary, FinancialSupabaseClient } from './types'
+import type {
+  DashboardSummary,
+  FinancialSupabaseClient,
+  LiquiditySummary,
+  PlanningSummary,
+} from './types'
+
+export function buildDashboardSummaryFromParts(
+  liquidity: LiquiditySummary,
+  planning: PlanningSummary
+): DashboardSummary {
+  return {
+    liquidity,
+    planning: {
+      ...planning,
+      overduePayments: liquidity.overduePayments,
+    },
+  }
+}
 
 export async function getDashboardSummary(
   supabase: FinancialSupabaseClient,
@@ -11,8 +29,5 @@ export async function getDashboardSummary(
     getPlanningSummary(supabase, userId),
   ])
 
-  return {
-    liquidity,
-    planning,
-  }
+  return buildDashboardSummaryFromParts(liquidity, planning)
 }

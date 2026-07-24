@@ -1,23 +1,35 @@
-import { supabase } from '@/lib/supabase'
+import { requireUser } from '@/lib/auth/requireUser'
 import Nav from '../components/Nav'
 
+type Priority = {
+  id: string
+  name: string | null
+  amount: number | string | null
+  priority_level: 'critical' | 'high' | 'medium' | 'low' | string | null
+  status: string | null
+  notes: string | null
+}
+
 export default async function PrioritiesPage() {
+  const { supabase } = await requireUser()
   const { data: priorities } = await supabase
     .from('priorities')
     .select('*')
     .order('amount', { ascending: false })
 
+  const items = ((priorities || []) as Priority[])
+
   const critical =
-    priorities?.filter((p) => p.priority_level === 'critical') || []
+    items.filter((p) => p.priority_level === 'critical') || []
 
   const high =
-    priorities?.filter((p) => p.priority_level === 'high') || []
+    items.filter((p) => p.priority_level === 'high') || []
 
   const medium =
-    priorities?.filter((p) => p.priority_level === 'medium') || []
+    items.filter((p) => p.priority_level === 'medium') || []
 
   const low =
-    priorities?.filter((p) => p.priority_level === 'low') || []
+    items.filter((p) => p.priority_level === 'low') || []
 
   return (
     <main className="p-8 space-y-6">
@@ -53,7 +65,7 @@ function PrioritySection({
   items,
 }: {
   title: string
-  items: any[]
+  items: Priority[]
 }) {
   return (
     <section className="border rounded p-4">

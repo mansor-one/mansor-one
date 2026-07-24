@@ -1,10 +1,10 @@
 # Payment Lifecycle
 
-Last updated: 2026-06-26
+Last updated: 2026-07-02
 
 ## Purpose
 
-Payment Lifecycle v1 prepares Mansor One for future automatic reconciliation without changing today's payment behavior.
+Payment Lifecycle v2 prepares Mansor One for consistent payment status across Dashboard, Cards, Timeline, Planning preview and Robototina.
 
 Today, `payment_instances` acts as the monthly obligation list. Pages and calculations mostly treat any status other than `paid` as open. Future reconciliation needs a clearer distinction between a payment that is merely planned, a payment that the user says was sent, and a payment that the bank or ledger confirms.
 
@@ -45,7 +45,7 @@ It does not track payment initiation, external confirmation, paid date, paid amo
 
 ### APIs
 
-Plaid import calls `reconcileMovement()` after inserting a `quick_entries` row. No API currently exposes a full payment lifecycle.
+Review Queue promotion can create confirmed `quick_entries` from Plaid imports. Payment confirmation routes can explicitly close matching payment instances. Pages should consume shared lifecycle output instead of interpreting raw `payment_instances` independently.
 
 ## Canonical Lifecycle States
 
@@ -139,6 +139,21 @@ It should eventually track:
 - remaining amount
 - arrears/carryover
 
+## V2 Shared Lifecycle Rules
+
+One shared lifecycle view should decide payment state for Dashboard, Cards, Robototina, Timeline and Planning preview.
+
+Rules:
+
+- A cycle is closed when status is `paid`, `confirmed` or `closed`.
+- A cycle is also closed when a confirmed ledger movement matches the expected payment.
+- If the current cycle is closed, the next due date should advance to the next expected cycle.
+- Overdue means the effective due date is before today and the cycle is not closed.
+- Grace period affects effective due date.
+- Missing last payment alone must not make a future due date overdue.
+- Timeline and Planning preview should not use raw `payment_instances` as final truth.
+- Robototina should use the same lifecycle output as Dashboard and Cards.
+
 ## Examples
 
 ### Synchrony
@@ -183,8 +198,8 @@ It should eventually track:
 
 No schema changes were made.
 
-No UI behavior changed.
+Manual payment linking still needs a durable model and audit trail.
 
-No Plaid reconciliation changes were implemented.
+Toyota/Honda obligations and grace-period configuration should be modeled through the Financial Engine, not page logic.
 
 No existing payment rows were modified.
