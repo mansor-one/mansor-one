@@ -2,9 +2,9 @@ import {
   canonicalCategoryCodeForText,
   commonMerchantDefaultCategoryCode,
   getCategoryByCode,
-} from './categories'
-import type { LedgerSummaryTransaction } from './ledger-summary'
-import { transactionStatusCountsTowardSpending } from './plaid-transaction-lifecycle'
+} from './categories.ts'
+import type { LedgerSummaryTransaction } from './ledger-summary.ts'
+import { transactionStatusCountsTowardSpending } from './plaid-transaction-lifecycle.ts'
 
 export const HOUSEHOLD_TIME_ZONE = 'America/Puerto_Rico'
 
