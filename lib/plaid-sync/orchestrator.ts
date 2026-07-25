@@ -6,6 +6,7 @@ import { syncPlaidAccountsForUser } from '@/app/api/plaid/sync-accounts/route'
 import { syncPlaidImportsForUser } from '@/app/api/plaid/sync-imports/route'
 import { reconcileOpenObligationsAfterPlaidSync } from '@/lib/financial-engine/obligation-reconciliation-engine'
 import { getFinancialEngineSnapshot } from '@/lib/financial-engine/snapshot'
+import { serializePlaidSyncError } from './error-serialization'
 
 export const PLAID_SYNC_STEPS = [
   { id: 'accounts', label: 'Cuentas y balances' },
@@ -100,8 +101,18 @@ export async function executePlaidSyncRun(runId: string, userId: string) {
       const completed = index + 1
       await supabase.from('plaid_sync_runs').update({ completed_steps: completed, percentage: completed * 20, step_results: results, summary: summaryFromResults(results), warnings, last_heartbeat_at: new Date().toISOString() }).eq('id', runId)
     } catch (stepError) {
-      const message = stepError instanceof Error ? stepError.message : String(stepError)
-      await supabase.from('plaid_sync_runs').update({ status: index > 0 ? 'partially_completed' : 'failed', error_message: message, retryable_step: step.id, completed_at: new Date().toISOString(), duration_ms: Date.now() - started, lock_expires_at: null, step_results: results, warnings }).eq('id', runId)
+      const technicalError = serializePlaidSyncError(step.id, stepError)
+      results[step.id] = { error: technicalError }
+      await supabase.from('plaid_sync_runs').update({
+        status: index > 0 ? 'partially_completed' : 'failed',
+        error_message: `No pudimos completar ${step.label.toLowerCase()}.`,
+        retryable_step: step.id,
+        completed_at: new Date().toISOString(),
+        duration_ms: Date.now() - started,
+        lock_expires_at: null,
+        step_results: results,
+        warnings,
+      }).eq('id', runId)
       return
     }
   }
