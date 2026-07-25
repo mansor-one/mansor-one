@@ -8,7 +8,7 @@ Production deployment: prohibited and not performed
 
 - Stable exact origin:
   `https://mansor-one-git-security-phase-1-hardening-mansor-one.vercel.app`
-- Current deployment:
+- Validation deployment:
   `https://mansor-hfojrg7gy-mansor-one.vercel.app`
 - Deployment ID: `dpl_981Es1DHWUzS9MX9YxQvCrKgNgZK`
 - State/target: `READY` / `preview`
@@ -38,9 +38,14 @@ No Production deployment or additional database migration was run.
 
 ## Repository state
 
-The deployed source commit is
+The validation deployment's source commit is
 `68fcf58f3396429153366907362b3839ab127b19`. `origin/main` remains at
 `990aed27f63a50f40d8d73db4585bc5c48a42363`.
+
+The reports were subsequently committed as `928f099` and produced a separate
+`READY` Preview with the same stable branch alias and Node.js 22 runtime. That
+documentation-only deployment is not represented as a second execution of the
+interactive checklist.
 
 The unrelated unstaged edit in
 `lib/financial-engine/semi-monthly-spending.ts` remains outside all Phase 1.6
