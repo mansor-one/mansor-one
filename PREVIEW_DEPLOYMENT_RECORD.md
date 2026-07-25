@@ -18,8 +18,11 @@ Production deployment: prohibited
    drop the nullable columns unless a separately approved coordinated rollback
    is required.
 
-Steps 1 and 2 are complete. The migration was the only pending migration and
-schema read-back succeeded.
+Steps 1 through 3 are complete. The migration was the only pending migration,
+schema read-back succeeded, and commit
+`10b086829af3114a34238a1bedf880237fce9af8` was pushed only to
+`origin/security/phase-1-hardening`. `origin/main` remained at
+`990aed27f63a50f40d8d73db4585bc5c48a42363`.
 
 ## Branch diff classification
 
@@ -50,6 +53,10 @@ committed private value is permitted.
 
 ## Current deployment status
 
-Vercel deployment has not started. Vercel CLI authentication is absent, so
-project identity, protection mode, private environment configuration, deployment
-URL, and deployment ID remain unverified.
+The branch push triggered the GitHub `Vercel` commit status automatically. At
+the last check it was `pending`, with Vercel deployment identifier
+`4AKXK7Cm8LG4fUmfLD5JH2A9h3B4`.
+
+Vercel CLI authentication is absent, so project identity, protection mode,
+private environment configuration, deployment URL, and runtime remain
+unverified. No manual Vercel deployment command completed.

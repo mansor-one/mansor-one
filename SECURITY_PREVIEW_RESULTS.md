@@ -1,7 +1,7 @@
 # Security Preview Results
 
 Date: 2026-07-25
-Status: blocked before Preview deployment
+Status: branch persisted; automatic Vercel check pending and validation blocked
 
 ## Completed
 
@@ -16,6 +16,9 @@ Status: blocked before Preview deployment
   columns were verified by schema read-back.
 - Automated tests, TypeScript, ESLint, production build, and
   `git diff --check` passed before branch persistence.
+- Commit `10b086829af3114a34238a1bedf880237fce9af8` was pushed only to
+  `security/phase-1-hardening`.
+- GitHub reports an automatically triggered Vercel status of `pending`.
 
 ## Browser checklist
 
