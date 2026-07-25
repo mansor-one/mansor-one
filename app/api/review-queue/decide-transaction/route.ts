@@ -2,8 +2,12 @@ import { NextResponse } from 'next/server'
 import { getReviewQueue, getSystemCategories } from '@/lib/financial-engine'
 import { createServerSupabase } from '@/lib/supabase/server'
 import { decisionRequiresPlanningFund, isReviewTransactionType } from '@/lib/financial-engine/review-transaction-decision'
+import { requireMutationOrigin } from '@/lib/security/request-origin'
 
 export async function POST(request: Request) {
+  const originError = requireMutationOrigin(request)
+  if (originError) return originError
+
   const { supabase } = await createServerSupabase()
   const { data: { user }, error: authError } = await supabase.auth.getUser()
 

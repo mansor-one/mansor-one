@@ -2041,6 +2041,8 @@ export type Database = {
           id: string
           institution_name: string | null
           item_id: string | null
+          last_repair_success_at: string | null
+          last_sync_attempt_at: string | null
           last_sync_at: string | null
           last_sync_error: string | null
           status: string | null
@@ -2061,6 +2063,8 @@ export type Database = {
           id?: string
           institution_name?: string | null
           item_id?: string | null
+          last_repair_success_at?: string | null
+          last_sync_attempt_at?: string | null
           last_sync_at?: string | null
           last_sync_error?: string | null
           status?: string | null
@@ -2081,6 +2085,8 @@ export type Database = {
           id?: string
           institution_name?: string | null
           item_id?: string | null
+          last_repair_success_at?: string | null
+          last_sync_attempt_at?: string | null
           last_sync_at?: string | null
           last_sync_error?: string | null
           status?: string | null

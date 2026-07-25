@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { getSystemCategories } from '@/lib/financial-engine/categories'
 import { createServerSupabase } from '@/lib/supabase/server'
+import { requireMutationOrigin } from '@/lib/security/request-origin'
 
 function logDevError(
   message: string,
@@ -37,6 +38,8 @@ function categoryForInput(value: unknown) {
 
 export async function POST(request: Request) {
   try {
+    const originError = requireMutationOrigin(request)
+    if (originError) return originError
     const { supabase } = await createServerSupabase()
 
     const {

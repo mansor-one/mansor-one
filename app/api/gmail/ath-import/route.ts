@@ -1,29 +1,9 @@
 import { NextResponse } from 'next/server'
-import { requireApiUser } from '@/lib/auth/requireApiUser'
+import { requireHouseholdGmailManager } from '@/lib/auth/require-household-gmail-manager'
+import { getGoogleAccessToken } from '@/lib/gmail/client'
+import { requireMutationOrigin } from '@/lib/security/request-origin'
+import { getSupabaseAdmin } from '@/lib/supabase/admin'
 import { createServerSupabase } from '@/lib/supabase/server'
-import { createClient } from '@supabase/supabase-js'
-
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-)
-
-async function getGoogleAccessToken() {
-  const res = await fetch('https://oauth2.googleapis.com/token', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({
-      client_id: process.env.GOOGLE_CLIENT_ID!,
-      client_secret: process.env.GOOGLE_CLIENT_SECRET!,
-      refresh_token: process.env.GOOGLE_REFRESH_TOKEN!,
-      grant_type: 'refresh_token',
-    }),
-  })
-
-  const data = await res.json()
-  if (!res.ok) throw new Error(JSON.stringify(data))
-  return data.access_token
-}
 
 type GmailHeader = {
   name: string
@@ -127,12 +107,16 @@ function parseAthEmail(subject: string, snippet: string, rules: AthRule[] = []) 
   }
 }
 
-export async function GET() {
+export async function POST(request: Request) {
   try {
+    const originError = requireMutationOrigin(request)
+    if (originError) return originError
+
     const { supabase } = await createServerSupabase()
-    const auth = await requireApiUser(supabase)
+    const auth = await requireHouseholdGmailManager(supabase)
     if (!auth.ok) return auth.response
-    const { user } = auth
+
+    const supabaseAdmin = getSupabaseAdmin()
     const accessToken = await getGoogleAccessToken()
     const q = encodeURIComponent('from:info@notifications.evertecinc.com')
 
@@ -144,7 +128,10 @@ export async function GET() {
     const listData = await listRes.json()
 
     if (!listRes.ok) {
-      return NextResponse.json({ ok: false, error: listData }, { status: 400 })
+      return NextResponse.json(
+        { ok: false, error: 'Gmail import failed' },
+        { status: 502 }
+      )
     }
 const { data: rules, error: rulesError } = await supabaseAdmin
   .from('ath_movil_rules')
@@ -152,7 +139,10 @@ const { data: rules, error: rulesError } = await supabaseAdmin
   .eq('active', true)
 
 if (rulesError) {
-  return NextResponse.json({ ok: false, error: rulesError }, { status: 400 })
+  return NextResponse.json(
+    { ok: false, error: 'Gmail import configuration is unavailable' },
+    { status: 500 }
+  )
 }
 
     const rows = await Promise.all(
@@ -169,7 +159,8 @@ if (rulesError) {
         const parsed = parseAthEmail(subject, detail.snippet || '', rules || [])
 
         return {
-  user_id: user.id,
+	  user_id: auth.user.id,
+	  household_id: auth.householdId,
   gmail_message_id: msg.id,
   email_date: emailDate ? new Date(emailDate).toISOString() : null,
   subject,
@@ -193,7 +184,10 @@ if (rulesError) {
       .select('id')
 
     if (error) {
-      return NextResponse.json({ ok: false, error }, { status: 400 })
+      return NextResponse.json(
+        { ok: false, error: 'Gmail import could not be saved' },
+        { status: 500 }
+      )
     }
 
     return NextResponse.json({
@@ -202,10 +196,9 @@ if (rulesError) {
       inserted: data?.length || 0,
       note: 'Duplicates were ignored by gmail_message_id.',
     })
-  } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : String(err)
+  } catch {
     return NextResponse.json(
-      { ok: false, error: message },
+      { ok: false, error: 'Gmail import failed' },
       { status: 500 }
     )
   }

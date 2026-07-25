@@ -1,8 +1,17 @@
 import { NextResponse } from 'next/server'
+import { requireInternalToolAccess } from '@/lib/auth/internal-tools'
+import { requireHouseholdGmailManager } from '@/lib/auth/require-household-gmail-manager'
+import { createServerSupabase } from '@/lib/supabase/server'
 
 export async function GET() {
+  const { supabase } = await createServerSupabase()
+  const internal = await requireInternalToolAccess(supabase, 'gmail_diagnostic')
+  if (!internal.ok) return internal.response
+  const manager = await requireHouseholdGmailManager(supabase)
+  if (!manager.ok) return manager.response
+
   return NextResponse.json({
     ok: true,
-    next: 'Ahora necesitamos guardar el refresh_token en Supabase o .env.local temporalmente para leer Gmail.',
+    status: 'Gmail diagnostics are available.',
   })
 }

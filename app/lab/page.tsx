@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import { requireUser } from '@/lib/auth/requireUser'
 
 type LabLink = {
   href: string
@@ -94,7 +95,9 @@ function LinkGrid({ title, links }: { title: string; links: LabLink[] }) {
   )
 }
 
-export default function LabPage() {
+export default async function LabPage() {
+  await requireUser()
+
   return (
     <main className="p-8 space-y-8">
       <div className="space-y-2">

@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createServerSupabase } from '@/lib/supabase/server'
+import { requireMutationOrigin } from '@/lib/security/request-origin'
+import { getSafeRedirectPath } from '@/lib/security/safe-redirect'
 import {
   getCategoryByCode,
   getLedgerSummary,
@@ -82,7 +84,10 @@ function responseForBody(
   requestUrl = 'http://localhost'
 ) {
   if (body.isForm) {
-    const url = new URL(body.redirectTo || '/dev/category-conflicts', requestUrl)
+    const url = new URL(
+      getSafeRedirectPath(body.redirectTo, '/dev/category-conflicts'),
+      requestUrl
+    )
     url.searchParams.set(status >= 400 ? 'error' : 'reviewed', '1')
 
     return NextResponse.redirect(url, 303)
@@ -117,6 +122,8 @@ export async function POST(request: Request) {
   let body: Awaited<ReturnType<typeof requestBody>> | null = null
 
   try {
+    const originError = requireMutationOrigin(request)
+    if (originError) return originError
     const { supabase } = await createServerSupabase()
 
     const {

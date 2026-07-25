@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { getReviewQueue } from '@/lib/financial-engine/review-queue'
 import { createServerSupabase } from '@/lib/supabase/server'
+import { requireMutationOrigin } from '@/lib/security/request-origin'
 
 function logDevError(
   message: string,
@@ -22,6 +23,8 @@ function logDevError(
 
 export async function POST(request: Request) {
   try {
+    const originError = requireMutationOrigin(request)
+    if (originError) return originError
     const { supabase } = await createServerSupabase()
 
     const {

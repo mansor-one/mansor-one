@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server'
 import { requireInternalToolAccess } from '@/lib/auth/internal-tools'
+import { requireHouseholdGmailManager } from '@/lib/auth/require-household-gmail-manager'
+import { getGoogleAccessToken } from '@/lib/gmail/client'
 import { createServerSupabase } from '@/lib/supabase/server'
 
 type GmailListMessage = {
@@ -22,27 +24,12 @@ type GmailMessageDetail = {
   }
 }
 
-async function getGoogleAccessToken() {
-  const res = await fetch('https://oauth2.googleapis.com/token', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({
-      client_id: process.env.GOOGLE_CLIENT_ID!,
-      client_secret: process.env.GOOGLE_CLIENT_SECRET!,
-      refresh_token: process.env.GOOGLE_REFRESH_TOKEN!,
-      grant_type: 'refresh_token',
-    }),
-  })
-
-  const data = await res.json()
-  if (!res.ok) throw new Error(JSON.stringify(data))
-  return data.access_token
-}
-
 export async function GET() {
   const { supabase } = await createServerSupabase()
   const auth = await requireInternalToolAccess(supabase, 'gmail_diagnostic')
   if (!auth.ok) return auth.response
+  const manager = await requireHouseholdGmailManager(supabase)
+  if (!manager.ok) return manager.response
 
   const accessToken = await getGoogleAccessToken()
 
@@ -63,11 +50,7 @@ export async function GET() {
 
       const detail = (await detailRes.json()) as GmailMessageDetail
 
-      return {
-        id: msg.id,
-        snippet: detail.snippet,
-        headers: detail.payload?.headers,
-      }
+      return { id: msg.id, hasSnippet: Boolean(detail.snippet) }
     })
   )
 

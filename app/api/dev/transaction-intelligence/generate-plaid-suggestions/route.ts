@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { requireInternalToolAccess } from '@/lib/auth/internal-tools'
 import { createServerSupabase } from '@/lib/supabase/server'
+import { requireMutationOrigin } from '@/lib/security/request-origin'
 
 type PlaidImportRow = {
   id: string
@@ -22,7 +23,10 @@ function confidenceScore(category: string) {
   return category === 'Revisar' ? 0.3 : 0.8
 }
 
-export async function POST() {
+export async function POST(request: Request) {
+  const originError = requireMutationOrigin(request)
+  if (originError) return originError
+
   const { supabase } = await createServerSupabase()
 
   const auth = await requireInternalToolAccess(supabase, 'dev')
