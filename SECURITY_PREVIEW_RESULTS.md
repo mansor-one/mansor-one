@@ -1,7 +1,7 @@
 # Security Preview Results
 
 Date: 2026-07-25
-Status: branch persisted; automatic Vercel check pending and validation blocked
+Status: automatic Vercel build succeeded; protected browser validation blocked
 
 ## Completed
 
@@ -18,7 +18,8 @@ Status: branch persisted; automatic Vercel check pending and validation blocked
   `git diff --check` passed before branch persistence.
 - Commit `10b086829af3114a34238a1bedf880237fce9af8` was pushed only to
   `security/phase-1-hardening`.
-- GitHub reports an automatically triggered Vercel status of `pending`.
+- GitHub reports successful automatically triggered Vercel statuses for the
+  implementation and evidence commits.
 
 ## Browser checklist
 

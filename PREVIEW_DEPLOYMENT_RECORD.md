@@ -53,10 +53,12 @@ committed private value is permitted.
 
 ## Current deployment status
 
-The branch push triggered the GitHub `Vercel` commit status automatically. At
-the last check it was `pending`, with Vercel deployment identifier
-`4AKXK7Cm8LG4fUmfLD5JH2A9h3B4`.
+The branch pushes triggered GitHub `Vercel` commit statuses automatically.
+Vercel reported `success` for both the implementation commit
+(`4AKXK7Cm8LG4fUmfLD5JH2A9h3B4`) and the evidence commit
+(`DTBKMRnbFWwcgh7YU4hhekow4gA5`).
 
 Vercel CLI authentication is absent, so project identity, protection mode,
 private environment configuration, deployment URL, and runtime remain
-unverified. No manual Vercel deployment command completed.
+unverified. A successful Vercel build does not satisfy the protected browser
+validation gate. No manual Vercel deployment command completed.
