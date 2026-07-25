@@ -81,5 +81,13 @@ export async function updateSession(request: NextRequest) {
     return NextResponse.redirect(redirectUrl)
   }
 
+  if (claims) {
+    response.headers.set(
+      'Cache-Control',
+      'private, no-store, no-cache, max-age=0, must-revalidate'
+    )
+    response.headers.set('Pragma', 'no-cache')
+  }
+
   return response
 }
