@@ -2,63 +2,60 @@
 
 Date: 2026-07-25
 Branch: `security/phase-1-hardening`
-Production deployment: prohibited
+Production deployment: prohibited and not performed
 
-## Deployment order
+## Deployment
 
-1. Apply the additive Plaid timestamp migration.
-2. Read back both columns and migration history.
-3. Persist and push only `security/phase-1-hardening`.
-4. Authenticate Vercel and link the intended project.
-5. Configure the exact protected Preview origin and private admin allowlist.
-6. Confirm Vercel Node.js 22.x.
-7. Deploy protected Preview.
-8. Execute the security and Plaid browser checklists.
-9. If validation fails, roll back the Preview application deployment. Do not
-   drop the nullable columns unless a separately approved coordinated rollback
-   is required.
+- Stable exact origin:
+  `https://mansor-one-git-security-phase-1-hardening-mansor-one.vercel.app`
+- Current deployment:
+  `https://mansor-hfojrg7gy-mansor-one.vercel.app`
+- Deployment ID: `dpl_981Es1DHWUzS9MX9YxQvCrKgNgZK`
+- State/target: `READY` / `preview`
+- Protection: Vercel SSO on generated deployments and Git-fork protection.
+- Project build runtime: Node.js `22.x`.
+- Function runtime: `nodejs22.x`.
 
-Steps 1 through 3 are complete. The migration was the only pending migration,
-schema read-back succeeded, and commit
-`10b086829af3114a34238a1bedf880237fce9af8` was pushed only to
-`origin/security/phase-1-hardening`. `origin/main` remained at
+The exact stable origin and private administrator allowlist were configured as
+branch-scoped, Preview-only Vercel Sensitive variables. No wildcard,
+automatically trusted `VERCEL_URL`, committed value, or private value in this
+record was used.
+
+## Completed order
+
+1. Apply and read back the already approved additive Plaid timestamp migration.
+2. Persist Phase 1.6 only to `security/phase-1-hardening`.
+3. Authenticate Vercel CLI and link the existing `mansor-one` project.
+4. Confirm deployment protection.
+5. Set project Node.js to 22.x.
+6. Configure the two branch-specific Preview Sensitive variables.
+7. Redeploy the existing branch deployment with `--target preview`.
+8. Confirm `READY`, Preview target, stable alias, and Node.js 22 functions.
+9. Execute non-mutating anonymous, Origin, authentication-boundary, and header
+   checks.
+
+No Production deployment or additional database migration was run.
+
+## Repository state
+
+The deployed source commit is
+`68fcf58f3396429153366907362b3839ab127b19`. `origin/main` remains at
 `990aed27f63a50f40d8d73db4585bc5c48a42363`.
 
-## Branch diff classification
+The unrelated unstaged edit in
+`lib/financial-engine/semi-monthly-spending.ts` remains outside all Phase 1.6
+commits and was not included in the Vercel deployment.
 
-- Production code: authentication/OAuth, Gmail authorization, Origin checks,
-  safe redirects, server-only Supabase administration, Plaid authorization,
-  Update Mode, retry/timestamp behavior, protected internal routes, CSP, and
-  related generated database types.
-- Tests: Phase 1 authorization/security tests and Plaid Update Mode lifecycle,
-  UI-state, migration, archive, and idempotency regressions.
-- Documentation: audit matrices, Phase 1/1.5/1.6 reports, environment/Preview
-  plans, rollback guidance, and this evidence set.
-- Package/runtime: exact Next.js 16.2.11, matching `eslint-config-next`, lockfile,
-  Node.js 22 engine, and `.nvmrc`.
-- Supabase migration: the single additive Plaid repair timestamp migration.
-- Excluded from this branch commit: the unrelated pre-existing
-  `lib/financial-engine/semi-monthly-spending.ts` import-extension edit.
+## Rollback
 
-## Environment configuration
+If interactive validation fails, restore the previous Preview application
+deployment or stop using this branch Preview. Do not promote it. The nullable
+Plaid columns need not be dropped for an application rollback; database rollback
+requires separate approval and the documented rollback SQL.
 
-Required private Preview values:
+## Remaining operator validation
 
-- `MANSOR_ALLOWED_ORIGINS`: one exact, stable Preview origin only.
-- `MANSOR_INTERNAL_ADMIN_EMAILS`: explicit authorized addresses only.
-- Vercel runtime: Node.js 22.x.
-
-No wildcard, `VERCEL_URL` inference, automatically generated Preview origin, or
-committed private value is permitted.
-
-## Current deployment status
-
-The branch pushes triggered GitHub `Vercel` commit statuses automatically.
-Vercel reported `success` for both the implementation commit
-(`4AKXK7Cm8LG4fUmfLD5JH2A9h3B4`) and the evidence commit
-(`DTBKMRnbFWwcgh7YU4hhekow4gA5`).
-
-Vercel CLI authentication is absent, so project identity, protection mode,
-private environment configuration, deployment URL, and runtime remain
-unverified. A successful Vercel build does not satisfy the protected browser
-validation gate. No manual Vercel deployment command completed.
+An authenticated browser session is still required for OAuth, Gmail, Plaid
+Link/Update Mode, household authorization, browser-console CSP, timestamp, and
+transaction-idempotency evidence. Confirm the provider redirects and Preview
+data target before those workflows are exercised.
