@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { requireInternalToolAccess } from '@/lib/auth/internal-tools'
 import { categorizeTransaction } from '@/lib/financial-engine/categorizeTransaction'
 import { createServerSupabase } from '@/lib/supabase/server'
+import { requireMutationOrigin } from '@/lib/security/request-origin'
 
 type SuggestionStatus = 'suggested' | 'needs_review'
 
@@ -28,7 +29,10 @@ function confidenceScore(category: string) {
   return category === 'Revisar' ? 0.3 : 0.8
 }
 
-export async function POST() {
+export async function POST(request: Request) {
+  const originError = requireMutationOrigin(request)
+  if (originError) return originError
+
   const { supabase } = await createServerSupabase()
 
   const auth = await requireInternalToolAccess(supabase, 'dev')

@@ -1,6 +1,7 @@
 import { requireApiUser } from '@/lib/auth/requireApiUser'
 import { createServerSupabase } from '@/lib/supabase/server'
 import { NextResponse } from 'next/server'
+import { requireMutationOrigin } from '@/lib/security/request-origin'
 
 function text(value: unknown) {
   return typeof value === 'string' && value.trim() ? value.trim() : null
@@ -8,6 +9,8 @@ function text(value: unknown) {
 
 export async function POST(request: Request) {
   try {
+    const originError = requireMutationOrigin(request)
+    if (originError) return originError
     const { supabase } = await createServerSupabase()
     const auth = await requireApiUser(supabase)
     if (!auth.ok) return auth.response

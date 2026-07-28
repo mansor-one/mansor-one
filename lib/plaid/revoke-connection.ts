@@ -1,18 +1,17 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { decrypt } from '@/lib/security/encryption'
 import { plaidClient } from './client'
+import {
+  connectionAccessToken,
+  type PlaidConnectionTokenRow,
+} from './connection-token'
 
 const requiredConfirmation = 'REVOKE'
 
-type PlaidConnectionTokenRow = {
+type PlaidConnectionRow = PlaidConnectionTokenRow & {
   id: string
   user_id: string
   institution_name: string | null
   status: string | null
-  access_token: string | null
-  encrypted_access_token: string | null
-  token_iv: string | null
-  token_auth_tag: string | null
 }
 
 export type RevokePlaidConnectionInput = {
@@ -20,22 +19,6 @@ export type RevokePlaidConnectionInput = {
   userId: string
   confirmation: string
   reason: string | null
-}
-
-function connectionAccessToken(connection: PlaidConnectionTokenRow) {
-  if (
-    connection.encrypted_access_token &&
-    connection.token_iv &&
-    connection.token_auth_tag
-  ) {
-    return decrypt(
-      connection.encrypted_access_token,
-      connection.token_iv,
-      connection.token_auth_tag
-    )
-  }
-
-  return connection.access_token
 }
 
 export async function revokePlaidConnection(
@@ -58,7 +41,7 @@ export async function revokePlaidConnection(
   if (connectionError) throw connectionError
   if (!connection) throw new Error('Plaid connection not found.')
 
-  const row = connection as PlaidConnectionTokenRow
+  const row = connection as PlaidConnectionRow
 
   if (row.status === 'revoked') {
     throw new Error('Plaid connection is already revoked.')

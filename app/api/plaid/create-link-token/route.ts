@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient as createServerSupabase } from '@/lib/supabase/server'
+import { requireMutationOrigin } from '@/lib/security/request-origin'
 import {
   Configuration,
   PlaidApi,
@@ -23,7 +24,10 @@ const configuration = new Configuration({
 
 const client = new PlaidApi(configuration)
 
-export async function POST() {
+export async function POST(request: Request) {
+  const originError = requireMutationOrigin(request)
+  if (originError) return originError
+
   const supabase = await createServerSupabase()
 
   const {

@@ -20,7 +20,8 @@ Do not commit secret values. This file inventories names only.
 | `GOOGLE_CLIENT_SECRET` | Server-only secret | Preview, Production if Gmail enabled | Google OAuth/Gmail | OAuth client secret. |
 | `GOOGLE_REDIRECT_URI` | Server-only config | Stable Preview, Production | Google OAuth callback | Must exactly match Google Cloud authorized redirect URI. |
 | `GOOGLE_REFRESH_TOKEN` | Server-only secret | Preview/Production only if Gmail import enabled | Gmail import/test routes | High sensitivity; gives mailbox access for configured scopes. |
-| `MANSOR_INTERNAL_ADMIN_EMAILS` | Server-only config | Preview, optional Production | Internal tool allowlist | Comma-separated authenticated email allowlist for `/dev`, `/lab`, `/api/dev`, and Gmail diagnostics. If absent in Preview, any authenticated user can use internal tools. Required if enabling `/lab` in Production. |
+| `MANSOR_ALLOWED_ORIGINS` | Server-only config | Preview, Production | Browser mutation CSRF boundary | Comma-separated exact HTTP(S) origins. No paths, wildcards, or empty entries. Preview URLs are not trusted automatically. |
+| `MANSOR_INTERNAL_ADMIN_EMAILS` | Server-only config | Preview, optional Production | Internal tool allowlist | Comma-separated authenticated email addresses for `/dev`, `/lab`, `/api/dev`, and Gmail diagnostics. Missing or malformed configuration denies access. Required if enabling `/lab` in Production. |
 | `MANSOR_ENABLE_LAB_IN_PRODUCTION` | Server-only config | Production only | Optional lab access | Defaults to disabled. Set to `true` only with a non-empty `MANSOR_INTERNAL_ADMIN_EMAILS` allowlist. |
 
 ## Local / Development-Only Variables
@@ -46,6 +47,32 @@ used in route handlers or server libraries.
 Internal access variables are server-only. Do not prefix them with
 `NEXT_PUBLIC_`.
 
+## Security-sensitive list syntax
+
+`MANSOR_ALLOWED_ORIGINS` uses comma-separated exact origins:
+
+```text
+https://preview.example.vercel.app,https://another-explicit-origin.example
+```
+
+Whitespace around entries is trimmed. Each entry must parse as an HTTP(S)
+origin with no credentials, non-root path, query, fragment, or wildcard. The
+optional root slash is normalized away; any other path is rejected. An empty or
+malformed entry invalidates the entire allowlist. `VERCEL_URL` is
+not trusted automatically. Temporarily authorize one Preview deployment by
+adding only its exact origin to the Preview environment. Production must contain
+only the official production origin.
+
+`MANSOR_INTERNAL_ADMIN_EMAILS` uses comma-separated full email addresses:
+
+```text
+owner@example.com,admin@example.com
+```
+
+Whitespace is trimmed and matching is case-insensitive. Missing, empty, or
+malformed configuration yields an empty allowlist and denies internal access.
+Do not commit real addresses.
+
 ## Vercel Environment Setup
 
 Configure variables separately for:
@@ -65,10 +92,10 @@ deployments.
 
 Set Supabase Auth Site URL to the final production app URL.
 
-Add redirect URLs:
+Add only required redirect URLs:
 
 - `http://localhost:3000/**`
-- `https://*-<team-or-account-slug>.vercel.app/**`
+- one stable, explicit Preview URL when Preview OAuth is required
 - `https://<production-domain>/**`
 
 If using a custom stable preview domain, add it explicitly.

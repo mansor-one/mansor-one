@@ -1,7 +1,8 @@
 import { encrypt } from '@/lib/security/encryption'
+import { requireMutationOrigin } from '@/lib/security/request-origin'
+import { getSupabaseAdmin } from '@/lib/supabase/admin'
 import { NextResponse } from 'next/server'
 import { createClient as createServerSupabase } from '@/lib/supabase/server'
-import { createClient } from '@supabase/supabase-js'
 import { Configuration, PlaidApi, PlaidEnvironments } from 'plaid'
 
 const configuration = new Configuration({
@@ -19,13 +20,25 @@ const configuration = new Configuration({
 
 const client = new PlaidApi(configuration)
 
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-)
-
 export async function POST(request: Request) {
   try {
+    const originError = requireMutationOrigin(request)
+    if (originError) return originError
+
+    const userSupabase = await createServerSupabase()
+
+    const {
+      data: { user },
+      error: userError,
+    } = await userSupabase.auth.getUser()
+
+    if (userError || !user) {
+      return NextResponse.json(
+        { error: 'Not authenticated' },
+        { status: 401 }
+      )
+    }
+
     const body = await request.json()
 
     if (!body?.public_token || typeof body.public_token !== 'string') {
@@ -34,19 +47,7 @@ export async function POST(request: Request) {
         { status: 400 }
       )
     }
-const userSupabase = await createServerSupabase()
 
-const {
-  data: { user },
-  error: userError,
-} = await userSupabase.auth.getUser()
-
-if (userError || !user) {
-  return NextResponse.json(
-    { error: 'Not authenticated' },
-    { status: 401 }
-  )
-}
     const response = await client.itemPublicTokenExchange({
       public_token: body.public_token,
     })
@@ -54,7 +55,7 @@ if (userError || !user) {
     const encryptedToken = encrypt(response.data.access_token)
     const itemId = response.data.item_id
 
-    const { error } = await supabaseAdmin
+    const { error } = await getSupabaseAdmin()
       .from('plaid_connections')
       .insert({
        user_id: user.id,

@@ -1,17 +1,13 @@
 import { categorizeTransaction } from '@/lib/financial-engine/categorizeTransaction'
 import { NextResponse } from 'next/server'
 import { requireApiUser } from '@/lib/auth/requireApiUser'
+import { requireMutationOrigin } from '@/lib/security/request-origin'
+import { getSupabaseAdmin } from '@/lib/supabase/admin'
 import { createServerSupabase } from '@/lib/supabase/server'
-import { createClient } from '@supabase/supabase-js'
 import { Configuration, PlaidApi, PlaidEnvironments } from 'plaid'
-import { decrypt } from '@/lib/security/encryption'
 import { lifecycleActionsForSync } from '@/lib/financial-engine/plaid-transaction-lifecycle'
 import { reconcileOpenObligationsAfterPlaidSync } from '@/lib/financial-engine/obligation-reconciliation-engine'
-
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-)
+import { connectionAccessToken } from '@/lib/plaid/connection-token'
 
 const configuration = new Configuration({
   basePath:
@@ -32,9 +28,10 @@ type PlaidConnectionRow = {
   id: string
   user_id: string
   institution_name: string | null
-  encrypted_access_token: string
-  token_iv: string
-  token_auth_tag: string
+  access_token: string | null
+  encrypted_access_token: string | null
+  token_iv: string | null
+  token_auth_tag: string | null
   transactions_cursor: string | null
 }
 
@@ -82,6 +79,7 @@ function hasGoodValue(value: string | null | undefined) {
 }
 
 async function existingImportsByTransactionId(
+  supabaseAdmin: ReturnType<typeof getSupabaseAdmin>,
   userId: string,
   plaidTransactionIds: string[]
 ) {
@@ -106,7 +104,10 @@ async function existingImportsByTransactionId(
   )
 }
 
-async function backfillPlaidImportAccountContext(userId: string) {
+async function backfillPlaidImportAccountContext(
+  supabaseAdmin: ReturnType<typeof getSupabaseAdmin>,
+  userId: string
+) {
   const [importsResult, accountsResult] = await Promise.all([
     supabaseAdmin
       .from('plaid_imports')
@@ -170,7 +171,10 @@ async function backfillPlaidImportAccountContext(userId: string) {
   return backfilledRows
 }
 
-async function markAlreadyPromotedImportsImported(userId: string) {
+async function markAlreadyPromotedImportsImported(
+  supabaseAdmin: ReturnType<typeof getSupabaseAdmin>,
+  userId: string
+) {
   const [importsResult, quickEntriesResult] = await Promise.all([
     supabaseAdmin
       .from('plaid_imports')
@@ -220,6 +224,7 @@ async function markAlreadyPromotedImportsImported(userId: string) {
 }
 
 async function countPendingImportsFromSync(
+  supabaseAdmin: ReturnType<typeof getSupabaseAdmin>,
   userId: string,
   plaidTransactionIds: string[]
 ) {
@@ -239,17 +244,29 @@ async function countPendingImportsFromSync(
 
 export async function syncPlaidImportsForUser(
   userId: string,
-  options: { reconcile?: boolean } = {}
+  options: {
+    reconcile?: boolean
+    connectionId?: string
+    deferConnectionSuccessMetadata?: boolean
+  } = {}
 ) {
+    const supabaseAdmin = getSupabaseAdmin()
+    let connectionQuery = supabaseAdmin
+      .from('plaid_connections')
+      .select('*')
+      .eq('user_id', userId)
+      .or('encrypted_access_token.not.is.null,access_token.not.is.null')
+      .is('archived_at', null)
+      .order('created_at', { ascending: false })
+
+    if (options.connectionId) {
+      connectionQuery = connectionQuery.eq('id', options.connectionId)
+    } else {
+      connectionQuery = connectionQuery.eq('status', 'active')
+    }
+
     const { data: connections, error: connectionsError } =
-      await supabaseAdmin
-        .from('plaid_connections')
-        .select('*')
-        .eq('user_id', userId)
-        .eq('status', 'active')
-        .not('encrypted_access_token', 'is', null)
-        .is('archived_at', null)
-        .order('created_at', { ascending: false })
+      await connectionQuery
 
     if (connectionsError || !connections || connections.length === 0) {
       throw new Error('No Plaid connections found')
@@ -264,11 +281,15 @@ export async function syncPlaidImportsForUser(
     const failedConnections: PlaidSyncFailure[] = []
 
     for (const connection of connections as PlaidConnectionRow[]) {
-      const accessToken = decrypt(
-        connection.encrypted_access_token,
-        connection.token_iv,
-        connection.token_auth_tag
-      )
+      const accessToken = connectionAccessToken(connection)
+      if (!accessToken) {
+        failedConnections.push({
+          id: connection.id,
+          institution_name: connection.institution_name,
+          error_code: 'MISSING_ACCESS_TOKEN',
+        })
+        continue
+      }
 
       const addedTransactions = []
       const modifiedTransactions = []
@@ -295,7 +316,6 @@ export async function syncPlaidImportsForUser(
         const { error: syncMetadataError } = await supabaseAdmin
           .from('plaid_connections')
           .update({
-            last_sync_at: new Date().toISOString(),
             last_sync_error: errorCode,
           })
           .eq('id', connection.id)
@@ -326,6 +346,7 @@ export async function syncPlaidImportsForUser(
         (transaction) => transaction.transaction_id
       )
       const existingImports = await existingImportsByTransactionId(
+        supabaseAdmin,
         userId,
         plaidTransactionIds
       )
@@ -458,13 +479,20 @@ export async function syncPlaidImportsForUser(
         else rowsMarkedRemoved += 1
       }
 
+      const successMetadata = options.deferConnectionSuccessMetadata
+        ? {
+            transactions_cursor:
+              nextCursor || connection.transactions_cursor,
+          }
+        : {
+            last_sync_at: new Date().toISOString(),
+            last_sync_error: null,
+            transactions_cursor:
+              nextCursor || connection.transactions_cursor,
+          }
       const { error: syncMetadataError } = await supabaseAdmin
         .from('plaid_connections')
-        .update({
-          last_sync_at: new Date().toISOString(),
-          last_sync_error: null,
-          transactions_cursor: nextCursor || connection.transactions_cursor,
-        })
+        .update(successMetadata)
         .eq('id', connection.id)
         .eq('user_id', userId)
 
@@ -477,10 +505,11 @@ export async function syncPlaidImportsForUser(
     }
 
     const account_context_backfilled =
-      await backfillPlaidImportAccountContext(userId)
+      await backfillPlaidImportAccountContext(supabaseAdmin, userId)
     const already_confirmed_imports_cleaned =
-      await markAlreadyPromotedImportsImported(userId)
+      await markAlreadyPromotedImportsImported(supabaseAdmin, userId)
     const pending_imports_from_sync = await countPendingImportsFromSync(
+      supabaseAdmin,
       userId,
       returnedPlaidTransactionIds
     )
@@ -505,11 +534,20 @@ export async function syncPlaidImportsForUser(
 
 export async function POST(request: Request) {
   try {
+    const originError = requireMutationOrigin(request)
+    if (originError) return originError
+
     const { supabase } = await createServerSupabase()
     const auth = await requireApiUser(supabase)
     if (!auth.ok) return auth.response
-    const body = await request.json().catch(() => ({})) as { reconcile?: boolean }
-    return NextResponse.json(await syncPlaidImportsForUser(auth.user.id, body))
+    const body = await request.json().catch(() => ({})) as {
+      reconcile?: boolean
+    }
+    return NextResponse.json(
+      await syncPlaidImportsForUser(auth.user.id, {
+        reconcile: body.reconcile,
+      })
+    )
   } catch (error) {
     console.error('Plaid sync-imports error:', error)
 

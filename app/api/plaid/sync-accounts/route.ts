@@ -1,9 +1,10 @@
 import { NextResponse } from 'next/server'
 import { createServerSupabase } from '@/lib/supabase/server'
 import { Configuration, PlaidApi, PlaidEnvironments } from 'plaid'
-import { decrypt } from '@/lib/security/encryption'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { requireApiUser } from '@/lib/auth/requireApiUser'
+import { requireMutationOrigin } from '@/lib/security/request-origin'
+import { connectionAccessToken } from '@/lib/plaid/connection-token'
 
 const configuration = new Configuration({
   basePath:
@@ -51,20 +52,32 @@ function plaidErrorDetails(error: unknown) {
 export async function syncPlaidAccountsForUser(
   supabase: SupabaseClient,
   userId: string,
-  options: { accounts?: boolean; liabilities?: boolean } = {}
+  options: {
+    accounts?: boolean
+    liabilities?: boolean
+    connectionId?: string
+    deferConnectionSuccessMetadata?: boolean
+  } = {}
 ) {
     const syncAccounts = options.accounts !== false
     const syncLiabilities = options.liabilities !== false
-    const { data: connections, error: connectionError } = await supabase
+    let connectionQuery = supabase
       .from('plaid_connections')
       .select(
-        'id, user_id, institution_name, encrypted_access_token, token_iv, token_auth_tag, created_at'
+        'id, user_id, institution_name, access_token, encrypted_access_token, token_iv, token_auth_tag, created_at'
       )
       .eq('user_id', userId)
-      .eq('status', 'active')
-      .not('encrypted_access_token', 'is', null)
+      .or('encrypted_access_token.not.is.null,access_token.not.is.null')
       .is('archived_at', null)
       .order('created_at', { ascending: false })
+
+    if (options.connectionId) {
+      connectionQuery = connectionQuery.eq('id', options.connectionId)
+    } else {
+      connectionQuery = connectionQuery.eq('status', 'active')
+    }
+
+    const { data: connections, error: connectionError } = await connectionQuery
 
     if (connectionError) {
       const errorMessage =
@@ -89,11 +102,8 @@ export async function syncPlaidAccountsForUser(
 
     for (const connection of connections) {
       try {
-        const accessToken = decrypt(
-          connection.encrypted_access_token,
-          connection.token_iv,
-          connection.token_auth_tag
-        )
+        const accessToken = connectionAccessToken(connection)
+        if (!accessToken) throw new Error('Missing Plaid access token')
 
         const response = syncAccounts ? await plaidClient.accountsBalanceGet({ access_token: accessToken }) : null
         const accounts = response?.data.accounts || []
@@ -157,20 +167,22 @@ export async function syncPlaidAccountsForUser(
 
         syncedAccounts += accounts.length
 
-        const { error: syncMetadataError } = await supabase
-          .from('plaid_connections')
-          .update({
-            last_sync_at: new Date().toISOString(),
-            last_sync_error: null,
-          })
-          .eq('id', connection.id)
-          .eq('user_id', userId)
+        if (!options.deferConnectionSuccessMetadata) {
+          const { error: syncMetadataError } = await supabase
+            .from('plaid_connections')
+            .update({
+              last_sync_at: new Date().toISOString(),
+              last_sync_error: null,
+            })
+            .eq('id', connection.id)
+            .eq('user_id', userId)
 
-        if (syncMetadataError) {
-          console.error('Plaid connection sync metadata error:', {
-            connection_id: connection.id,
-            message: syncMetadataError.message,
-          })
+          if (syncMetadataError) {
+            console.error('Plaid connection sync metadata error:', {
+              connection_id: connection.id,
+              message: syncMetadataError.message,
+            })
+          }
         }
       } catch (error: unknown) {
         const details = plaidErrorDetails(error)
@@ -178,7 +190,6 @@ export async function syncPlaidAccountsForUser(
         const { error: syncMetadataError } = await supabase
           .from('plaid_connections')
           .update({
-            last_sync_at: new Date().toISOString(),
             last_sync_error: `${details.error_code}: ${details.error_message}`,
           })
           .eq('id', connection.id)
@@ -209,6 +220,8 @@ export async function syncPlaidAccountsForUser(
 
 export async function POST(request: Request) {
   try {
+    const originError = requireMutationOrigin(request)
+    if (originError) return originError
     const { supabase } = await createServerSupabase()
     const auth = await requireApiUser(supabase)
     if (!auth.ok) return auth.response

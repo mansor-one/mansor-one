@@ -4,6 +4,7 @@ import {
   promotePlaidImportToQuickEntry,
 } from '@/lib/financial-engine/ledger-promotion'
 import { createServerSupabase } from '@/lib/supabase/server'
+import { requireMutationOrigin } from '@/lib/security/request-origin'
 
 function logDevError(message: string, error: unknown, context?: Record<string, unknown>) {
   if (process.env.NODE_ENV === 'production') return
@@ -21,6 +22,8 @@ function logDevError(message: string, error: unknown, context?: Record<string, u
 
 export async function POST(request: Request) {
   try {
+    const originError = requireMutationOrigin(request)
+    if (originError) return originError
     const { supabase } = await createServerSupabase()
 
     const {

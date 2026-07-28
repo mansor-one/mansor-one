@@ -1,3 +1,5 @@
+import 'server-only'
+
 import crypto from 'crypto'
 
 const algorithm = 'aes-256-gcm'

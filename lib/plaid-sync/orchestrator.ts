@@ -1,8 +1,12 @@
-import { createClient, type SupabaseClient } from '@supabase/supabase-js'
+import 'server-only'
+
+import type { SupabaseClient } from '@supabase/supabase-js'
+import { getSupabaseAdmin } from '@/lib/supabase/admin'
 import { syncPlaidAccountsForUser } from '@/app/api/plaid/sync-accounts/route'
 import { syncPlaidImportsForUser } from '@/app/api/plaid/sync-imports/route'
 import { reconcileOpenObligationsAfterPlaidSync } from '@/lib/financial-engine/obligation-reconciliation-engine'
 import { getFinancialEngineSnapshot } from '@/lib/financial-engine/snapshot'
+import { serializePlaidSyncError } from './error-serialization'
 
 export const PLAID_SYNC_STEPS = [
   { id: 'accounts', label: 'Cuentas y balances' },
@@ -23,10 +27,6 @@ function summaryFromResults(results: Record<string, unknown>) {
   return { accounts_updated: accounts?.synced_accounts || 0, liabilities_updated: liabilities?.synced_credit_liabilities || 0, transactions_added_or_updated: (transactions?.new_imports_created || 0) + (transactions?.modified_imports_updated || 0), payments_reconciled: reconciliation?.payment?.automaticallyReconciled || 0 }
 }
 
-function adminClient() {
-  return createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!, { auth: { persistSession: false } })
-}
-
 export async function latestPlaidSyncRun(supabase: SupabaseClient, userId: string) {
   const { data, error } = await supabase.from('plaid_sync_runs').select('*').eq('user_id', userId).order('created_at', { ascending: false }).limit(1).maybeSingle()
   if (error) throw error
@@ -34,7 +34,7 @@ export async function latestPlaidSyncRun(supabase: SupabaseClient, userId: strin
 }
 
 export async function queuePlaidSyncRun({ userId, trigger, retryOfRunId }: { userId: string; trigger: Trigger; retryOfRunId?: string | null }) {
-  const supabase = adminClient()
+  const supabase = getSupabaseAdmin()
   const now = new Date()
   await supabase.from('plaid_sync_runs').update({ status: 'failed', error_message: 'La ejecución anterior perdió su bloqueo.', completed_at: now.toISOString(), lock_expires_at: null }).eq('user_id', userId).in('status', ['queued', 'running']).lt('lock_expires_at', now.toISOString())
 
@@ -69,7 +69,7 @@ export async function queuePlaidSyncRun({ userId, trigger, retryOfRunId }: { use
 }
 
 export async function executePlaidSyncRun(runId: string, userId: string) {
-  const supabase = adminClient()
+  const supabase = getSupabaseAdmin()
   const { data: run, error } = await supabase.from('plaid_sync_runs').select('*').eq('id', runId).eq('user_id', userId).single()
   if (error || !run || !['queued', 'running'].includes(run.status)) return
   const started = Date.now()
@@ -101,8 +101,18 @@ export async function executePlaidSyncRun(runId: string, userId: string) {
       const completed = index + 1
       await supabase.from('plaid_sync_runs').update({ completed_steps: completed, percentage: completed * 20, step_results: results, summary: summaryFromResults(results), warnings, last_heartbeat_at: new Date().toISOString() }).eq('id', runId)
     } catch (stepError) {
-      const message = stepError instanceof Error ? stepError.message : String(stepError)
-      await supabase.from('plaid_sync_runs').update({ status: index > 0 ? 'partially_completed' : 'failed', error_message: message, retryable_step: step.id, completed_at: new Date().toISOString(), duration_ms: Date.now() - started, lock_expires_at: null, step_results: results, warnings }).eq('id', runId)
+      const technicalError = serializePlaidSyncError(step.id, stepError)
+      results[step.id] = { error: technicalError }
+      await supabase.from('plaid_sync_runs').update({
+        status: index > 0 ? 'partially_completed' : 'failed',
+        error_message: `No pudimos completar ${step.label.toLowerCase()}.`,
+        retryable_step: step.id,
+        completed_at: new Date().toISOString(),
+        duration_ms: Date.now() - started,
+        lock_expires_at: null,
+        step_results: results,
+        warnings,
+      }).eq('id', runId)
       return
     }
   }

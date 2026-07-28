@@ -5,6 +5,8 @@ import {
   type ConfirmedLedgerDuplicateResolutionType,
 } from '@/lib/financial-engine'
 import { createServerSupabase } from '@/lib/supabase/server'
+import { requireMutationOrigin } from '@/lib/security/request-origin'
+import { getSafeRedirectPath } from '@/lib/security/safe-redirect'
 
 type DuplicateResolutionAction = 'mark_duplicate' | 'keep_separate'
 
@@ -78,7 +80,10 @@ function responseForBody(
 ) {
   if (body.isForm) {
     const url = new URL(
-      body.redirectTo || '/dev/confirmed-ledger-duplicates',
+      getSafeRedirectPath(
+        body.redirectTo,
+        '/dev/confirmed-ledger-duplicates'
+      ),
       requestUrl
     )
     url.searchParams.set(status >= 400 ? 'error' : 'resolved', '1')
@@ -93,6 +98,8 @@ export async function POST(request: Request) {
   let body: Awaited<ReturnType<typeof requestBody>> | null = null
 
   try {
+    const originError = requireMutationOrigin(request)
+    if (originError) return originError
     const { supabase } = await createServerSupabase()
 
     const {

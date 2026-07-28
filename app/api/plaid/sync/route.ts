@@ -2,6 +2,7 @@ import { requireApiUser } from '@/lib/auth/requireApiUser'
 import { executePlaidSyncRun, latestPlaidSyncRun, queuePlaidSyncRun } from '@/lib/plaid-sync/orchestrator'
 import { createServerSupabase } from '@/lib/supabase/server'
 import { after, NextResponse } from 'next/server'
+import { requireMutationOrigin } from '@/lib/security/request-origin'
 
 export async function GET() {
   const { supabase } = await createServerSupabase()
@@ -17,6 +18,9 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
+  const originError = requireMutationOrigin(request)
+  if (originError) return originError
+
   const { supabase } = await createServerSupabase()
   const auth = await requireApiUser(supabase)
   if (!auth.ok) return auth.response

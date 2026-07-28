@@ -9,6 +9,7 @@ import {
   type ReviewQueueCandidate,
 } from '@/lib/financial-engine/review-queue'
 import { createServerSupabase } from '@/lib/supabase/server'
+import { requireMutationOrigin } from '@/lib/security/request-origin'
 
 type ResolutionAction = 'mark_duplicate' | 'keep_separate'
 
@@ -117,6 +118,8 @@ async function recordResolutionEvent({
 
 export async function POST(request: Request) {
   try {
+    const originError = requireMutationOrigin(request)
+    if (originError) return originError
     const { supabase } = await createServerSupabase()
 
     const {

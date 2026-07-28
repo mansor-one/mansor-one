@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import type { SupabaseClient, User } from '@supabase/supabase-js'
+import { parseAdminEmailAllowlist } from '@/lib/security/admin-allowlist'
 
 export type InternalToolSurface = 'dev' | 'lab' | 'gmail_diagnostic'
 
@@ -27,17 +28,12 @@ export function internalToolSurfaceForPath(
 }
 
 function getAdminAllowlist() {
-  return new Set(
-    (process.env.MANSOR_INTERNAL_ADMIN_EMAILS || '')
-      .split(',')
-      .map((email) => email.trim().toLowerCase())
-      .filter(Boolean)
-  )
+  return parseAdminEmailAllowlist(process.env.MANSOR_INTERNAL_ADMIN_EMAILS)
 }
 
 function isAllowedAdminEmail(email: string | null | undefined) {
   const allowlist = getAdminAllowlist()
-  if (allowlist.size === 0) return true
+  if (allowlist.size === 0) return false
   return Boolean(email && allowlist.has(email.toLowerCase()))
 }
 
@@ -67,7 +63,10 @@ export function evaluateInternalToolAccess({
     }
   }
 
-  if (environment === 'preview' && !isAllowedAdminEmail(userEmail)) {
+  if (
+    (environment === 'preview' || environment === 'development') &&
+    !isAllowedAdminEmail(userEmail)
+  ) {
     return {
       allowed: false,
       status: 403,

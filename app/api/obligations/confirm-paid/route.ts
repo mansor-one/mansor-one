@@ -6,6 +6,7 @@ import {
   futureDefaultAmountUpdate,
   paymentCorrectionAuditEvidence,
 } from '@/lib/financial-engine/obligation-payment-correction'
+import { requireMutationOrigin } from '@/lib/security/request-origin'
 
 function value(input: unknown) {
   return typeof input === 'string' && input.trim() ? input.trim() : null
@@ -21,6 +22,8 @@ export async function PATCH(request: Request) {
 
 async function savePaymentConfirmation(request: Request, correctionOnly: boolean) {
   try {
+    const originError = requireMutationOrigin(request)
+    if (originError) return originError
     const { supabase } = await createServerSupabase()
     const auth = await requireApiUser(supabase)
     if (!auth.ok) return auth.response

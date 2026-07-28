@@ -3,6 +3,7 @@
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useState } from 'react'
+import AuthenticatedUserMenu from './AuthenticatedUserMenu'
 
 type NavItem = {
   href: string
@@ -133,6 +134,9 @@ export default function PrimaryNav() {
             onNavigate={() => setOpen(false)}
             pathname={pathname}
           />
+          <div className="mt-2 border-t border-white/8 pt-2">
+            <AuthenticatedUserMenu />
+          </div>
         </div>
       )}
 
@@ -148,15 +152,7 @@ export default function PrimaryNav() {
       )}
 
       <div className="mt-auto hidden space-y-3 border-t border-white/8 pt-5 lg:block">
-        <div className="flex items-center gap-3 rounded-xl border border-white/8 bg-white/4 px-3 py-3">
-          <span className="grid h-9 w-9 place-items-center rounded-full bg-indigo-500/30 text-sm font-semibold text-indigo-100">
-            M
-          </span>
-          <span>
-            <span className="block text-sm font-medium text-white">Manuel & Soraya</span>
-            <span className="block text-xs text-slate-500">Cuenta familiar</span>
-          </span>
-        </div>
+        <AuthenticatedUserMenu />
       </div>
     </nav>
   )

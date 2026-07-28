@@ -4,6 +4,13 @@ import AppShell from '../components/AppShell'
 import InstitutionLogo from '../components/InstitutionLogo'
 import ConnectPlaidButton from './ConnectPlaidButton'
 import PlaidSyncActions from './PlaidSyncActions'
+import RepairPlaidConnectionButton from './RepairPlaidConnectionButton'
+import {
+  PLAID_REPAIR_SYNC_PENDING,
+  plaidConnectionNeedsRepair,
+  plaidRepairableState,
+  plaidRepairMessage,
+} from '@/lib/plaid/connection-health'
 
 export const metadata: Metadata = {
   title: 'Bancos conectados | Mansor One',
@@ -19,6 +26,8 @@ type PlaidConnection = {
   archived_at: string | null
   archive_reason: string | null
   last_sync_at: string | null
+  last_sync_attempt_at: string | null
+  last_repair_success_at: string | null
   last_sync_error: string | null
 }
 
@@ -89,17 +98,6 @@ function accountTypeLabel(account: PlaidAccount) {
   return account.subtype || account.type || 'Sin tipo'
 }
 
-function latestAccountUpdatedAt(accounts: PlaidAccount[]) {
-  return accounts.reduce<string | null>((latest, account) => {
-    if (!account.updated_at) return latest
-    if (!latest) return account.updated_at
-
-    return new Date(account.updated_at).getTime() > new Date(latest).getTime()
-      ? account.updated_at
-      : latest
-  }, null)
-}
-
 export default async function PlaidPage() {
   const { supabase, user } = await requireUser()
   const [
@@ -111,7 +109,7 @@ export default async function PlaidPage() {
     supabase
       .from('plaid_connections')
       .select(
-        'id, institution_name, created_at, user_id, encrypted_access_token, status, archived_at, archive_reason, last_sync_at, last_sync_error'
+        'id, institution_name, created_at, user_id, encrypted_access_token, status, archived_at, archive_reason, last_sync_at, last_sync_attempt_at, last_repair_success_at, last_sync_error'
       )
       .eq('user_id', user.id)
       .order('created_at', { ascending: false }),
@@ -171,7 +169,26 @@ export default async function PlaidPage() {
         ? connection.institution_name
         : 'Institución no identificada'
     const connectionAccounts = accountsByConnection.get(connection.id) || []
-    const successfulSync = latestAccountUpdatedAt(connectionAccounts)
+    const successfulSync = connection.last_sync_at
+    const repairState = plaidRepairableState(
+      connection.status,
+      connection.last_sync_error
+    )
+    const needsRepair =
+      !archived &&
+      plaidConnectionNeedsRepair(
+        connection.status,
+        connection.last_sync_error
+      )
+    const repairSyncPending = `${connection.status || ''} ${
+      connection.last_sync_error || ''
+    }`
+      .toUpperCase()
+      .includes(PLAID_REPAIR_SYNC_PENDING)
+    const displayStatus = needsRepair ? 'Requiere atención' : status
+    const displayStatusClasses = needsRepair
+      ? 'border-amber-700 bg-amber-950/50 text-amber-100'
+      : statusClasses
 
     return (
       <article
@@ -195,9 +212,9 @@ export default async function PlaidPage() {
             </div>
           </div>
           <span
-            className={`rounded-full border px-3 py-1 text-sm ${statusClasses}`}
+            className={`rounded-full border px-3 py-1 text-sm ${displayStatusClasses}`}
           >
-            {status}
+            {displayStatus}
           </span>
         </div>
 
@@ -227,9 +244,29 @@ export default async function PlaidPage() {
             </dd>
           </div>
           <div className="rounded border border-neutral-800 bg-neutral-950 p-3">
+            <dt className="text-neutral-500">Último intento de sync</dt>
+            <dd className="mt-1 text-neutral-200">
+              {formatDate(connection.last_sync_attempt_at)}
+            </dd>
+          </div>
+          <div className="rounded border border-neutral-800 bg-neutral-950 p-3">
+            <dt className="text-neutral-500">
+              Última reparación verificada
+            </dt>
+            <dd className="mt-1 text-neutral-200">
+              {formatDate(connection.last_repair_success_at)}
+            </dd>
+          </div>
+          <div className="rounded border border-neutral-800 bg-neutral-950 p-3">
             <dt className="text-neutral-500">Error de sync</dt>
             <dd className="mt-1 text-neutral-200">
-              {connection.last_sync_error || 'Ninguno'}
+              {needsRepair
+                ? repairSyncPending
+                  ? 'La reparación terminó, pero la sincronización necesita otro intento.'
+                  : plaidRepairMessage(institution)
+                : connection.last_sync_error
+                  ? 'La conexión requiere atención.'
+                  : 'Ninguno'}
             </dd>
           </div>
           {archived && (
@@ -310,6 +347,7 @@ export default async function PlaidPage() {
             <p>Conexión: {connection.id}</p>
             <p>Usuario: {connection.user_id || 'No registrado'}</p>
             <p>Estado: {connection.status || 'active'}</p>
+            {repairState && <p>Acción requerida: {repairState}</p>}
           </div>
         </details>
 
@@ -317,6 +355,14 @@ export default async function PlaidPage() {
           <p className="rounded border border-amber-800 bg-amber-950/40 p-3 text-sm text-amber-100">
             Esta conexión requiere revisión porque tiene datos incompletos.
           </p>
+        )}
+
+        {needsRepair && (
+          <RepairPlaidConnectionButton
+            connectionId={connection.id}
+            institution={institution}
+            syncPending={repairSyncPending}
+          />
         )}
       </article>
     )
