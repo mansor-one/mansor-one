@@ -59,6 +59,8 @@ export default function ConnectPlaidButton() {
       }
     },
   })
+  const canOpenPlaid =
+    Boolean(linkToken) && ready === true && loading === false
 
   return (
     <div className="rounded border border-neutral-800 bg-neutral-900 p-5">
@@ -72,7 +74,8 @@ export default function ConnectPlaidButton() {
         <button
           className="w-fit rounded border border-sky-700 bg-sky-950/50 px-4 py-3 text-sm font-medium text-sky-100 transition hover:border-sky-500 disabled:cursor-not-allowed disabled:border-neutral-800 disabled:bg-neutral-950 disabled:text-neutral-500"
           onClick={() => open()}
-          disabled={!ready || !linkToken || loading}
+          disabled={canOpenPlaid === false}
+          type="button"
         >
           {loading
             ? 'Conectando...'
