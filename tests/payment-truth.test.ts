@@ -66,6 +66,46 @@ test('biweekly schedules generate occurrences and detect three-paycheck months',
   assert.deepEqual(threePaycheckMonths(result.instances), [{ owner: 'manuel', month: '2026-07', count: 3 }])
 })
 
+test('legacy frequency participates in the 45-day horizon when cadence was stored as one-time', () => {
+  const projection = buildTimelineProjectionFromLiquidity({
+    cashAvailableTotal: 1000, cashAvailablePlaid: 1000, cashAvailableManual: 0,
+    income: {
+      allIncome: [{
+        id: 'legacy-payroll', name: 'Nómina', amount: 1000,
+        next_expected_date: '2026-07-02', cadence: 'one_time',
+        frequency: 'biweekly_thursday', status: 'expected', is_active: true,
+      }],
+      expectedIncome: [], receivedIncome: [], missedIncome: [], cancelledIncome: [],
+      projectedIncome: [], totalProjectedIncome: 0,
+    },
+    lifecyclePayments: [],
+  }, { today: '2026-07-28', horizonDays: 45 })
+
+  assert.deepEqual(
+    projection.events.filter((event) => event.type === 'income').map((event) => event.date),
+    ['2026-07-30', '2026-08-13', '2026-08-27', '2026-09-10']
+  )
+  assert.equal(projection.expectedIncomeTotal, 4000)
+  assert.equal(projection.explanation.income.considered[0].cadence, 'biweekly')
+})
+
+test('zero-income projections explicitly distinguish no configuration from excluded schedules', () => {
+  const none = buildTimelineProjectionFromLiquidity({
+    cashAvailableTotal: 1000, cashAvailablePlaid: 1000, cashAvailableManual: 0,
+    income: { allIncome: [], expectedIncome: [], receivedIncome: [], missedIncome: [], cancelledIncome: [], projectedIncome: [], totalProjectedIncome: 0 },
+    lifecyclePayments: [],
+  }, { today, horizonDays: 45 })
+  assert.match(none.explanation.income.text, /No hay ingresos configurados/)
+
+  const excluded = generateExpectedIncomeInstances({
+    start: today,
+    end: '2026-09-02',
+    schedules: [{ id: 'missing', name: 'Ingreso sin monto', amount: null, next_expected_date: null, is_active: true }],
+  })
+  assert.equal(excluded.instances.length, 0)
+  assert.match(excluded.excludedSchedules[0].reason, /importe positivo/)
+})
+
 test('projection excludes future, zero, paid, matched, duplicate, and possible-match payments', () => {
   const projection = buildTimelineProjectionFromLiquidity({
     cashAvailableTotal: 1000, cashAvailablePlaid: 1000, cashAvailableManual: 0,

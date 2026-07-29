@@ -482,7 +482,7 @@ function reviewQueueDecision(snapshot: FinancialEngineSnapshot): MansorDecision 
     ],
     confidence: 'high',
     actionLabel: 'Open review queue',
-    actionHref: '/lab/review-queue#queue',
+    actionHref: '/robototina/review#queue',
   }
 }
 

@@ -11,6 +11,7 @@ export const AUTO_RECONCILIATION_THRESHOLD = 90
 export function selectAutomaticReconciliations(matches: ReconciliationMatch[]) {
   const eligible = matches.filter((match) =>
     match.eligible &&
+    match.evidenceKind === 'payment' &&
     match.confidence >= AUTO_RECONCILIATION_THRESHOLD &&
     match.amountDifference <= 0.009 &&
     match.dateDifferenceDays !== null &&
@@ -52,7 +53,7 @@ export async function reconcileOpenObligationsAfterPlaidSync(
       .in('status', ['pending', 'initiated']),
     supabase
       .from('plaid_imports')
-      .select('id, merchant, amount, transaction_date, institution_name, account_name, account_type, account_subtype, suggested_category, plaid_account_id')
+      .select('id, merchant, amount, transaction_date, institution_name, account_name, account_type, account_subtype, suggested_category, plaid_category, plaid_account_id')
       .eq('user_id', userId)
       .eq('pending', false)
       .eq('transaction_status', 'active'),
@@ -130,7 +131,7 @@ export async function reconcileOpenObligationsAfterPlaidSync(
       accountName: row.account_name,
       accountType: row.account_type,
       accountSubtype: row.account_subtype,
-      category: row.suggested_category,
+      category: row.suggested_category || row.plaid_category,
       plaidAccountId: row.plaid_account_id,
     }))
 

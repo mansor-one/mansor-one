@@ -26,7 +26,7 @@ const householdNav: NavItem[] = [
 ]
 
 const internalNav: NavItem[] = [
-  { href: '/lab/review-queue', label: 'Financial Inbox', icon: '◇' },
+  { href: '/robototina/review', label: 'Financial Inbox', icon: '◇' },
   { href: '/dev/data-health', label: 'Data Health', icon: '◌' },
   { href: '/dev/household-contributions', label: 'Plan Familiar beta', icon: '◍' },
   { href: '/dev/confirmed-ledger-duplicates', label: 'Duplicados', icon: '⊕' },

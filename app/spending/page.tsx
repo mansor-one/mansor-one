@@ -337,7 +337,7 @@ export default async function SpendingPage({ searchParams }: PageProps) {
   )
   const excludedForReviewCount =
     actionableReviewCandidates.length + pendingBankAuthorization.length
-  const reviewQueueHref = `/lab/review-queue?tab=all&subset=spending-excluded&year=${period.year}&month=${period.month}#queue`
+  const reviewQueueHref = `/robototina/review?tab=all&subset=spending-excluded&year=${period.year}&month=${period.month}#queue`
 
   return (
     <AppShell
@@ -452,7 +452,7 @@ export default async function SpendingPage({ searchParams }: PageProps) {
                 {actionableReviewCandidates.slice(0, 10).map((candidate) => (
                   <Link
                     className="rounded border border-amber-700 bg-white px-3 py-2 text-sm font-semibold"
-                    href={`/lab/review-queue?tab=all&subset=transaction&transaction=${candidate.transaction.id}#transaction-${candidate.transaction.id}`}
+                    href={`/robototina/review?tab=all&subset=transaction&transaction=${candidate.transaction.id}#transaction-${candidate.transaction.id}`}
                     key={candidate.transaction.id}
                   >
                     {candidate.merchant || candidate.transaction.description || 'Transaction'} · {formatMoney(candidate.transaction.amount)}

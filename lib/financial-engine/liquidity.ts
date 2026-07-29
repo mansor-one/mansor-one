@@ -7,6 +7,12 @@ import {
 import { getPortfolioSummary } from './portfolio'
 import { buildIncomePlanningSummary } from './income'
 import {
+  DEFAULT_PLANNING_HORIZON_DAYS,
+  addDays,
+  generateExpectedIncomeInstances,
+} from './payment-truth'
+import { activeScheduledPaymentRows } from './legacy-obligation-migration'
+import {
   buildReconciliationMatches,
   type ReconciliationMatch,
   type ReconciliationPaymentInstance,
@@ -106,7 +112,7 @@ async function getActiveScheduledPayments(supabase: FinancialSupabaseClient) {
   return (data || []) as ScheduledPayment[]
 }
 
-async function getActiveIncomeSchedule(
+async function getIncomeSchedule(
   supabase: FinancialSupabaseClient,
   userId: string
 ) {
@@ -114,7 +120,6 @@ async function getActiveIncomeSchedule(
     .from('income_schedule')
     .select('*')
     .eq('user_id', userId)
-    .eq('is_active', true)
 
   if (error) throw error
 
@@ -580,8 +585,9 @@ export function buildPaymentLifecycleView({
   year: number
   today: string
 }) {
+  const activeScheduledPayments = activeScheduledPaymentRows(scheduledPayments)
   const scheduledPaymentById = new Map(
-    scheduledPayments.map((payment) => [payment.id, payment])
+    activeScheduledPayments.map((payment) => [payment.id, payment])
   )
   const currentLifecyclePayments = currentPayments.map((payment) => {
     const schedule = payment.scheduled_payment_id
@@ -622,7 +628,7 @@ export function buildPaymentLifecycleView({
     }
   })
 
-  const expectedPayments = scheduledPayments
+  const expectedPayments = activeScheduledPayments
     .filter((payment) => scheduledPaymentActiveForMonth(payment, month))
     .filter((payment) => scheduleExistedByCycleDueDate(payment, month, year))
     .filter(
@@ -640,7 +646,7 @@ export function buildPaymentLifecycleView({
     )
     .filter((payment): payment is PaymentInstance => payment !== null)
   const next = nextCycle(month, year)
-  const nextExpectedPayments = scheduledPayments
+  const nextExpectedPayments = activeScheduledPayments
     .filter((payment) => scheduledPaymentActiveForMonth(payment, next.month))
     .filter((payment) => !paymentForCycle(allPayments, payment, next.month, next.year))
     .map((payment) =>
@@ -706,7 +712,7 @@ export async function getLiquiditySummary(
     getCurrentMonthPayments(supabase, now),
     getPaymentInstances(supabase),
     getActiveScheduledPayments(supabase),
-    getActiveIncomeSchedule(supabase, userId),
+    getIncomeSchedule(supabase, userId),
     getLedgerSummary(supabase, userId),
     getObligationLifecyclePaymentItems(supabase, userId),
   ])
@@ -803,8 +809,30 @@ export async function getLiquiditySummary(
   )
 
   const income = buildIncomePlanningSummary(incomeSchedule, now)
-  const confirmedIncome = income.projectedIncome
-  const totalConfirmedIncome = income.totalProjectedIncome
+  const horizonIncome = generateExpectedIncomeInstances({
+    schedules: income.allIncome,
+    start: todayString,
+    end: addDays(todayString, DEFAULT_PLANNING_HORIZON_DAYS),
+  })
+  const schedulesById = new Map(
+    income.allIncome.map((schedule) => [schedule.id, schedule])
+  )
+  const projectedIncome = horizonIncome.instances.map((instance) => ({
+    ...(schedulesById.get(instance.scheduleId) || {}),
+    id: instance.id,
+    name: instance.name,
+    amount: instance.amount,
+    next_expected_date: instance.date,
+    owner_scope: instance.owner,
+    confidence: instance.confidence,
+    status: 'expected',
+    is_active: true,
+  })) as IncomeSchedule[]
+  const confirmedIncome = projectedIncome
+  const totalConfirmedIncome = horizonIncome.instances.reduce(
+    (sum, instance) => sum + instance.amount,
+    0
+  )
 
   const connectedCreditDebt = plaidCredit.reduce(
     (sum, account) => sum + Number(account.current_balance || 0),
@@ -851,7 +879,7 @@ export async function getLiquiditySummary(
     pendingPayments: committedPayments,
     income,
     confirmedIncome,
-    projectedIncome: income.projectedIncome,
+    projectedIncome,
     expectedIncome: income.expectedIncome,
     receivedIncome: income.receivedIncome,
     missedIncome: income.missedIncome,
@@ -861,7 +889,7 @@ export async function getLiquiditySummary(
     committedPaymentsTotal,
     totalPendingPayments: committedPaymentsTotal,
     totalConfirmedIncome,
-    totalProjectedIncome: income.totalProjectedIncome,
+    totalProjectedIncome: totalConfirmedIncome,
     resultToday: cashAvailableTotal - committedPaymentsTotal,
     resultAfterIncome:
       cashAvailableTotal + totalConfirmedIncome - committedPaymentsTotal,

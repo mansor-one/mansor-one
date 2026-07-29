@@ -232,7 +232,7 @@ function buildInsights(context: RobototinaBaseContext) {
       message:
         'La cola de revision puede cambiar categorias, duplicados o confirmaciones antes de que Robototina recomiende con mas precision.',
       tone: 'info',
-      href: '/lab/review-queue',
+      href: '/robototina/review',
     })
   }
 

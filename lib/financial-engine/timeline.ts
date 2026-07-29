@@ -71,6 +71,12 @@ export type TimelineProjectionSummary = {
     initialCash: { balance: number; connectedCash: number; manualCash: number; text: string }
     lowestPoint: { date: string | null; balance: number; payments: TimelineProjectionEvent[]; incomeEvents: TimelineProjectionEvent[]; text: string }
     finalBalance: { balance: number; totalIncome: number; totalPayments: number; openCommitmentsCount: number; incomeEventsCount: number; text: string }
+    income: {
+      configuredCount: number
+      considered: Array<{ scheduleId: string; name: string; amount: number; cadence: string; nextExpectedDate: string | null; occurrenceCount: number; reason: string }>
+      excluded: Array<{ scheduleId: string; name: string; amount: number; cadence: string; nextExpectedDate: string | null; occurrenceCount: number; reason: string }>
+      text: string
+    }
   }
 }
 
@@ -194,6 +200,16 @@ export function buildTimelineProjectionFromLiquidity(
       initialCash: { balance: liquidity.cashAvailableTotal, connectedCash: liquidity.cashAvailablePlaid, manualCash: liquidity.cashAvailableManual, text: 'Parte del efectivo utilizable del Motor Financiero, no del saldo bancario bruto.' },
       lowestPoint: { date: lowestDate, balance: lowest?.balanceAfter ?? liquidity.cashAvailableTotal, payments: events.filter((event) => event.date === lowestDate && event.type === 'payment'), incomeEvents: events.filter((event) => event.date === lowestDate && event.type === 'income'), text: lowestDate ? `Punto más bajo dentro del horizonte activo de ${horizonDays} días.` : 'No hay eventos proyectados dentro del horizonte activo.' },
       finalBalance: { balance, totalIncome, totalPayments, openCommitmentsCount: projectedPayments.length, incomeEventsCount: income.instances.length, text: 'Efectivo utilizable inicial más ingresos esperados, menos únicamente las obligaciones abiertas proyectables dentro del horizonte activo.' },
+      income: {
+        configuredCount: liquidity.income.allIncome.length,
+        considered: income.consideredSchedules,
+        excluded: income.excludedSchedules,
+        text: liquidity.income.allIncome.length === 0
+          ? 'No hay ingresos configurados. El déficit se calcula sin ingresos esperados.'
+          : income.instances.length === 0
+            ? `Hay ${liquidity.income.allIncome.length} ingreso(s) configurado(s), pero ninguno genera ocurrencias dentro de los próximos ${horizonDays} días.`
+            : `${income.consideredSchedules.length} calendario(s) aportan ${income.instances.length} ocurrencia(s) dentro de los próximos ${horizonDays} días.`,
+      },
     },
   }
 }

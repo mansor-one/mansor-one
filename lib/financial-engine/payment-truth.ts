@@ -223,6 +223,29 @@ function advanceIncomeDate(dateString: string, cadence: string) {
   return isoDate(date)
 }
 
+export function effectiveIncomeCadence(schedule: IncomeSchedule) {
+  const cadence = String(schedule.cadence || '').toLowerCase()
+  const legacyFrequency = String(schedule.frequency || '').toLowerCase()
+
+  if (!cadence || cadence === 'one_time') {
+    if (legacyFrequency.startsWith('weekly')) return 'weekly'
+    if (legacyFrequency.startsWith('biweekly')) return 'biweekly'
+    if (legacyFrequency.startsWith('monthly')) return 'monthly'
+  }
+
+  return cadence || 'one_time'
+}
+
+export type IncomeProjectionDecision = {
+  scheduleId: string
+  name: string
+  amount: number
+  cadence: string
+  nextExpectedDate: string | null
+  occurrenceCount: number
+  reason: string
+}
+
 export function generateExpectedIncomeInstances({
   schedules,
   start,
@@ -234,23 +257,51 @@ export function generateExpectedIncomeInstances({
 }) {
   const instances: ExpectedIncomeInstance[] = []
   const incompleteSchedules: IncomeSchedule[] = []
+  const consideredSchedules: IncomeProjectionDecision[] = []
+  const excludedSchedules: IncomeProjectionDecision[] = []
 
-  schedules.filter((schedule) => schedule.is_active !== false).forEach((schedule) => {
+  schedules.forEach((schedule) => {
     const amount = Number(schedule.amount || 0)
     const firstDate = schedule.next_expected_date
-    const cadence = schedule.cadence || 'one_time'
+    const cadence = effectiveIncomeCadence(schedule)
+    const scheduleId = schedule.id || normalized(schedule.name)
+    const baseDecision = {
+      scheduleId,
+      name: schedule.name || 'Ingreso sin nombre',
+      amount,
+      cadence,
+      nextExpectedDate: firstDate || null,
+    }
+    if (schedule.is_active === false || schedule.status === 'cancelled') {
+      excludedSchedules.push({ ...baseDecision, occurrenceCount: 0, reason: 'Está inactivo o cancelado.' })
+      return
+    }
+    if (schedule.status === 'received' || schedule.status === 'missed') {
+      excludedSchedules.push({ ...baseDecision, occurrenceCount: 0, reason: `Su estado es ${schedule.status}; no es un ingreso esperado abierto.` })
+      return
+    }
     if (!(amount > 0) || !firstDate || !['one_time', 'weekly', 'biweekly', 'monthly'].includes(cadence)) {
       incompleteSchedules.push(schedule)
+      excludedSchedules.push({
+        ...baseDecision,
+        occurrenceCount: 0,
+        reason: !(amount > 0)
+          ? 'No tiene un importe positivo configurado.'
+          : !firstDate
+            ? 'No tiene próxima fecha esperada.'
+            : 'La frecuencia no se puede proyectar automáticamente.',
+      })
       return
     }
 
     let cursor: string | null = firstDate
     let guard = 0
+    const scheduleInstances: ExpectedIncomeInstance[] = []
     while (cursor && cursor < start && guard++ < 400) cursor = advanceIncomeDate(cursor, cadence)
     while (cursor && cursor <= end && guard++ < 400) {
-      instances.push({
-        id: `income:${schedule.id || normalized(schedule.name)}:${cursor}`,
-        scheduleId: schedule.id || normalized(schedule.name),
+      const instance = {
+        id: `income:${scheduleId}:${cursor}`,
+        scheduleId,
         name: schedule.name || 'Income',
         amount,
         date: cursor,
@@ -258,14 +309,33 @@ export function generateExpectedIncomeInstances({
         destination: schedule.destination_account_id || null,
         confidence: schedule.confidence || 'estimated',
         projected: schedule.status !== 'received',
-      })
+      }
+      instances.push(instance)
+      scheduleInstances.push(instance)
       cursor = advanceIncomeDate(cursor, cadence)
+    }
+    if (scheduleInstances.length > 0) {
+      consideredSchedules.push({
+        ...baseDecision,
+        occurrenceCount: scheduleInstances.length,
+        reason: `${scheduleInstances.length} ocurrencia(s) caen dentro del horizonte.`,
+      })
+    } else {
+      excludedSchedules.push({
+        ...baseDecision,
+        occurrenceCount: 0,
+        reason: cadence === 'one_time' && firstDate < start
+          ? 'La fecha única ya pasó.'
+          : 'No tiene ocurrencias dentro del horizonte activo.',
+      })
     }
   })
 
   return {
     instances: instances.sort((a, b) => a.date.localeCompare(b.date)),
     incompleteSchedules,
+    consideredSchedules,
+    excludedSchedules,
   }
 }
 

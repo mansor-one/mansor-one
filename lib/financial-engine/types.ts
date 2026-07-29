@@ -349,6 +349,7 @@ export type IncomeSchedule = {
   destination_account_id?: string | null
   destination_account_source?: 'manual' | 'plaid' | string | null
   cadence?: 'one_time' | 'weekly' | 'biweekly' | 'monthly' | 'irregular' | string | null
+  frequency?: string | null
   status?: 'expected' | 'received' | 'missed' | 'cancelled' | string | null
   received_at?: string | null
   notes?: string | null

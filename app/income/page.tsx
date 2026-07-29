@@ -12,6 +12,7 @@ import {
   type IncomeDestinationOption,
 } from '@/lib/financial-engine'
 import type { IncomeSchedule } from '@/lib/financial-engine'
+import { addDays, generateExpectedIncomeInstances } from '@/lib/financial-engine/payment-truth'
 import type { Metadata } from 'next'
 import AppShell from '../components/AppShell'
 import { createIncomeAction, updateIncomeAction } from './actions'
@@ -454,10 +455,13 @@ export default async function IncomePage({ searchParams }: IncomePageProps) {
     getIncomeDestinationOptions(supabase, user.id),
   ])
   const summary = buildIncomePlanningSummary(incomeRows)
-  const projectedTotal = summary.projectedIncome.reduce(
-    (sum, income) => sum + Number(income.amount || 0),
-    0
-  )
+  const today = new Date().toISOString().slice(0, 10)
+  const horizonIncome = generateExpectedIncomeInstances({
+    schedules: incomeRows,
+    start: today,
+    end: addDays(today, 45),
+  })
+  const projectedTotal = horizonIncome.instances.reduce((sum, income) => sum + income.amount, 0)
 
   return (
     <AppShell
@@ -482,7 +486,7 @@ export default async function IncomePage({ searchParams }: IncomePageProps) {
 
       <section className="grid grid-cols-1 gap-4 md:grid-cols-4">
         <SummaryTile
-          label="Projected income"
+          label="Proyectado en 45 días"
           value={money(projectedTotal)}
         />
         <SummaryTile
@@ -497,6 +501,24 @@ export default async function IncomePage({ searchParams }: IncomePageProps) {
           label="Inactive"
           value={String(summary.missedIncome.length + summary.cancelledIncome.length)}
         />
+      </section>
+
+      <section className="rounded-xl border border-sky-900/60 bg-sky-950/20 p-4 text-sm">
+        <h2 className="font-semibold">Participación en el horizonte de liquidez</h2>
+        <p className="mt-1 text-slate-300">
+          {incomeRows.length === 0
+            ? 'No hay ingresos configurados; Financial Health calcula el horizonte sin entradas esperadas.'
+            : horizonIncome.instances.length === 0
+              ? 'Hay ingresos configurados, pero ninguno produce una ocurrencia dentro de los próximos 45 días.'
+              : `${horizonIncome.consideredSchedules.length} calendario(s) generan ${horizonIncome.instances.length} ingreso(s) dentro de los próximos 45 días.`}
+        </p>
+        {horizonIncome.excludedSchedules.length > 0 && (
+          <ul className="mt-2 space-y-1 text-xs text-slate-400">
+            {horizonIncome.excludedSchedules.map((income) => (
+              <li key={income.scheduleId}>{income.name}: {income.reason}</li>
+            ))}
+          </ul>
+        )}
       </section>
 
       <section className="space-y-4">
