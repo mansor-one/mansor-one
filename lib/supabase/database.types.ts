@@ -3249,6 +3249,22 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      configure_legacy_paid_obligation: {
+        Args: {
+          p_category_code: string | null
+          p_default_amount: number
+          p_effective_due_date: string
+          p_existing_obligation_id: string | null
+          p_expected_date: string
+          p_frequency: string
+          p_name: string
+          p_obligation_type: string
+          p_owner: string
+          p_quick_entry_id: string
+          p_scheduled_payment_id: string
+        }
+        Returns: Json
+      }
       confirm_review_transaction: {
         Args: {
           p_category: string

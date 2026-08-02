@@ -25,5 +25,5 @@ export function reviewQueueDrilldown(
   subset?: string,
   filters: Record<string, QueryValue> = {}
 ) {
-  return drilldown('/lab/review-queue', 'queue', { tab, subset, ...filters })
+  return drilldown('/robototina/review', 'queue', { tab, subset, ...filters })
 }

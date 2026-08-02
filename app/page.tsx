@@ -689,6 +689,36 @@ export default async function Home() {
                 </p>
               </div>
 
+              <div className="rounded border border-sky-900/70 bg-sky-950/20 p-3">
+                <p className="font-semibold">Ingresos considerados</p>
+                <p className="mt-1 text-xs text-neutral-300">{timeline.explanation.income.text}</p>
+                {timeline.explanation.income.considered.length > 0 ? (
+                  <ul className="mt-2 space-y-1 text-xs text-neutral-300">
+                    {timeline.explanation.income.considered.map((income) => (
+                      <li className="flex justify-between gap-3" key={`included-income:${income.scheduleId}`}>
+                        <span>{income.name} · {income.occurrenceCount} ocurrencia(s) · {income.cadence}</span>
+                        <strong>{money(income.amount * income.occurrenceCount)}</strong>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="mt-2 text-sm text-amber-200">No se añadió ningún ingreso al horizonte de {timeline.horizonDays} días.</p>
+                )}
+                {timeline.explanation.income.excluded.length > 0 && (
+                  <details className="mt-3 rounded border border-white/10 p-2">
+                    <summary className="cursor-pointer text-xs font-semibold">Ver ingresos no considerados ({timeline.explanation.income.excluded.length})</summary>
+                    <ul className="mt-2 space-y-1 text-xs text-neutral-400">
+                      {timeline.explanation.income.excluded.map((income) => (
+                        <li key={`excluded-income:${income.scheduleId}`}>{income.name}: {income.reason}</li>
+                      ))}
+                    </ul>
+                  </details>
+                )}
+                <Link className="mt-3 inline-flex text-xs font-semibold text-sky-200 underline" href="/income#expected-income">
+                  {timeline.explanation.income.configuredCount === 0 ? 'Configurar ingresos' : 'Revisar calendario de ingresos'}
+                </Link>
+              </div>
+
               <div>
                 <p className="font-semibold">
                   {projectedHealthMargin < 0 ? 'Déficit proyectado' : 'Margen proyectado'}

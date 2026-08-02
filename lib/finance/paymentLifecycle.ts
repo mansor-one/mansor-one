@@ -6,6 +6,10 @@ import type {
   FinancialSupabaseClient,
   PaymentInstance,
 } from '../financial-engine/types.ts'
+import {
+  addCalendarDays,
+  enumerateRecurringCycles,
+} from '../financial-engine/recurring-cycle-enumerator.ts'
 
 export const PAYMENT_LIFECYCLE_STATES = [
   'pending',
@@ -70,6 +74,7 @@ export type PaymentLifecycleSnapshot = {
 
 export type ObligationLifecyclePaymentOptions = {
   today?: string
+  horizonEnd?: string
 }
 
 export type PaymentStateSemantics = {
@@ -257,6 +262,88 @@ function friendlyObligationNotes(instance: EnrichedObligationInstance) {
   return description || null
 }
 
+function legacyActiveMonths(notes: string | null | undefined) {
+  const match = String(notes || '').match(/Legacy active_months:([0-9,]+)/i)
+  return match?.[1] || null
+}
+
+export function projectedCanonicalInstances(
+  summary: Awaited<ReturnType<typeof getObligationsSummary>>,
+  horizonEnd: string | undefined
+): EnrichedObligationInstance[] {
+  if (!horizonEnd) return []
+  const projected: EnrichedObligationInstance[] = []
+
+  for (const profile of summary.active) {
+    // The first canonical instance is the explicit configuration boundary.
+    // Masters with no confirmed starting cycle stay in Needs Configuration.
+    if (!profile.instances.length || !profile.due_day || !profile.default_amount) {
+      continue
+    }
+
+    const existingCycles = profile.instances.map((instance) => {
+      const [year, month] = instance.expected_date.slice(0, 10).split('-').map(Number)
+      return { year, month }
+    })
+    const firstInstance = [...profile.instances].sort((left, right) =>
+      left.expected_date.localeCompare(right.expected_date)
+    )[0]
+    const cycles = enumerateRecurringCycles({
+      source: {
+        id: profile.id,
+        due_day: profile.due_day,
+        is_active: profile.is_active,
+        recurrence_type: profile.frequency,
+        recurrence_interval:
+          profile.frequency === 'quarterly' || profile.frequency === 'every_3_months'
+            ? 3
+            : profile.frequency === 'annual' || profile.frequency === 'yearly'
+              ? 12
+              : 1,
+        active_months: legacyActiveMonths(profile.notes),
+        start_date: firstInstance.expected_date,
+      },
+      startDate: summary.asOfDate,
+      horizonEnd,
+      existingCycles,
+    })
+
+    for (const cycle of cycles) {
+      const effectiveDueDate = addCalendarDays(
+        cycle.dueDate,
+        Number(profile.grace_period_days || 0)
+      )
+      projected.push({
+        id: `projected:${profile.id}:${cycle.year}-${cycle.month}`,
+        user_id: profile.user_id,
+        obligation_id: profile.id,
+        provider_id: profile.currentProvider?.id || null,
+        expected_date: cycle.dueDate,
+        effective_due_date: effectiveDueDate,
+        amount_expected: profile.default_amount,
+        amount_is_estimated: profile.amount_is_estimated,
+        status: 'pending',
+        source: 'projected',
+        notes: profile.notes,
+        created_at: null,
+        updated_at: null,
+        obligation: profile,
+        provider: profile.currentProvider,
+        providers: profile.providers,
+        isCompleted: false,
+        isOverdue: effectiveDueDate < summary.asOfDate,
+        isInGracePeriod:
+          cycle.dueDate < summary.asOfDate &&
+          effectiveDueDate >= summary.asOfDate,
+        isEstimated: profile.amount_is_estimated,
+        daysFromEffectiveDueDate: null,
+      })
+    }
+  }
+
+  return projected
+}
+
 function legacySourceIdsFromText(value: string | null | undefined) {
   const text = String(value || '')
   const matches = text.matchAll(
@@ -359,7 +446,12 @@ export async function getObligationLifecyclePaymentItems(
     linksByInstance.set(link.obligation_instance_id, current)
   }
 
-  return summary.allInstances.map((instance) => {
+  const lifecycleInstances = [
+    ...summary.allInstances,
+    ...projectedCanonicalInstances(summary, options.horizonEnd),
+  ]
+
+  return lifecycleInstances.map((instance) => {
     const payment = obligationInstanceToLifecyclePayment(instance, summary.asOfDate)
     const instanceLinks = linksByInstance.get(instance.id) || []
     const link = [...instanceLinks].sort((left, right) =>

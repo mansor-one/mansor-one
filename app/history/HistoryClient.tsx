@@ -599,7 +599,7 @@ export default function HistoryClient({
             </Link>
             <Link
               className="rounded border px-4 py-2"
-              href="/lab/review-queue"
+              href="/robototina/review"
             >
               Revisar pendientes
             </Link>

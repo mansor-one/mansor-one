@@ -300,7 +300,7 @@ function answerReviewQueue(context: RobototinaContext): RobototinaQaResponse {
       answer: 'There is nothing in the review queue that Robototina is asking you to handle right now.',
       supportingFacts: ['Pending review items: 0'],
       confidence: 'high',
-      actionLinks: [actionLink('Open review queue', '/lab/review-queue#queue')],
+      actionLinks: [actionLink('Open review queue', '/robototina/review#queue')],
       limitations: [],
       matchedIntent: 'review_queue',
     }
@@ -315,7 +315,7 @@ function answerReviewQueue(context: RobototinaContext): RobototinaQaResponse {
       `ATH review: ${review.athReviewCount}`,
     ],
     confidence: 'high',
-    actionLinks: [actionLink('Open review queue', '/lab/review-queue#queue')],
+    actionLinks: [actionLink('Open review queue', '/robototina/review#queue')],
     limitations: [],
     matchedIntent: 'review_queue',
   }

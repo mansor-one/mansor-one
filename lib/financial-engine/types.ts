@@ -329,8 +329,11 @@ export type ScheduledPayment = {
   owner?: string | null
   category?: string | null
   recurrence_type?: string | null
+  recurrence_interval?: number | null
   is_active?: boolean | null
   created_at?: string | null
+  start_date?: string | null
+  end_date?: string | null
 }
 
 export type IncomeSchedule = {
@@ -349,6 +352,7 @@ export type IncomeSchedule = {
   destination_account_id?: string | null
   destination_account_source?: 'manual' | 'plaid' | string | null
   cadence?: 'one_time' | 'weekly' | 'biweekly' | 'monthly' | 'irregular' | string | null
+  frequency?: string | null
   status?: 'expected' | 'received' | 'missed' | 'cancelled' | string | null
   received_at?: string | null
   notes?: string | null

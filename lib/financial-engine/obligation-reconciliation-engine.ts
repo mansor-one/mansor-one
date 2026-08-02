@@ -11,6 +11,7 @@ export const AUTO_RECONCILIATION_THRESHOLD = 90
 export function selectAutomaticReconciliations(matches: ReconciliationMatch[]) {
   const eligible = matches.filter((match) =>
     match.eligible &&
+    match.evidenceKind === 'payment' &&
     match.confidence >= AUTO_RECONCILIATION_THRESHOLD &&
     match.amountDifference <= 0.009 &&
     match.dateDifferenceDays !== null &&
@@ -44,7 +45,13 @@ export async function reconcileOpenObligationsAfterPlaidSync(
   supabase: SupabaseClient,
   userId: string
 ): Promise<ReconciliationRunSummary> {
-  const [instancesResult, importsResult, linksResult, accountsResult] = await Promise.all([
+  const [
+    instancesResult,
+    importsResult,
+    linksResult,
+    accountsResult,
+    eventsResult,
+  ] = await Promise.all([
     supabase
       .from('obligation_instances')
       .select('id, amount_expected, status, effective_due_date, updated_at, notes, obligations(name, default_amount, frequency)')
@@ -52,7 +59,7 @@ export async function reconcileOpenObligationsAfterPlaidSync(
       .in('status', ['pending', 'initiated']),
     supabase
       .from('plaid_imports')
-      .select('id, merchant, amount, transaction_date, institution_name, account_name, account_type, account_subtype, suggested_category, plaid_account_id')
+      .select('id, merchant, amount, transaction_date, institution_name, account_name, account_type, account_subtype, suggested_category, plaid_category, plaid_account_id')
       .eq('user_id', userId)
       .eq('pending', false)
       .eq('transaction_status', 'active'),
@@ -64,22 +71,42 @@ export async function reconcileOpenObligationsAfterPlaidSync(
       .from('plaid_accounts')
       .select('id, plaid_account_id, institution_name, name')
       .eq('user_id', userId),
+    supabase
+      .from('obligation_reconciliation_events')
+      .select('payment_link_id, event_type')
+      .eq('user_id', userId)
+      .in('event_type', ['payment_detected', 'auto_reconciled']),
   ])
 
   if (instancesResult.error) throw instancesResult.error
   if (importsResult.error) throw importsResult.error
   if (linksResult.error) throw linksResult.error
   if (accountsResult.error) throw accountsResult.error
+  if (eventsResult.error) throw eventsResult.error
+
+  const existingEventKeys = new Set(
+    (eventsResult.data || []).map(
+      (event) => `${event.payment_link_id}:${event.event_type}`
+    )
+  )
+  async function insertEventOnce(
+    paymentLinkId: string,
+    eventType: 'payment_detected' | 'auto_reconciled',
+    values: Record<string, unknown>
+  ) {
+    const eventKey = `${paymentLinkId}:${eventType}`
+    if (existingEventKeys.has(eventKey)) return
+    const { error } = await supabase
+      .from('obligation_reconciliation_events')
+      .insert(values)
+    if (error) throw error
+    existingEventKeys.add(eventKey)
+  }
 
   const linkedTransactionIds = new Set(
     (linksResult.data || [])
       .filter((link) => link.reconciliation_status === 'reconciled' && link.plaid_import_id)
       .map((link) => link.plaid_import_id as string)
-  )
-  const existingLinkKeys = new Set(
-    (linksResult.data || [])
-      .filter((link) => link.plaid_import_id)
-      .map((link) => `${link.obligation_instance_id}:${link.plaid_import_id}`)
   )
   const rejectedMatchKeys = new Set(
     (linksResult.data || [])
@@ -130,7 +157,7 @@ export async function reconcileOpenObligationsAfterPlaidSync(
       accountName: row.account_name,
       accountType: row.account_type,
       accountSubtype: row.account_subtype,
-      category: row.suggested_category,
+      category: row.suggested_category || row.plaid_category,
       plaidAccountId: row.plaid_account_id,
     }))
 
@@ -169,21 +196,7 @@ export async function reconcileOpenObligationsAfterPlaidSync(
       }).select('id').single()
       if (error) throw error
       linkId = data.id
-      existingLinkKeys.add(key)
       candidatesDetected += 1
-      if (!shouldReconcile) {
-        const { error: detectedEventError } = await supabase.from('obligation_reconciliation_events').insert({
-          user_id: userId,
-          obligation_instance_id: match.paymentInstanceId,
-          payment_link_id: linkId,
-          event_type: 'payment_detected',
-          from_status: match.paymentStatus,
-          to_status: 'payment_detected',
-          confidence: match.confidence,
-          evidence: { transaction_source: match.transactionSource, transaction_id: match.transactionId, factors: match.scoreFactors },
-        })
-        if (detectedEventError) throw detectedEventError
-      }
     } else if (shouldReconcile) {
       const { error } = await supabase.from('obligation_payment_links').update({
         reconciliation_status: 'reconciled', confidence: match.confidence,
@@ -192,14 +205,21 @@ export async function reconcileOpenObligationsAfterPlaidSync(
       if (error) throw error
     }
 
-    if (!shouldReconcile) continue
+    if (!shouldReconcile) {
+      await insertEventOnce(linkId, 'payment_detected', {
+        user_id: userId,
+        obligation_instance_id: match.paymentInstanceId,
+        payment_link_id: linkId,
+        event_type: 'payment_detected',
+        from_status: match.paymentStatus,
+        to_status: 'payment_detected',
+        confidence: match.confidence,
+        evidence: { transaction_source: match.transactionSource, transaction_id: match.transactionId, factors: match.scoreFactors },
+      })
+      continue
+    }
 
-    const { error: instanceError } = await supabase.from('obligation_instances').update({
-      status: 'confirmed', updated_at: now,
-    }).eq('id', match.paymentInstanceId).eq('user_id', userId).in('status', ['pending', 'initiated'])
-    if (instanceError) throw instanceError
-
-    const { error: eventError } = await supabase.from('obligation_reconciliation_events').insert({
+    await insertEventOnce(linkId, 'auto_reconciled', {
       user_id: userId,
       obligation_instance_id: match.paymentInstanceId,
       payment_link_id: linkId,
@@ -209,7 +229,11 @@ export async function reconcileOpenObligationsAfterPlaidSync(
       confidence: match.confidence,
       evidence: { transaction_source: match.transactionSource, transaction_id: match.transactionId, factors: match.scoreFactors },
     })
-    if (eventError) throw eventError
+
+    const { error: instanceError } = await supabase.from('obligation_instances').update({
+      status: 'confirmed', updated_at: now,
+    }).eq('id', match.paymentInstanceId).eq('user_id', userId).in('status', ['pending', 'initiated'])
+    if (instanceError) throw instanceError
     automaticallyReconciled += 1
   }
 

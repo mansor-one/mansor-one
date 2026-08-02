@@ -185,8 +185,15 @@ export default async function PlaidPage() {
     }`
       .toUpperCase()
       .includes(PLAID_REPAIR_SYNC_PENDING)
-    const displayStatus = needsRepair ? 'Requiere atención' : status
-    const displayStatusClasses = needsRepair
+    const needsLiabilitiesConsent = String(
+      connection.last_sync_error || ''
+    ).includes('ADDITIONAL_CONSENT_REQUIRED:PRODUCT_LIABILITIES')
+    const displayStatus = needsLiabilitiesConsent
+      ? 'Requiere autorización'
+      : needsRepair
+        ? 'Requiere atención'
+        : status
+    const displayStatusClasses = needsRepair || needsLiabilitiesConsent
       ? 'border-amber-700 bg-amber-950/50 text-amber-100'
       : statusClasses
 
@@ -264,6 +271,8 @@ export default async function PlaidPage() {
                 ? repairSyncPending
                   ? 'La reparación terminó, pero la sincronización necesita otro intento.'
                   : plaidRepairMessage(institution)
+                : needsLiabilitiesConsent
+                  ? 'Las cuentas y movimientos se actualizaron, pero Plaid requiere autorización adicional para tarjetas y préstamos.'
                 : connection.last_sync_error
                   ? 'La conexión requiere atención.'
                   : 'Ninguno'}
@@ -362,6 +371,13 @@ export default async function PlaidPage() {
             connectionId={connection.id}
             institution={institution}
             syncPending={repairSyncPending}
+          />
+        )}
+        {!archived && needsLiabilitiesConsent && !needsRepair && (
+          <RepairPlaidConnectionButton
+            connectionId={connection.id}
+            institution={institution}
+            requestLiabilitiesConsent
           />
         )}
       </article>

@@ -1,6 +1,12 @@
 import type { FinancialEngineSnapshot } from './snapshot'
 import type { IncomeSchedule, PaymentInstance, PlanningItem } from './types'
 import { paymentRequiresUserAction } from '../finance/paymentLifecycle.ts'
+import {
+  canonicalCommitmentName,
+  deduplicateLifecyclePaymentsByFinancialIdentity,
+  financialCommitmentIdentity,
+  paymentCycleIdentity,
+} from './payment-financial-identity.ts'
 
 export type MansorDecisionType =
   | 'pay_now'
@@ -148,9 +154,33 @@ function paymentSeverity(payment: PaymentInstance, criticalDefault = false) {
   return 'warning' as const
 }
 
+function overduePaymentTitle(
+  payment: PaymentInstance,
+  payments: PaymentInstance[]
+) {
+  const commitment = financialCommitmentIdentity(payment, payments)
+  const cyclesForCommitment = payments.filter(
+    (candidate) =>
+      financialCommitmentIdentity(candidate, payments) === commitment
+  )
+  const name = canonicalCommitmentName(payment, payments)
+  if (cyclesForCommitment.length < 2) return `${name} está vencida`
+
+  const cycle = paymentCycleIdentity(payment)
+  if (!cycle) return `${name} está vencida`
+  const [year, month] = cycle.split('-').map(Number)
+  const monthLabel = new Intl.DateTimeFormat('es-PR', {
+    month: 'long',
+    timeZone: 'UTC',
+  }).format(new Date(Date.UTC(year, month - 1, 1)))
+  return `${name} — ${monthLabel} está vencida`
+}
+
 function paymentDecisions(snapshot: FinancialEngineSnapshot) {
   const income = snapshot.projectedIncome.filter(isProjectedIncome)
-  const payments = snapshot.lifecyclePayments
+  const payments = deduplicateLifecyclePaymentsByFinancialIdentity(
+    snapshot.lifecyclePayments
+  )
     .filter(openLifecyclePayment)
     .sort((a, b) => paymentDate(a).localeCompare(paymentDate(b)))
 
@@ -172,8 +202,8 @@ function paymentDecisions(snapshot: FinancialEngineSnapshot) {
         type: 'pay_now',
         priority: 100,
         severity: 'critical',
-        title: `${paymentLabel(payment)} is overdue`,
-        recommendation: 'Pay this now or confirm it if it was already paid.',
+        title: overduePaymentTitle(payment, payments),
+        recommendation: 'Págala ahora o confirma si ya fue pagada.',
         explanation:
           'The Financial Engine marks this payment as open and past its due date.',
         evidence: [
@@ -482,7 +512,7 @@ function reviewQueueDecision(snapshot: FinancialEngineSnapshot): MansorDecision 
     ],
     confidence: 'high',
     actionLabel: 'Open review queue',
-    actionHref: '/lab/review-queue#queue',
+    actionHref: '/robototina/review#queue',
   }
 }
 

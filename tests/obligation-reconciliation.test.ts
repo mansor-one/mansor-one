@@ -3,6 +3,7 @@ import test from 'node:test'
 import { buildReconciliationMatches } from '../lib/financial-engine/reconciliation.ts'
 import { selectAutomaticReconciliations } from '../lib/financial-engine/obligation-reconciliation-engine.ts'
 import { businessDaysBetween, resolveTrustedPayments } from '../lib/financial-engine/payment-truth.ts'
+import { obligationEvidenceCoverage } from '../lib/financial-engine/debt-reduction-credit.ts'
 
 function reconciliation(transactions = [{
   source: 'plaid_imports' as const,
@@ -151,4 +152,81 @@ test('near, partial, or split amounts stay ineligible without explicit semantics
 
   assert.equal(result.allMatches[0].eligible, false)
   assert.equal(selectAutomaticReconciliations(result.allMatches).length, 0)
+})
+
+test('Chase Pay Yourself Back credit is eligible as partial debt-reduction evidence', () => {
+  const result = buildReconciliationMatches({
+    transactions: [{
+      source: 'plaid_imports', id: 'chase-credit-241',
+      name: 'PAYYOURSELFBACK CREDIT', amount: -241.01,
+      date: '2026-07-20', institutionName: 'Chase',
+      accountName: 'Chase CREDIT CARD', accountType: 'credit',
+      accountSubtype: 'credit card', category: 'GENERAL_MERCHANDISE',
+    }],
+    payments: [{
+      id: 'chase-cycle', name: 'Chase', amount: 361,
+      status: 'pending', effective_due_date: '2026-07-20',
+      recurrence: 'monthly',
+    }],
+  })
+
+  const [match] = result.allMatches
+  assert.equal(match.eligible, true)
+  assert.equal(match.evidenceKind, 'debt_reduction_credit')
+  assert.equal(match.satisfiesAmount, 'partial')
+  assert.ok(match.confidence >= 50)
+  assert.equal(result.possibleMatches.length + result.likelyMatches.length + result.highConfidenceMatches.length, 1)
+  assert.equal(selectAutomaticReconciliations(result.allMatches).length, 0)
+})
+
+test('reward and cashback credits require a credit account and credit direction', () => {
+  const result = buildReconciliationMatches({
+    transactions: [
+      {
+        source: 'plaid_imports', id: 'reward-card', name: 'REWARDS REDEMPTION',
+        amount: -361, date: '2026-07-20', institutionName: 'Chase',
+        accountName: 'Credit Card', accountType: 'credit',
+      },
+      {
+        source: 'plaid_imports', id: 'cashback-checking', name: 'CASHBACK',
+        amount: -361, date: '2026-07-20', institutionName: 'Chase',
+        accountName: 'Checking', accountType: 'depository',
+      },
+    ],
+    payments: [{
+      id: 'chase-cycle', name: 'Chase', amount: 361,
+      status: 'pending', effective_due_date: '2026-07-20', recurrence: 'monthly',
+    }],
+  })
+
+  const reward = result.allMatches.find((match) => match.transactionId === 'reward-card')
+  const checking = result.allMatches.find((match) => match.transactionId === 'cashback-checking')
+  assert.equal(reward?.evidenceKind, 'debt_reduction_credit')
+  assert.equal(reward?.satisfiesAmount, 'full')
+  assert.equal(checking?.evidenceKind, 'payment')
+  assert.equal(checking?.eligible, false)
+})
+
+test('partial credits stay open until cumulative reconciled evidence covers the obligation', () => {
+  assert.deepEqual(obligationEvidenceCoverage(361, [-241.01]), {
+    totalEvidenceAmount: 241.01,
+    reconciledAmount: 241.01,
+    obligationSatisfied: false,
+    excessUnallocated: 0,
+  })
+  assert.deepEqual(obligationEvidenceCoverage(361, [-241.01, -119.99]), {
+    totalEvidenceAmount: 361,
+    reconciledAmount: 361,
+    obligationSatisfied: true,
+    excessUnallocated: 0,
+  })
+})
+
+test('$241.01 Chase credit covers a $40 obligation without allocating its excess', () => {
+  assert.deepEqual(obligationEvidenceCoverage(40, [-241.01]), {
+    totalEvidenceAmount: 241.01,
+    reconciledAmount: 40,
+    obligationSatisfied: true,
+    excessUnallocated: 201.01,
+  })
 })

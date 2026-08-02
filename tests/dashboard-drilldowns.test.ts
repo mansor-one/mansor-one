@@ -48,10 +48,10 @@ test('timeline and review queue links preserve dashboard datasets', () => {
   )
   assert.equal(
     reviewQueueDrilldown('ready'),
-    '/lab/review-queue?tab=ready#queue'
+    '/robototina/review?tab=ready#queue'
   )
   assert.equal(
     reviewQueueDrilldown('toReview', 'needs-category'),
-    '/lab/review-queue?tab=toReview&subset=needs-category#queue'
+    '/robototina/review?tab=toReview&subset=needs-category#queue'
   )
 })

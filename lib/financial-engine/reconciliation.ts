@@ -9,6 +9,10 @@ import {
   normalizeFinancialIdentityName,
 } from './financial-identity.ts'
 import { normalizeMerchantAlias } from './merchant-normalization.ts'
+import {
+  classifyDebtReductionCredit,
+  hasDebtReductionCreditPattern,
+} from './debt-reduction-credit.ts'
 
 export type ReconciliationTransactionSource = 'plaid_imports' | 'quick_entries'
 
@@ -76,6 +80,8 @@ export type ReconciliationMatch = {
   eligible: boolean
   ineligibilityReasons: string[]
   evidenceSide: 'funding_outflow' | 'obligation_credit' | 'unknown'
+  evidenceKind: 'payment' | 'debt_reduction_credit'
+  satisfiesAmount: 'full' | 'partial' | 'none'
   reasons: string[]
   recommendedActionText: string
 }
@@ -671,6 +677,22 @@ function scoreMatch(
   const institution = institutionReasons(transaction, payment)
   const account = accountReasons(transaction, payment)
   const fundingAccount = fundingAccountReasons(transaction, payment)
+  const debtReductionCredit = classifyDebtReductionCredit({
+    description: transaction.name,
+    amount: transaction.amount,
+    accountType: transaction.accountType,
+    accountSubtype: transaction.accountSubtype,
+    category: transaction.category,
+  })
+  const misplacedCredit =
+    Number(transaction.amount) < 0 &&
+    hasDebtReductionCreditPattern({
+      description: transaction.name,
+      category: transaction.category,
+    }) &&
+    !debtReductionCredit
+  const creditAccountConnected = institution.score > 0 || account.score > 0
+  const creditScore = debtReductionCredit && creditAccountConnected ? 30 : 0
   const statusScore = payment.status === 'initiated' ? 10 : 0
   const recurrenceScore = payment.recurrence || payment.scheduled_payment_id ? 5 : 0
   const statusReason =
@@ -683,6 +705,7 @@ function scoreMatch(
     account.score +
     fundingAccount.score +
     name.score +
+    creditScore +
     amount.score +
     date.score +
     recurrenceScore +
@@ -693,7 +716,8 @@ function scoreMatch(
     account.score > 0 ||
     fundingAccount.score > 0 ||
     name.score > 0
-  const exactAmountRequired = !amount.exact
+  const exactAmountRequired = !amount.exact && !debtReductionCredit
+  const creditEvidenceEligible = Boolean(debtReductionCredit && creditAccountConnected)
   const cappedConfidence = exactAmountRequired
     ? 0
     : identity.incompatible || !hasNonAmountSignal
@@ -718,6 +742,17 @@ function scoreMatch(
     ...account.factors,
     ...fundingAccount.factors,
     ...name.factors,
+    factor({
+      code: debtReductionCredit ? 'debt_reduction_credit' : 'debt_reduction_credit_missing',
+      label: 'Debt-reduction credit',
+      score: creditScore,
+      passed: creditEvidenceEligible,
+      details: debtReductionCredit
+        ? creditAccountConnected
+          ? `${debtReductionCredit.label} reduces the obligation account balance.`
+          : `${debtReductionCredit.label} lacks an account or institution connection to this obligation.`
+        : 'Transaction is not an identified statement or rewards credit.',
+    }),
     ...amount.factors,
     ...date.factors,
     factor({
@@ -767,10 +802,20 @@ function scoreMatch(
     scoreFactors,
     confidence,
     confidenceLevel: confidenceLevel(confidence),
-    eligible: !exactAmountRequired && !identity.incompatible && hasNonAmountSignal,
+    eligible:
+      !misplacedCredit &&
+      !identity.incompatible &&
+      hasNonAmountSignal &&
+      (!exactAmountRequired || creditEvidenceEligible),
     ineligibilityReasons: [
       ...(exactAmountRequired
         ? ['Exact amount is mandatory for normal single-payment reconciliation.']
+        : []),
+      ...(debtReductionCredit && !creditAccountConnected
+        ? ['Debt-reduction credit is not connected to this obligation account.']
+        : []),
+      ...(misplacedCredit
+        ? ['Credit-like movement is not posted to a credit account.']
         : []),
       ...(identity.incompatible ? ['Transaction and obligation identities are incompatible.'] : []),
       ...(!hasNonAmountSignal ? ['No non-amount evidence connects the transaction to the obligation.'] : []),
@@ -780,6 +825,14 @@ function scoreMatch(
       : account.score > 0 || institution.score > 0
         ? 'obligation_credit'
         : 'unknown',
+    evidenceKind: debtReductionCredit ? 'debt_reduction_credit' : 'payment',
+    satisfiesAmount: debtReductionCredit
+      ? Math.abs(Number(transaction.amount || 0)) + 0.009 >= Math.abs(Number(payment.amount || 0))
+        ? 'full'
+        : 'partial'
+      : amount.exact
+        ? 'full'
+        : 'none',
     reasons: [
       ...amount.reasons,
       ...amountCapReason,

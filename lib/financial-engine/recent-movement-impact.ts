@@ -1,5 +1,6 @@
 import { canonicalCategoryCodeForText, getCategoryByCode } from './categories.ts'
 import type { LedgerSummaryTransaction } from './ledger-summary.ts'
+import { classifyDebtReductionCredit } from './debt-reduction-credit.ts'
 
 export type FinancialImpact =
   | 'expense'
@@ -87,7 +88,15 @@ export function classifyRecentMovementImpact(
     )
   }
 
+  const debtReductionCredit = classifyDebtReductionCredit({
+    description,
+    amount: transaction.amount,
+    accountType,
+    accountSubtype,
+    category: `${transaction.category || ''} ${plaidCategory}`,
+  })
   const statementCredit =
+    Boolean(debtReductionCredit) ||
     description.includes('PAYYOURSELFBACK CREDIT') ||
     description.includes('STATEMENT CREDIT') ||
     entryType === 'refund' ||

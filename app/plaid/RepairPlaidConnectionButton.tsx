@@ -9,10 +9,12 @@ export default function RepairPlaidConnectionButton({
   connectionId,
   institution,
   syncPending = false,
+  requestLiabilitiesConsent = false,
 }: {
   connectionId: string
   institution: string
   syncPending?: boolean
+  requestLiabilitiesConsent?: boolean
 }) {
   const router = useRouter()
   const [linkToken, setLinkToken] = useState<string | null>(null)
@@ -22,7 +24,10 @@ export default function RepairPlaidConnectionButton({
   const openedToken = useRef<string | null>(null)
 
   async function completeRepair(
-    completionSource: 'link_on_success' | 'sync_retry'
+    completionSource:
+      | 'link_on_success'
+      | 'liabilities_consent'
+      | 'sync_retry'
   ) {
     setLaunchWhenReady(false)
     setLoading(true)
@@ -67,7 +72,11 @@ export default function RepairPlaidConnectionButton({
   const { open, ready } = usePlaidLink({
     token: linkToken || '',
     onSuccess: async () => {
-      await completeRepair('link_on_success')
+      await completeRepair(
+        requestLiabilitiesConsent
+          ? 'liabilities_consent'
+          : 'link_on_success'
+      )
     },
     onExit: () => {
       setLoading(false)
@@ -95,7 +104,10 @@ export default function RepairPlaidConnectionButton({
       const response = await fetch('/api/plaid/update-link-token', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ connectionId }),
+        body: JSON.stringify({
+          connectionId,
+          requestLiabilitiesConsent,
+        }),
       })
       const result = (await response.json()) as {
         link_token?: string
@@ -123,6 +135,8 @@ export default function RepairPlaidConnectionButton({
       <p className="text-sm text-amber-100">
         {syncPending
           ? 'La conexión ya fue reparada. Falta completar la actualización de cuentas y movimientos.'
+          : requestLiabilitiesConsent
+            ? 'Plaid necesita tu autorización para consultar tarjetas y préstamos. Tus cuentas y movimientos continuarán conectados.'
           : plaidRepairMessage(institution)}
       </p>
       <button
@@ -135,7 +149,9 @@ export default function RepairPlaidConnectionButton({
           ? 'Preparando conexión…'
           : syncPending
             ? 'Reintentar sincronización'
-            : 'Reparar conexión'}
+            : requestLiabilitiesConsent
+              ? 'Actualizar autorización'
+              : 'Reparar conexión'}
       </button>
       {message && (
         <p className="text-sm text-neutral-200" role="status">

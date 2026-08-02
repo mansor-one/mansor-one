@@ -7,6 +7,17 @@ import {
 import { getPortfolioSummary } from './portfolio'
 import { buildIncomePlanningSummary } from './income'
 import {
+  DEFAULT_PLANNING_HORIZON_DAYS,
+  generateExpectedIncomeInstances,
+} from './payment-truth'
+import { activeScheduledPaymentRows } from './legacy-obligation-migration'
+import {
+  DEFAULT_HOUSEHOLD_TIME_ZONE,
+  addCalendarDays,
+  dateInTimeZone,
+  enumerateRecurringCycles,
+} from './recurring-cycle-enumerator'
+import {
   buildReconciliationMatches,
   type ReconciliationMatch,
   type ReconciliationPaymentInstance,
@@ -30,6 +41,8 @@ import type {
   PortfolioSummary,
   ScheduledPayment,
 } from './types'
+import { deduplicateLifecyclePaymentsByFinancialIdentity } from './payment-financial-identity'
+import { resolveLegacyGraceSemantics } from './legacy-grace-semantics'
 
 function accountBalance(account: ConnectedAccount) {
   return Number(account.available_balance ?? account.current_balance ?? 0)
@@ -67,24 +80,6 @@ function institutionBalances(
   }))
 }
 
-async function getCurrentMonthPayments(
-  supabase: FinancialSupabaseClient,
-  date: Date
-) {
-  const month = date.getMonth() + 1
-  const year = date.getFullYear()
-
-  const { data, error } = await supabase
-    .from('payment_instances')
-    .select('*')
-    .eq('payment_month', month)
-    .eq('payment_year', year)
-
-  if (error) throw error
-
-  return (data || []) as PaymentInstance[]
-}
-
 async function getPaymentInstances(supabase: FinancialSupabaseClient) {
   const { data, error } = await supabase
     .from('payment_instances')
@@ -106,7 +101,7 @@ async function getActiveScheduledPayments(supabase: FinancialSupabaseClient) {
   return (data || []) as ScheduledPayment[]
 }
 
-async function getActiveIncomeSchedule(
+async function getIncomeSchedule(
   supabase: FinancialSupabaseClient,
   userId: string
 ) {
@@ -114,7 +109,6 @@ async function getActiveIncomeSchedule(
     .from('income_schedule')
     .select('*')
     .eq('user_id', userId)
-    .eq('is_active', true)
 
   if (error) throw error
 
@@ -128,18 +122,6 @@ function normalizePaymentName(value: string | null | undefined) {
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
     .replace(/\s+/g, ' ')
-}
-
-function scheduledPaymentActiveForMonth(
-  payment: ScheduledPayment,
-  month: number
-) {
-  if (!payment.active_months) return true
-
-  return payment.active_months
-    .split(',')
-    .map((value) => Number(value.trim()))
-    .includes(month)
 }
 
 export function paymentMatchesSchedule(
@@ -161,26 +143,6 @@ export function paymentMatchesSchedule(
       scheduledName &&
       (paymentName.includes(scheduledName) || scheduledName.includes(paymentName))
   )
-}
-
-function paymentForCycle(
-  payments: PaymentInstance[],
-  scheduledPayment: ScheduledPayment,
-  month: number,
-  year: number
-) {
-  return payments.find(
-    (payment) =>
-      Number(payment.payment_month) === month &&
-      Number(payment.payment_year) === year &&
-      paymentMatchesSchedule(payment, scheduledPayment)
-  )
-}
-
-function nextCycle(month: number, year: number) {
-  if (month === 12) return { month: 1, year: year + 1 }
-
-  return { month: month + 1, year }
 }
 
 function previousKnownPaymentAmount(
@@ -210,68 +172,22 @@ function previousKnownPaymentAmount(
   return Number(sortedPayments[0]?.amount || scheduledPayment.amount || 0)
 }
 
-function dateForScheduledPayment(
-  scheduledPayment: ScheduledPayment,
-  month: number,
-  year: number
-) {
-  return scheduledPaymentDateWindow(scheduledPayment, month, year).graceUntilDate
-}
-
 function scheduledPaymentDateWindow(
   scheduledPayment: ScheduledPayment,
   month: number,
   year: number
 ) {
-  const dueDay = Number(scheduledPayment.due_day || 0)
-  const graceValue = Number(scheduledPayment.grace_day || 0)
-  if (!dueDay) {
-    return {
-      dueDate: null,
-      graceUntilDate: null,
-      graceDays: 0,
-    }
-  }
-
-  const lastDay = new Date(year, month, 0).getDate()
-  const safeDueDay = Math.min(dueDay, lastDay)
-  const paddedMonth = String(month).padStart(2, '0')
-  const paddedDueDay = String(safeDueDay).padStart(2, '0')
-  const dueDate = `${year}-${paddedMonth}-${paddedDueDay}`
-
-  if (graceValue && dueDay && graceValue !== dueDay && graceValue < dueDay) {
-    const graceDate = new Date(year, month - 1, safeDueDay)
-    graceDate.setDate(graceDate.getDate() + graceValue)
-
-    return {
-      dueDate,
-      graceUntilDate: graceDate.toISOString().slice(0, 10),
-      graceDays: graceValue,
-    }
-  }
-
-  const graceDay = graceValue ? Math.min(graceValue, lastDay) : safeDueDay
-  const paddedGraceDay = String(graceDay).padStart(2, '0')
-  const graceUntilDate = `${year}-${paddedMonth}-${paddedGraceDay}`
-
+  const resolved = resolveLegacyGraceSemantics({
+    year,
+    month,
+    dueDay: scheduledPayment.due_day,
+    legacyGraceDay: scheduledPayment.grace_day,
+  })
   return {
-    dueDate,
-    graceUntilDate,
-    graceDays: Math.max(0, graceDay - safeDueDay),
+    dueDate: resolved.dueDate,
+    graceUntilDate: resolved.graceDeadline,
+    graceDays: resolved.graceDays,
   }
-}
-
-function scheduleExistedByCycleDueDate(
-  scheduledPayment: ScheduledPayment,
-  month: number,
-  year: number
-) {
-  if (!scheduledPayment.created_at) return true
-
-  const dueDate = dateForScheduledPayment(scheduledPayment, month, year)
-  if (!dueDate) return true
-
-  return scheduledPayment.created_at.slice(0, 10) <= dueDate
 }
 
 function ledgerTransactionForReconciliation(
@@ -406,127 +322,6 @@ function withLifecycle(
   }
 }
 
-function lifecyclePaymentScheduleKey(payment: PaymentInstance) {
-  if (payment.source === 'obligation') {
-    return payment.obligationInstanceId || payment.id
-  }
-
-  return (
-    payment.scheduled_payment_id ||
-    normalizePaymentName(payment.name) ||
-    payment.id
-  )
-}
-
-const PROJECT_PHOENIX_MIGRATED_SCHEDULE_ALIASES: Record<string, string[]> = {
-  'honda soraya': ['guagua soraya'],
-  'hipoteca casa cayey': ['hipoteca'],
-}
-
-function legacyScheduledIdsFromPayment(payment: PaymentInstance) {
-  const ids = new Set<string>()
-
-  for (const sourceId of payment.legacySourceIds || []) {
-    const match = sourceId.match(
-      /^scheduled_payments\.([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i
-    )
-
-    if (match) ids.add(match[1])
-  }
-
-  return ids
-}
-
-function paymentAmountMatches(left: PaymentInstance, right: PaymentInstance) {
-  return Math.round(Number(left.amount || 0) * 100) ===
-    Math.round(Number(right.amount || 0) * 100)
-}
-
-function paymentCycleDateMatches(left: PaymentInstance, right: PaymentInstance) {
-  return Boolean(
-    left.effective_due_date &&
-      right.effective_due_date &&
-      left.effective_due_date === right.effective_due_date
-  )
-}
-
-function paymentCycleMatches(left: PaymentInstance, right: PaymentInstance) {
-  return Boolean(
-    left.payment_month &&
-      right.payment_month &&
-      left.payment_year &&
-      right.payment_year &&
-      Number(left.payment_month) === Number(right.payment_month) &&
-      Number(left.payment_year) === Number(right.payment_year)
-  )
-}
-
-function paymentNameMatchesMigratedAlias(
-  legacyPayment: PaymentInstance,
-  obligationPayment: PaymentInstance
-) {
-  const obligationName = normalizePaymentName(obligationPayment.name)
-  const legacyName = normalizePaymentName(legacyPayment.name)
-  const aliases = PROJECT_PHOENIX_MIGRATED_SCHEDULE_ALIASES[obligationName] || []
-
-  return aliases.includes(legacyName)
-}
-
-function migratedObligationMatchesLegacyPayment(
-  legacyPayment: PaymentInstance,
-  obligationPayment: PaymentInstance
-) {
-  if (obligationPayment.source !== 'obligation') return false
-  if (legacyPayment.source === 'obligation') return false
-
-  const legacyScheduledIds = legacyScheduledIdsFromPayment(obligationPayment)
-
-  if (
-    legacyPayment.scheduled_payment_id &&
-    legacyScheduledIds.has(legacyPayment.scheduled_payment_id)
-  ) {
-    return (
-      paymentCycleMatches(legacyPayment, obligationPayment) ||
-      paymentCycleDateMatches(legacyPayment, obligationPayment)
-    )
-  }
-
-  if (!paymentAmountMatches(legacyPayment, obligationPayment)) return false
-  if (!paymentCycleDateMatches(legacyPayment, obligationPayment)) return false
-
-  return paymentNameMatchesMigratedAlias(legacyPayment, obligationPayment)
-}
-
-function removeMigratedLegacyLifecycleDuplicates(payments: PaymentInstance[]) {
-  const obligationPayments = payments.filter(
-    (payment) => payment.source === 'obligation'
-  )
-
-  if (!obligationPayments.length) return payments
-
-  return payments.filter((payment) => {
-    if (payment.source === 'obligation') return true
-
-    return !obligationPayments.some((obligationPayment) =>
-      migratedObligationMatchesLegacyPayment(payment, obligationPayment)
-    )
-  })
-}
-
-function earliestOpenCyclePerSchedule(payments: PaymentInstance[]) {
-  const seenOpenSchedules = new Set<string>()
-
-  return payments.filter((payment) => {
-    if (payment.lifecycleIsOpen === false) return true
-
-    const key = lifecyclePaymentScheduleKey(payment)
-    if (seenOpenSchedules.has(key)) return false
-
-    seenOpenSchedules.add(key)
-    return true
-  })
-}
-
 function expectedScheduledPayment(
   scheduledPayment: ScheduledPayment,
   month: number,
@@ -562,101 +357,127 @@ function expectedScheduledPayment(
 }
 
 export function buildPaymentLifecycleView({
-  currentPayments,
   allPayments,
   scheduledPayments,
   reconciliationTransactions,
   obligationPayments = [],
-  month,
-  year,
   today,
+  horizonEnd,
 }: {
-  currentPayments: PaymentInstance[]
   allPayments: PaymentInstance[]
   scheduledPayments: ScheduledPayment[]
   reconciliationTransactions: LedgerSummaryTransaction[]
   obligationPayments?: PaymentInstance[]
-  month: number
-  year: number
   today: string
+  horizonEnd: string
 }) {
+  const activeScheduledPayments = activeScheduledPaymentRows(scheduledPayments)
   const scheduledPaymentById = new Map(
-    scheduledPayments.map((payment) => [payment.id, payment])
+    activeScheduledPayments.map((payment) => [payment.id, payment])
   )
-  const currentLifecyclePayments = currentPayments.map((payment) => {
-    const schedule = payment.scheduled_payment_id
-      ? scheduledPaymentById.get(payment.scheduled_payment_id)
-      : null
-    const dateWindow =
-      schedule && payment.payment_month && payment.payment_year
-        ? scheduledPaymentDateWindow(
-            schedule,
-            Number(payment.payment_month),
-            Number(payment.payment_year)
-          )
+  const lifecycleStatusIsClosed = (status: string | null | undefined) =>
+    ['paid', 'confirmed', 'closed', 'cancelled', 'canceled', 'reconciled'].includes(
+      String(status || '').toLowerCase()
+    )
+  const existingLifecyclePayments = allPayments
+    .filter((payment) => {
+      const schedule = payment.scheduled_payment_id
+        ? scheduledPaymentById.get(payment.scheduled_payment_id)
         : null
+      const dateWindow =
+        schedule && payment.payment_month && payment.payment_year
+          ? scheduledPaymentDateWindow(
+              schedule,
+              Number(payment.payment_month),
+              Number(payment.payment_year)
+            )
+          : null
+      const cycleDate = String(
+        payment.effective_due_date ||
+          payment.grace_until ||
+          payment.grace_due_date ||
+          payment.due_date ||
+          payment.expected_date ||
+          dateWindow?.graceUntilDate ||
+          ''
+      ).slice(0, 10)
 
-    return {
-      ...payment,
-      due_date:
-        payment.due_date || payment.expected_date || dateWindow?.dueDate || null,
-      expected_date:
-        payment.expected_date || payment.due_date || dateWindow?.dueDate || null,
-      grace_until:
-        payment.grace_until ||
-        payment.grace_due_date ||
-        dateWindow?.graceUntilDate ||
-        null,
-      grace_days: payment.grace_days ?? dateWindow?.graceDays ?? null,
-      grace_due_date:
-        payment.grace_due_date ||
-        payment.grace_until ||
-        dateWindow?.graceUntilDate ||
-        null,
-      source: 'payment_instance' as const,
-      lifecycleItemType: schedule?.credit_card_id
-        ? 'card_payment' as const
-        : payment.scheduled_payment_id
-        ? 'scheduled_payment' as const
-        : payment.lifecycleItemType,
-    }
+      if (!cycleDate || cycleDate > horizonEnd) return false
+      return cycleDate >= today || !lifecycleStatusIsClosed(payment.status)
+    })
+    .map((payment) => {
+      const schedule = payment.scheduled_payment_id
+        ? scheduledPaymentById.get(payment.scheduled_payment_id)
+        : null
+      const dateWindow =
+        schedule && payment.payment_month && payment.payment_year
+          ? scheduledPaymentDateWindow(
+              schedule,
+              Number(payment.payment_month),
+              Number(payment.payment_year)
+            )
+          : null
+
+      return {
+        ...payment,
+        due_date:
+          payment.due_date || payment.expected_date || dateWindow?.dueDate || null,
+        expected_date:
+          payment.expected_date || payment.due_date || dateWindow?.dueDate || null,
+        grace_until:
+          payment.grace_until ||
+          payment.grace_due_date ||
+          dateWindow?.graceUntilDate ||
+          null,
+        grace_days: payment.grace_days ?? dateWindow?.graceDays ?? null,
+        grace_due_date:
+          payment.grace_due_date ||
+          payment.grace_until ||
+          dateWindow?.graceUntilDate ||
+          null,
+        source: 'payment_instance' as const,
+        lifecycleItemType: schedule?.credit_card_id
+          ? 'card_payment' as const
+          : payment.scheduled_payment_id
+            ? 'scheduled_payment' as const
+            : payment.lifecycleItemType,
+      }
+    })
+
+  const expectedPayments = activeScheduledPayments.flatMap((payment) => {
+    const existingCycles = allPayments
+      .filter((instance) => paymentMatchesSchedule(instance, payment))
+      .map((instance) => ({
+        month: Number(instance.payment_month),
+        year: Number(instance.payment_year),
+      }))
+      .filter(({ month, year }) => month >= 1 && month <= 12 && year > 0)
+
+    return enumerateRecurringCycles({
+      source: payment,
+      startDate: today,
+      horizonEnd,
+      existingCycles,
+    })
+      .map((cycle) =>
+        expectedScheduledPayment(
+          payment,
+          cycle.month,
+          cycle.year,
+          today,
+          previousKnownPaymentAmount(
+            allPayments,
+            payment,
+            cycle.month,
+            cycle.year
+          )
+        )
+      )
+      .filter((instance): instance is PaymentInstance => instance !== null)
   })
-
-  const expectedPayments = scheduledPayments
-    .filter((payment) => scheduledPaymentActiveForMonth(payment, month))
-    .filter((payment) => scheduleExistedByCycleDueDate(payment, month, year))
-    .filter(
-      (payment) =>
-        !paymentForCycle(allPayments, payment, month, year)
-    )
-    .map((payment) =>
-      expectedScheduledPayment(
-        payment,
-        month,
-        year,
-        today,
-        previousKnownPaymentAmount(allPayments, payment, month, year)
-      )
-    )
-    .filter((payment): payment is PaymentInstance => payment !== null)
-  const next = nextCycle(month, year)
-  const nextExpectedPayments = scheduledPayments
-    .filter((payment) => scheduledPaymentActiveForMonth(payment, next.month))
-    .filter((payment) => !paymentForCycle(allPayments, payment, next.month, next.year))
-    .map((payment) =>
-      expectedScheduledPayment(
-        payment,
-        next.month,
-        next.year,
-        today,
-        previousKnownPaymentAmount(allPayments, payment, next.month, next.year)
-      )
-    )
-    .filter((payment): payment is PaymentInstance => payment !== null)
   const openLifecyclePayments = [
-    ...currentLifecyclePayments,
+    ...existingLifecyclePayments,
     ...expectedPayments,
-    ...nextExpectedPayments,
   ]
   const reconciliation = buildReconciliationMatches({
     transactions: reconciliationTransactions.map(ledgerTransactionForReconciliation),
@@ -667,7 +488,7 @@ export function buildPaymentLifecycleView({
     withLifecycle(payment, today, matchesByPaymentId.get(payment.id) || null)
   )
 
-  const bridgedPayments = removeMigratedLegacyLifecycleDuplicates([
+  const bridgedPayments = deduplicateLifecyclePaymentsByFinancialIdentity([
     ...annotatedPayments,
     ...obligationPayments,
   ])
@@ -677,22 +498,26 @@ export function buildPaymentLifecycleView({
     )
   )
 
-  return earliestOpenCyclePerSchedule(sortedPayments)
+  return sortedPayments
 }
 
 export async function getLiquiditySummary(
   supabase: FinancialSupabaseClient,
   userId: string,
-  portfolioInput?: PortfolioSummary | Promise<PortfolioSummary>
+  portfolioInput?: PortfolioSummary | Promise<PortfolioSummary>,
+  options: { today?: string; horizonDays?: number; timeZone?: string } = {}
 ): Promise<LiquiditySummary> {
   const now = new Date()
+  const timeZone = options.timeZone || DEFAULT_HOUSEHOLD_TIME_ZONE
+  const todayString = options.today || dateInTimeZone(now, timeZone)
+  const horizonDays = options.horizonDays ?? DEFAULT_PLANNING_HORIZON_DAYS
+  const horizonEnd = addCalendarDays(todayString, horizonDays)
 
   const [
     portfolio,
     connectedAssets,
     manualAccounts,
     creditCards,
-    payments,
     allPayments,
     scheduledPayments,
     incomeSchedule,
@@ -703,12 +528,14 @@ export async function getLiquiditySummary(
     getConnectedAssets(supabase, userId),
     getManualAccounts(supabase, userId),
     getCreditCards(supabase, userId),
-    getCurrentMonthPayments(supabase, now),
     getPaymentInstances(supabase),
     getActiveScheduledPayments(supabase),
-    getActiveIncomeSchedule(supabase, userId),
+    getIncomeSchedule(supabase, userId),
     getLedgerSummary(supabase, userId),
-    getObligationLifecyclePaymentItems(supabase, userId),
+    getObligationLifecyclePaymentItems(supabase, userId, {
+      today: todayString,
+      horizonEnd,
+    }),
   ])
 
   const connectedAccounts = connectedAssets.map(assetAsConnectedAccount)
@@ -748,9 +575,7 @@ export async function getLiquiditySummary(
   const cashAvailableManual = portfolio.totalManualLiquidAvailable
   const cashAvailableTotal = portfolio.totalLiquidAvailable
 
-  const todayString = now.toISOString().slice(0, 10)
   const lifecyclePayments = buildPaymentLifecycleView({
-    currentPayments: payments,
     allPayments,
     scheduledPayments,
     reconciliationTransactions: [
@@ -758,9 +583,8 @@ export async function getLiquiditySummary(
       ...ledgerSummary.importCandidates,
     ],
     obligationPayments: obligationLifecyclePayments,
-    month: now.getMonth() + 1,
-    year: now.getFullYear(),
     today: todayString,
+    horizonEnd,
   })
 
   const pendingActionPayments = lifecyclePayments.filter(
@@ -803,8 +627,30 @@ export async function getLiquiditySummary(
   )
 
   const income = buildIncomePlanningSummary(incomeSchedule, now)
-  const confirmedIncome = income.projectedIncome
-  const totalConfirmedIncome = income.totalProjectedIncome
+  const horizonIncome = generateExpectedIncomeInstances({
+    schedules: income.allIncome,
+    start: todayString,
+    end: horizonEnd,
+  })
+  const schedulesById = new Map(
+    income.allIncome.map((schedule) => [schedule.id, schedule])
+  )
+  const projectedIncome = horizonIncome.instances.map((instance) => ({
+    ...(schedulesById.get(instance.scheduleId) || {}),
+    id: instance.id,
+    name: instance.name,
+    amount: instance.amount,
+    next_expected_date: instance.date,
+    owner_scope: instance.owner,
+    confidence: instance.confidence,
+    status: 'expected',
+    is_active: true,
+  })) as IncomeSchedule[]
+  const confirmedIncome = projectedIncome
+  const totalConfirmedIncome = horizonIncome.instances.reduce(
+    (sum, instance) => sum + instance.amount,
+    0
+  )
 
   const connectedCreditDebt = plaidCredit.reduce(
     (sum, account) => sum + Number(account.current_balance || 0),
@@ -851,7 +697,7 @@ export async function getLiquiditySummary(
     pendingPayments: committedPayments,
     income,
     confirmedIncome,
-    projectedIncome: income.projectedIncome,
+    projectedIncome,
     expectedIncome: income.expectedIncome,
     receivedIncome: income.receivedIncome,
     missedIncome: income.missedIncome,
@@ -861,7 +707,7 @@ export async function getLiquiditySummary(
     committedPaymentsTotal,
     totalPendingPayments: committedPaymentsTotal,
     totalConfirmedIncome,
-    totalProjectedIncome: income.totalProjectedIncome,
+    totalProjectedIncome: totalConfirmedIncome,
     resultToday: cashAvailableTotal - committedPaymentsTotal,
     resultAfterIncome:
       cashAvailableTotal + totalConfirmedIncome - committedPaymentsTotal,

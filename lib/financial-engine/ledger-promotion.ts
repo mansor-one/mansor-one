@@ -6,6 +6,7 @@ import {
   isDuplicateResolved,
 } from './confirmed-ledger-duplicates'
 import type { LedgerSummaryTransaction } from './ledger-summary'
+import { classifyDebtReductionCredit } from './debt-reduction-credit'
 
 export type PromotePlaidImportInput = {
   plaidImportId: string
@@ -358,13 +359,24 @@ export async function promotePlaidImportToQuickEntry(
   }
 
   const category = normalizedCategory(plaidImport, input.selectedCategory)
+  const debtReductionCredit = classifyDebtReductionCredit({
+    description: plaidImport.merchant,
+    amount: Number(plaidImport.amount || 0),
+    accountType: plaidImport.account_type,
+    accountSubtype: plaidImport.account_subtype,
+    category: plaidImport.suggested_category || plaidImport.plaid_category,
+  })
   const { data: insertedEntry, error: entryError } = await supabase
     .from('quick_entries')
     .insert({
       entry_date: plaidImport.transaction_date,
       description: plaidImport.merchant,
       amount: Number(plaidImport.amount || 0),
-      entry_type: Number(plaidImport.amount) < 0 ? 'income' : 'expense',
+      entry_type: debtReductionCredit
+        ? 'statement_credit'
+        : Number(plaidImport.amount) < 0
+          ? 'income'
+          : 'expense',
       owner: 'Manuel',
       category,
       source: 'plaid',
