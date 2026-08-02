@@ -1,7 +1,10 @@
 export function activeScheduledPaymentRows<
-  T extends { is_active?: boolean | null },
+  T extends { is_active?: boolean | null; notes?: string | null },
 >(payments: T[]) {
-  return payments.filter((payment) => payment.is_active !== false)
+  return payments.filter((payment) =>
+    payment.is_active !== false &&
+    !/migrated_to_obligation\.[0-9a-f-]{36}/i.test(String(payment.notes || ''))
+  )
 }
 
 export function safeLegacyConfigurationError(error: unknown) {

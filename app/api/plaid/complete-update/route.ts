@@ -36,6 +36,21 @@ function safeSyncErrorCode(
   )
 }
 
+function connectionNeedsLiabilitiesConsent(
+  result: {
+    unavailable_liabilities?: Array<{ id?: string; error_code?: string }>
+  },
+  connectionId: string
+) {
+  return Boolean(
+    result.unavailable_liabilities?.some(
+      (failure) =>
+        failure.id === connectionId &&
+        failure.error_code === 'ADDITIONAL_CONSENT_REQUIRED'
+    )
+  )
+}
+
 const processingErrorCodes = new Set([
   'PRODUCT_NOT_READY',
   'INSTITUTION_NOT_RESPONDING',
@@ -78,6 +93,8 @@ export async function POST(request: Request) {
   const completionSource =
     body?.completionSource === 'link_on_success'
       ? 'link_on_success'
+      : body?.completionSource === 'liabilities_consent'
+        ? 'liabilities_consent'
       : body?.completionSource === 'sync_retry'
         ? 'sync_retry'
         : 'unknown'
@@ -190,7 +207,7 @@ export async function POST(request: Request) {
           authorized.connection.user_id,
           {
             accounts: true,
-            liabilities: false,
+            liabilities: completionSource === 'liabilities_consent',
             connectionId,
             deferConnectionSuccessMetadata: true,
           }
@@ -201,6 +218,25 @@ export async function POST(request: Request) {
     if (connectionFailed(accounts, connectionId)) {
       throw new Error(
         safeSyncErrorCode(accounts, connectionId)
+      )
+    }
+    if (
+      completionSource === 'liabilities_consent' &&
+      connectionNeedsLiabilitiesConsent(accounts, connectionId)
+    ) {
+      await supabase
+        .from('plaid_connections')
+        .update({
+          last_sync_error:
+            'ADDITIONAL_CONSENT_REQUIRED:PRODUCT_LIABILITIES',
+        })
+        .eq('id', connectionId)
+        .eq('household_id', authorized.connection.household_id)
+        .is('archived_at', null)
+      return completionResponse(
+        'sync_retryable_failure',
+        'Plaid todavía necesita autorización para consultar tarjetas y préstamos.',
+        409
       )
     }
 

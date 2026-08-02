@@ -7,6 +7,7 @@ import { syncPlaidImportsForUser } from '@/app/api/plaid/sync-imports/route'
 import { reconcileOpenObligationsAfterPlaidSync } from '@/lib/financial-engine/obligation-reconciliation-engine'
 import { getFinancialEngineSnapshot } from '@/lib/financial-engine/snapshot'
 import { serializePlaidSyncError } from './error-serialization'
+import { summaryFromPlaidStepResults } from './summary'
 
 export const PLAID_SYNC_STEPS = [
   { id: 'accounts', label: 'Cuentas y balances' },
@@ -19,12 +20,131 @@ export const PLAID_SYNC_STEPS = [
 export type PlaidSyncStepId = typeof PLAID_SYNC_STEPS[number]['id']
 type Trigger = 'manual' | 'daily' | 'retry'
 
-function summaryFromResults(results: Record<string, unknown>) {
-  const accounts = results.accounts as { synced_accounts?: number } | undefined
-  const liabilities = results.liabilities as { synced_credit_liabilities?: number } | undefined
-  const transactions = results.transactions as { new_imports_created?: number; modified_imports_updated?: number } | undefined
-  const reconciliation = results.reconciliation as { payment?: { automaticallyReconciled?: number } } | undefined
-  return { accounts_updated: accounts?.synced_accounts || 0, liabilities_updated: liabilities?.synced_credit_liabilities || 0, transactions_added_or_updated: (transactions?.new_imports_created || 0) + (transactions?.modified_imports_updated || 0), payments_reconciled: reconciliation?.payment?.automaticallyReconciled || 0 }
+const ADDITIONAL_LIABILITIES_CONSENT =
+  'ADDITIONAL_CONSENT_REQUIRED:PRODUCT_LIABILITIES'
+
+function failedConnectionIds(results: Record<string, unknown>) {
+  const ids = new Set<string>()
+  for (const stepId of ['accounts', 'liabilities', 'transactions']) {
+    const result = results[stepId] as {
+      failed_connections?: Array<{ id?: string }>
+    } | undefined
+    for (const failure of result?.failed_connections || []) {
+      if (failure.id) ids.add(failure.id)
+    }
+  }
+  return ids
+}
+
+function liabilityWarningsByConnection(results: Record<string, unknown>) {
+  const liabilities = results.liabilities as {
+    unavailable_liabilities?: Array<{ id?: string; error_code?: string }>
+  } | undefined
+  return new Map(
+    (liabilities?.unavailable_liabilities || [])
+      .filter((item): item is { id: string; error_code?: string } =>
+        Boolean(item.id)
+      )
+      .map((item) => [
+        item.id,
+        item.error_code === 'ADDITIONAL_CONSENT_REQUIRED'
+          ? ADDITIONAL_LIABILITIES_CONSENT
+          : `WARNING:PRODUCT_LIABILITIES:${item.error_code || 'UNAVAILABLE'}`,
+      ])
+  )
+}
+
+async function markConnectionSyncAttempts(
+  supabase: SupabaseClient,
+  userId: string,
+  attemptedAt: string
+) {
+  const { data: before, error: lookupError } = await supabase
+    .from('plaid_connections')
+    .select('id, last_sync_attempt_at')
+    .eq('user_id', userId)
+    .is('archived_at', null)
+    .neq('status', 'archived')
+  if (lookupError) throw lookupError
+  if (!before?.length) return
+
+  const { data: updated, error } = await supabase
+    .from('plaid_connections')
+    .update({ last_sync_attempt_at: attemptedAt })
+    .in('id', before.map((connection) => connection.id))
+    .eq('user_id', userId)
+    .is('archived_at', null)
+    .neq('status', 'archived')
+    .select('id, last_sync_attempt_at')
+  if (error) throw error
+  if ((updated || []).length !== before.length) {
+    throw new Error(
+      `Plaid connection attempt metadata update affected ${
+        updated?.length || 0
+      } of ${before.length} expected rows`
+    )
+  }
+
+  const beforeById = new Map(
+    before.map((connection) => [
+      connection.id,
+      connection.last_sync_attempt_at,
+    ])
+  )
+  for (const connection of updated || []) {
+    console.info('Plaid connection sync attempt metadata updated', {
+      connection_id: connection.id,
+      rows_affected: 1,
+      before_last_sync_attempt_at: beforeById.get(connection.id) || null,
+      after_last_sync_attempt_at: connection.last_sync_attempt_at,
+    })
+  }
+}
+
+async function recordConnectionSyncOutcomes(
+  supabase: SupabaseClient,
+  userId: string,
+  results: Record<string, unknown>,
+  completedAt: string
+) {
+  const { data, error } = await supabase
+    .from('plaid_connections')
+    .select('id, last_sync_at, last_sync_error')
+    .eq('user_id', userId)
+    .is('archived_at', null)
+    .neq('status', 'archived')
+  if (error) throw error
+
+  const failed = failedConnectionIds(results)
+  const liabilityWarnings = liabilityWarningsByConnection(results)
+  for (const connection of data || []) {
+    if (failed.has(connection.id)) continue
+    const { data: updated, error: updateError } = await supabase
+      .from('plaid_connections')
+      .update({
+        last_sync_at: completedAt,
+        last_sync_error: liabilityWarnings.get(connection.id) || null,
+      })
+      .eq('id', connection.id)
+      .eq('user_id', userId)
+      .is('archived_at', null)
+      .select('id, last_sync_at, last_sync_error')
+      .maybeSingle()
+    if (updateError) throw updateError
+    if (!updated) {
+      throw new Error(
+        `Plaid connection outcome metadata update affected 0 rows for ${connection.id}`
+      )
+    }
+    console.info('Plaid connection sync outcome metadata updated', {
+      connection_id: updated.id,
+      rows_affected: 1,
+      before_last_sync_at: connection.last_sync_at,
+      after_last_sync_at: updated.last_sync_at,
+      before_warning: connection.last_sync_error || null,
+      persisted_warning: updated.last_sync_error || null,
+    })
+  }
 }
 
 export async function latestPlaidSyncRun(supabase: SupabaseClient, userId: string) {
@@ -77,14 +197,28 @@ export async function executePlaidSyncRun(runId: string, userId: string) {
   const warnings = [...(run.warnings || [])] as string[]
   const startIndex = Math.max(PLAID_SYNC_STEPS.findIndex((step) => step.id === run.current_step), 0)
   await supabase.from('plaid_sync_runs').update({ status: 'running', started_at: run.started_at || new Date().toISOString(), last_heartbeat_at: new Date().toISOString() }).eq('id', runId)
+  if (startIndex <= 2) {
+    await markConnectionSyncAttempts(supabase, userId, new Date().toISOString())
+  }
 
   for (let index = startIndex; index < PLAID_SYNC_STEPS.length; index += 1) {
     const step = PLAID_SYNC_STEPS[index]
     await supabase.from('plaid_sync_runs').update({ current_step: step.id, last_heartbeat_at: new Date().toISOString(), lock_expires_at: new Date(Date.now() + 15 * 60_000).toISOString() }).eq('id', runId)
     try {
-      if (step.id === 'accounts') results.accounts = await syncPlaidAccountsForUser(supabase, userId, { accounts: true, liabilities: false })
-      if (step.id === 'liabilities') results.liabilities = await syncPlaidAccountsForUser(supabase, userId, { accounts: false, liabilities: true })
-      if (step.id === 'transactions') results.transactions = await syncPlaidImportsForUser(userId, { reconcile: false })
+      if (step.id === 'accounts') results.accounts = await syncPlaidAccountsForUser(supabase, userId, { accounts: true, liabilities: false, deferConnectionSuccessMetadata: true })
+      if (step.id === 'liabilities') results.liabilities = await syncPlaidAccountsForUser(supabase, userId, { accounts: false, liabilities: true, deferConnectionSuccessMetadata: true })
+      if (step.id === 'transactions') {
+        results.transactions = await syncPlaidImportsForUser(userId, {
+          reconcile: false,
+          deferConnectionSuccessMetadata: true,
+        })
+        await recordConnectionSyncOutcomes(
+          supabase,
+          userId,
+          results,
+          new Date().toISOString()
+        )
+      }
       if (step.id === 'reconciliation') {
         const payment = await reconcileOpenObligationsAfterPlaidSync(supabase, userId)
         const { count } = await supabase.from('income_schedule').select('id', { count: 'exact', head: true }).eq('user_id', userId).eq('is_active', true)
@@ -97,9 +231,27 @@ export async function executePlaidSyncRun(runId: string, userId: string) {
       }
       const stepResult = results[step.id] as { failed_connections?: unknown[]; unavailable_liabilities?: unknown[] } | undefined
       if (stepResult?.failed_connections?.length) warnings.push(`${stepResult.failed_connections.length} conexión(es) Plaid requieren atención en ${step.label.toLowerCase()}.`)
-      if (stepResult?.unavailable_liabilities?.length) warnings.push(`Plaid no ofreció datos de tarjetas o préstamos para ${stepResult.unavailable_liabilities.length} conexión(es).`)
+      if (stepResult?.unavailable_liabilities?.length) {
+        const consentCount = (
+          stepResult.unavailable_liabilities as Array<{ error_code?: string }>
+        ).filter(
+          (item) => item.error_code === 'ADDITIONAL_CONSENT_REQUIRED'
+        ).length
+        if (consentCount) {
+          warnings.push(
+            `${consentCount} instituciones requieren autorización adicional para tarjetas y préstamos.`
+          )
+        }
+        const unavailableCount =
+          stepResult.unavailable_liabilities.length - consentCount
+        if (unavailableCount > 0) {
+          warnings.push(
+            `Plaid no ofreció datos de tarjetas o préstamos para ${unavailableCount} conexión(es).`
+          )
+        }
+      }
       const completed = index + 1
-      await supabase.from('plaid_sync_runs').update({ completed_steps: completed, percentage: completed * 20, step_results: results, summary: summaryFromResults(results), warnings, last_heartbeat_at: new Date().toISOString() }).eq('id', runId)
+      await supabase.from('plaid_sync_runs').update({ completed_steps: completed, percentage: completed * 20, step_results: results, summary: summaryFromPlaidStepResults(results), warnings: [...new Set(warnings)], last_heartbeat_at: new Date().toISOString() }).eq('id', runId)
     } catch (stepError) {
       const technicalError = serializePlaidSyncError(step.id, stepError)
       results[step.id] = { error: technicalError }
@@ -111,12 +263,13 @@ export async function executePlaidSyncRun(runId: string, userId: string) {
         duration_ms: Date.now() - started,
         lock_expires_at: null,
         step_results: results,
-        warnings,
+        summary: summaryFromPlaidStepResults(results),
+        warnings: [...new Set(warnings)],
       }).eq('id', runId)
       return
     }
   }
 
-  const summary = summaryFromResults(results)
-  await supabase.from('plaid_sync_runs').update({ status: 'completed', current_step: null, completed_steps: 5, percentage: 100, completed_at: new Date().toISOString(), duration_ms: Date.now() - started, error_message: null, retryable_step: null, lock_expires_at: null, step_results: results, summary, warnings }).eq('id', runId)
+  const summary = summaryFromPlaidStepResults(results)
+  await supabase.from('plaid_sync_runs').update({ status: 'completed', current_step: null, completed_steps: 5, percentage: 100, completed_at: new Date().toISOString(), duration_ms: Date.now() - started, error_message: null, retryable_step: null, lock_expires_at: null, step_results: results, summary, warnings: [...new Set(warnings)] }).eq('id', runId)
 }

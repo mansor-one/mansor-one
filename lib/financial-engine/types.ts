@@ -329,8 +329,11 @@ export type ScheduledPayment = {
   owner?: string | null
   category?: string | null
   recurrence_type?: string | null
+  recurrence_interval?: number | null
   is_active?: boolean | null
   created_at?: string | null
+  start_date?: string | null
+  end_date?: string | null
 }
 
 export type IncomeSchedule = {

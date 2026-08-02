@@ -7,6 +7,10 @@ import {
   type PaymentTruthStatus,
   type TrustedPayment,
 } from './payment-truth.ts'
+import {
+  DEFAULT_HOUSEHOLD_TIME_ZONE,
+  dateInTimeZone,
+} from './recurring-cycle-enumerator.ts'
 import type { FinancialSupabaseClient, LiquiditySummary } from './types.ts'
 
 export type TimelineHorizonDays = 30 | 45 | 90 | 365
@@ -89,7 +93,8 @@ export function buildTimelineProjectionFromLiquidity(
   liquidity: Pick<LiquiditySummary, 'cashAvailableTotal' | 'cashAvailablePlaid' | 'cashAvailableManual' | 'income' | 'lifecyclePayments'>,
   options: { today?: string; horizonDays?: number } = {}
 ): TimelineProjectionSummary {
-  const today = options.today || new Date().toISOString().slice(0, 10)
+  const today =
+    options.today || dateInTimeZone(new Date(), DEFAULT_HOUSEHOLD_TIME_ZONE)
   const horizonDays = options.horizonDays || DEFAULT_PLANNING_HORIZON_DAYS
   const horizonEnd = addDays(today, horizonDays)
   const trustedPayments = resolveTrustedPayments({ payments: liquidity.lifecyclePayments || [], today, horizonDays })
@@ -214,8 +219,26 @@ export function buildTimelineProjectionFromLiquidity(
   }
 }
 
-export async function getTimelineProjection(supabase: FinancialSupabaseClient, userId: string, options: { horizonDays?: number; today?: string } = {}) {
-  const { getDashboardSummary } = await import('./dashboard.ts')
-  const { liquidity } = await getDashboardSummary(supabase, userId)
-  return buildTimelineProjectionFromLiquidity(liquidity, options)
+export async function getTimelineProjection(
+  supabase: FinancialSupabaseClient,
+  userId: string,
+  options: { horizonDays?: number; today?: string; timeZone?: string } = {}
+) {
+  const { getLiquiditySummary } = await import('./liquidity.ts')
+  const normalizedOptions = {
+    ...options,
+    today:
+      options.today ||
+      dateInTimeZone(
+        new Date(),
+        options.timeZone || DEFAULT_HOUSEHOLD_TIME_ZONE
+      ),
+  }
+  const liquidity = await getLiquiditySummary(
+    supabase,
+    userId,
+    undefined,
+    normalizedOptions
+  )
+  return buildTimelineProjectionFromLiquidity(liquidity, normalizedOptions)
 }

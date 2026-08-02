@@ -1,6 +1,9 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
+import { useEffect, useRef, useState } from 'react'
+import { resolvedPlaidSyncSummary } from '@/lib/plaid-sync/summary'
+import { plaidConnectionRefreshKey } from '@/lib/plaid-sync/ui-refresh'
 
 type StepState = 'waiting' | 'running' | 'completed' | 'failed'
 type SyncRun = {
@@ -28,18 +31,32 @@ const stateIcon: Record<StepState, string> = { waiting: '○', running: '↻', c
 const runLabel = { queued: 'En cola', running: 'En progreso', partially_completed: 'Completada parcialmente', completed: 'Completada', failed: 'Falló' }
 
 export default function PlaidSyncActions({ initialRun, connectionNeedsAttention }: { initialRun: SyncRun | null; connectionNeedsAttention: boolean }) {
+  const router = useRouter()
   const [run, setRun] = useState(initialRun)
   const [error, setError] = useState<string | null>(null)
+  const refreshedConnectionRunKey = useRef<string | null>(null)
   const active = run?.status === 'queued' || run?.status === 'running'
 
   useEffect(() => {
     if (!active) return
     const timer = window.setInterval(async () => {
       const response = await fetch('/api/plaid/sync', { cache: 'no-store' })
-      if (response.ok) setRun((await response.json()).run)
+      if (!response.ok) return
+
+      const nextRun = (await response.json()).run as SyncRun | null
+      setRun(nextRun)
+
+      const refreshKey = plaidConnectionRefreshKey(nextRun)
+      if (
+        refreshKey &&
+        refreshedConnectionRunKey.current !== refreshKey
+      ) {
+        refreshedConnectionRunKey.current = refreshKey
+        router.refresh()
+      }
     }, 1500)
     return () => window.clearInterval(timer)
-  }, [active])
+  }, [active, router])
 
   async function start(retry = false) {
     setError(null)
@@ -50,13 +67,23 @@ export default function PlaidSyncActions({ initialRun, connectionNeedsAttention 
   }
 
   const lastSuccess = run?.last_successful_at || (run?.status === 'completed' ? run.completed_at : null)
+  const summary = resolvedPlaidSyncSummary({
+    summary: run?.summary,
+    stepResults: run?.step_results,
+  })
+  const displayedRunLabel =
+    run?.status === 'completed' && run.warnings?.length
+      ? 'Completado con advertencias'
+      : run
+        ? runLabel[run.status]
+        : 'Lista para sincronizar'
   const nextAutomatic = new Date(); nextAutomatic.setUTCHours(10, 15, 0, 0); if (nextAutomatic <= new Date()) nextAutomatic.setUTCDate(nextAutomatic.getUTCDate() + 1)
   return <section className="rounded border border-neutral-800 bg-neutral-900 p-5">
     <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between"><div><p className="text-sm text-neutral-400">Sincronización diaria</p><h2 className="text-xl font-bold">Plaid y Motor Financiero</h2><p className="text-sm text-neutral-400">Un solo flujo actualiza las fuentes en el orden correcto.</p></div><button className="rounded border border-sky-700 bg-sky-950/40 px-4 py-2 font-semibold text-sky-100 disabled:opacity-50" disabled={active} onClick={() => start(false)} type="button">{active ? `Sincronizando ${run?.percentage || 0}%` : 'Sincronizar ahora'}</button></div>
-    <p className="mt-4 text-sm"><span className="text-neutral-400">Estado:</span> {run ? runLabel[run.status] : 'Lista para sincronizar'} · {run?.completed_steps || 0} de {run?.total_steps || 5} pasos</p><div className="mt-2 h-2 overflow-hidden rounded bg-neutral-800" aria-label={`Progreso ${run?.percentage || 0}%`}><div className="h-full bg-sky-500 transition-all" style={{ width: `${run?.percentage || 0}%` }} /></div>
+    <p className="mt-4 text-sm"><span className="text-neutral-400">Estado:</span> {displayedRunLabel} · {run?.completed_steps || 0} de {run?.total_steps || 5} pasos</p><div className="mt-2 h-2 overflow-hidden rounded bg-neutral-800" aria-label={`Progreso ${run?.percentage || 0}%`}><div className="h-full bg-sky-500 transition-all" style={{ width: `${run?.percentage || 0}%` }} /></div>
     <div className="mt-4 grid gap-2 md:grid-cols-5">{steps.map(([id, label], index) => { const state = stateFor(run, index); return <div className={`rounded border p-3 text-sm ${state === 'failed' ? 'border-red-700' : state === 'completed' ? 'border-emerald-800' : state === 'running' ? 'border-sky-600' : 'border-neutral-800'}`} key={id}><p className="font-semibold"><span aria-hidden>{stateIcon[state]}</span> {label}</p><p className="text-xs text-neutral-400">{stateLabel[state]}</p></div> })}</div>
     {run && <div className="mt-4 grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-4"><div><p className="text-neutral-500">Última sincronización exitosa</p><p>{date(lastSuccess)}</p></div><div><p className="text-neutral-500">Último intento</p><p>{date(run.started_at || run.created_at)}</p></div><div><p className="text-neutral-500">Próxima sincronización automática</p><p>{date(nextAutomatic.toISOString())}</p></div><div><p className="text-neutral-500">Conexión</p><p>{connectionNeedsAttention ? 'Requiere atención' : 'Conectado'}</p></div></div>}
-    {run && ['completed', 'partially_completed', 'failed'].includes(run.status) && <div className="mt-4 rounded border border-neutral-800 p-4 text-sm"><h3 className="font-bold">Resumen</h3><p>Cuentas actualizadas: {run.summary?.accounts_updated || 0} · tarjetas y préstamos actualizados: {run.summary?.liabilities_updated || 0} · transacciones añadidas o actualizadas: {run.summary?.transactions_added_or_updated || 0} · pagos conciliados: {run.summary?.payments_reconciled || 0} · duración: {duration(run.duration_ms)}</p>{run.error_message && <><p className="mt-2 text-red-200">{run.retryable_step === 'transactions' ? 'No pudimos actualizar las transacciones.' : `No pudimos completar ${steps.find(([id]) => id === run.retryable_step)?.[1] || 'la sincronización'}.`}</p>{run.completed_steps > 0 && <p className="text-neutral-300">{run.retryable_step === 'transactions' && run.completed_steps >= 2 ? 'Las cuentas y tarjetas sí quedaron actualizadas.' : 'Los pasos anteriores sí quedaron actualizados.'}</p>}<button className="mt-3 rounded border border-amber-700 px-3 py-2 font-semibold" onClick={() => start(true)} type="button">Reintentar desde {steps.find(([id]) => id === run.retryable_step)?.[1]?.toLowerCase() || 'el paso pendiente'}</button></>}{run.warnings?.length ? <ul className="mt-2 list-disc pl-5 text-amber-200">{run.warnings.map((warning) => <li key={warning}>{warning}</li>)}</ul> : null}</div>}
+    {run && ['completed', 'partially_completed', 'failed'].includes(run.status) && <div className="mt-4 rounded border border-neutral-800 p-4 text-sm"><h3 className="font-bold">Resumen</h3><p>Cuentas actualizadas: {summary.accounts_updated} · tarjetas y préstamos actualizados: {summary.liabilities_updated} · transacciones añadidas o actualizadas: {summary.transactions_added_or_updated} · pagos conciliados: {summary.payments_reconciled} · duración: {duration(run.duration_ms)}</p>{run.error_message && <><p className="mt-2 text-red-200">{run.retryable_step === 'transactions' ? 'No pudimos actualizar las transacciones.' : `No pudimos completar ${steps.find(([id]) => id === run.retryable_step)?.[1] || 'la sincronización'}.`}</p>{run.completed_steps > 0 && <p className="text-neutral-300">{run.retryable_step === 'transactions' && run.completed_steps >= 2 ? 'Las cuentas y tarjetas sí quedaron actualizadas.' : 'Los pasos anteriores sí quedaron actualizados.'}</p>}<button className="mt-3 rounded border border-amber-700 px-3 py-2 font-semibold" onClick={() => start(true)} type="button">Reintentar desde {steps.find(([id]) => id === run.retryable_step)?.[1]?.toLowerCase() || 'el paso pendiente'}</button></>}{run.warnings?.length ? <ul className="mt-2 list-disc pl-5 text-amber-200">{run.warnings.map((warning) => <li key={warning}>{warning}</li>)}</ul> : null}</div>}
     {error && <p className="mt-4 rounded border border-red-700 p-3 text-red-100">{error}</p>}
     <details className="mt-4 rounded border border-neutral-800 p-3"><summary className="cursor-pointer font-semibold">Ver detalles técnicos</summary><pre className="mt-3 overflow-x-auto whitespace-pre-wrap text-xs text-neutral-400">{JSON.stringify(run, null, 2)}</pre><div className="mt-3 flex gap-2"><button className="rounded border px-3 py-2 text-xs" disabled={active} onClick={() => fetch('/api/plaid/sync-accounts', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' })} type="button">Solo cuentas</button><button className="rounded border px-3 py-2 text-xs" disabled={active} onClick={() => fetch('/api/plaid/sync-imports', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' })} type="button">Solo transacciones</button></div></details>
   </section>

@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { CountryCode } from 'plaid'
+import { CountryCode, Products } from 'plaid'
 import { requireApiUser } from '@/lib/auth/requireApiUser'
 import { getAuthorizedRepairConnection } from '@/lib/plaid/authorized-connection'
 import { plaidClient } from '@/lib/plaid/client'
@@ -28,6 +28,7 @@ export async function POST(request: Request) {
 
   const body = (await request.json().catch(() => null)) as {
     connectionId?: unknown
+    requestLiabilitiesConsent?: unknown
   } | null
   const connectionId = connectionIdFrom(body?.connectionId)
   if (!connectionId) {
@@ -64,6 +65,9 @@ export async function POST(request: Request) {
       country_codes: [CountryCode.Us],
       language: 'es',
       access_token: accessToken,
+      ...(body?.requestLiabilitiesConsent === true
+        ? { additional_consented_products: [Products.Liabilities] }
+        : {}),
     })
 
     console.info('Plaid Update Mode token created', {
