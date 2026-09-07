@@ -20,14 +20,14 @@ export default function ReportActions({ month }: { month: string }) {
         Mes del reporte
         <input
           className="rounded-lg border border-white/10 px-3 py-2 text-sm"
-          defaultValue={month}
+          value={selectedMonth}
           max="2099-12"
           min="2020-01"
           onChange={(event) => setSelectedMonth(event.target.value)}
           type="month"
         />
       </label>
-      <button className="rounded-lg border border-indigo-400/30 bg-indigo-400/10 px-3 py-2 text-sm font-semibold text-indigo-100" onClick={() => router.push(`/reports?month=${selectedMonth}`)} type="button">Ver reporte</button>
+      <button className="min-h-11 rounded-lg border border-indigo-400/30 bg-indigo-400/10 px-3 py-2 text-sm font-semibold text-indigo-100" disabled={!/^\d{4}-(0[1-9]|1[0-2])$/.test(selectedMonth)} onClick={() => router.push(`/reports?month=${encodeURIComponent(selectedMonth)}`)} type="button">Ver reporte</button>
       <button className="min-h-11 rounded-lg border border-white/10 bg-white/6 px-3 py-2 text-sm font-semibold" onClick={() => print()} type="button">Imprimir</button>
       <button className="min-h-11 rounded-lg bg-indigo-500 px-3 py-2 text-sm font-semibold text-white" onClick={() => print(true)} type="button">Imprimir / Guardar como PDF</button>
     </div>

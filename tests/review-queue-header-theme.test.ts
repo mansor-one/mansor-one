@@ -16,8 +16,8 @@ test('tabs and exports share an accessible compact toolbar', () => {
   assert.match(client, /role="group" aria-label="Queue views"/)
   assert.match(client, /aria-pressed=\{activeTab === tab\.id\}/)
   assert.match(client, /aria-label="Queue tools"/)
-  assert.match(client, /Exportar cola/)
-  assert.match(client, /Exportar duplicados/)
+  assert.match(client, /Exportar página/)
+  assert.match(client, /Duplicados de esta página/)
   assert.match(client, /focus-visible:outline-indigo-300/)
 })
 

@@ -89,7 +89,7 @@ export default async function ReportsPage({ searchParams }: { searchParams: Sear
   const inactiveZeroAccounts = report.bankAccounts.filter((account) => account.closingBalance === 0 && !account.hasActivity)
 
   return (
-    <AppShell header={{ eyebrow: 'Reporte mensual', title: `Mansor One — ${report.period.label}`, subtitle: 'Vista consolidada del ledger confirmado, obligaciones, cuentas, deuda y contexto financiero.', secondaryAction: <ReportActions month={report.period.month} /> }}>
+    <AppShell header={{ eyebrow: 'Reporte mensual', title: `Mansor One — ${report.period.label}`, subtitle: 'Vista consolidada del ledger confirmado, obligaciones, cuentas, deuda y contexto financiero.', secondaryAction: <ReportActions key={report.period.month} month={report.period.month} /> }}>
       <div className="monthly-report space-y-5" data-report-month={report.period.month}>
         <div className="no-print rounded-xl border border-amber-400/20 bg-amber-400/8 p-3 text-sm text-amber-100">{report.disclosures[0]}</div>
 

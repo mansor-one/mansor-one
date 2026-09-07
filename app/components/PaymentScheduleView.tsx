@@ -203,7 +203,7 @@ function PaymentListRow({ payment, onOpen, today }: { payment: PaymentInstance; 
           </div>
           {notes && <p className="mt-2 text-sm text-neutral-300">{notes}</p>}
         </div>
-        <div className="flex shrink-0 flex-row items-center gap-2 sm:flex-col sm:items-end">
+        <div className="flex min-w-0 flex-wrap flex-row items-center gap-2 sm:flex-col sm:items-end">
           <span className={`rounded-full border px-2 py-1 text-xs ${presentation.classes}`}>
             <span aria-hidden="true">{presentation.icon}</span> {presentation.label}
           </span>
@@ -300,8 +300,9 @@ export default function PaymentScheduleView({
           <div className="grid grid-cols-2 rounded border border-neutral-800 bg-neutral-950 p-1 text-sm">
             <button
               type="button"
+              aria-pressed={viewMode === 'calendar'}
               onClick={() => setViewMode('calendar')}
-              className={`rounded px-3 py-1.5 ${
+              className={`min-h-11 rounded px-3 py-1.5 ${
                 viewMode === 'calendar'
                   ? 'bg-neutral-100 text-neutral-950'
                   : 'text-neutral-400'
@@ -311,27 +312,29 @@ export default function PaymentScheduleView({
             </button>
             <button
               type="button"
+              aria-pressed={viewMode === 'list'}
               onClick={() => setViewMode('list')}
-              className={`rounded px-3 py-1.5 ${
+              className={`min-h-11 rounded px-3 py-1.5 ${
                 viewMode === 'list'
                   ? 'bg-neutral-100 text-neutral-950'
                   : 'text-neutral-400'
               }`}
             >
-              Lista
+              Todos los pagos
             </button>
           </div>
         </div>
       </div>
 
-      {monthKeys.length > 0 && (
+      {viewMode === 'calendar' && monthKeys.length > 0 && (
         <div className="mt-4 flex gap-2 overflow-x-auto pb-1">
           {monthKeys.map((monthKey) => (
             <button
               type="button"
               key={monthKey}
+              aria-pressed={selectedMonthKey === monthKey}
               onClick={() => setSelectedMonthKey(monthKey)}
-              className={`shrink-0 rounded-full border px-3 py-1 text-sm ${
+              className={`min-h-11 shrink-0 rounded-full border px-3 py-1 text-sm ${
                 selectedMonthKey === monthKey
                   ? 'border-neutral-100 bg-neutral-100 text-neutral-950'
                   : 'border-neutral-700 bg-neutral-950 text-neutral-300'
@@ -430,7 +433,7 @@ export default function PaymentScheduleView({
                 </p>
                 <div className="space-y-2">
                   {(paymentsByDate.get(date) || []).map((payment) => (
-                    <PaymentChip key={payment.id} payment={payment} onOpen={() => setSelectedPayment(payment)} today={today} />
+                    <PaymentListRow key={payment.id} payment={payment} onOpen={() => setSelectedPayment(payment)} today={today} />
                   ))}
                   {(graceWindowsByDate.get(date) || []).map((payment) => (
                     <GraceWindowMarker

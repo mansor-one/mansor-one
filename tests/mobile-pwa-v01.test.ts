@@ -95,6 +95,56 @@ test('Review Queue server pagination renders at most 25 groups and keeps global 
   assert.ok(page.candidates.every((row) => Number(row.transaction.id.split('-')[1]) >= 25))
 })
 
+function queueInput(rows: ReviewQueueCandidate[]) {
+  return { candidates: rows, needsCategory: rows, readyToConfirm: [], possibleDuplicate: [],
+    athReview: [], paymentConfirmation: [], needsManualReview: [], tab: 'toReview' as const, page: 1 }
+}
+
+test('queue filters search all pages before slicing and preserve global counts', () => {
+  const rows = Array.from({ length: 61 }, (_, index) => candidate(index))
+  rows[60].merchant = 'Comercio especial'
+  rows[60].suggestedCategory = 'Educación'
+  const page = paginateReviewQueue({ ...queueInput(rows), query: ' ESPECIAL ', category: 'educación' })
+  assert.deepEqual(page.candidates.map((row) => row.transaction.id), ['transaction-60'])
+  assert.equal(page.counts.toReview, 61)
+  assert.equal(page.totalGroups, 1)
+  assert.equal(page.pageCount, 1)
+  assert.equal(paginateReviewQueue({ ...queueInput(rows), query: 'inexistente' }).candidates.length, 0)
+})
+
+test('queue clamps invalid pages and page sizes without losing the first group', () => {
+  const input = queueInput(Array.from({ length: 61 }, (_, index) => candidate(index)))
+  for (const page of [NaN, Infinity, -10, 0]) {
+    assert.equal(paginateReviewQueue({ ...input, page }).page, 1)
+  }
+  assert.equal(paginateReviewQueue({ ...input, page: 2.9 }).page, 2)
+  assert.equal(paginateReviewQueue({ ...input, page: 999 }).page, 3)
+  for (const pageSize of [1000, Infinity, NaN]) {
+    assert.equal(paginateReviewQueue({ ...input, pageSize }).candidates.length, 25)
+  }
+  assert.equal(paginateReviewQueue({ ...input, pageSize: -1 }).candidates.length, 1)
+  assert.equal(paginateReviewQueue(queueInput([])).pageCount, 1)
+})
+
+test('queue keeps each logical group on one page', () => {
+  const rows = Array.from({ length: 27 }, (_, index) => candidate(index))
+  rows[25].transaction.plaidTransactionId = rows[24].transaction.plaidTransactionId
+  const first = paginateReviewQueue(queueInput(rows))
+  const second = paginateReviewQueue({ ...queueInput(rows), page: 2 })
+  assert.equal(first.totalGroups, 26)
+  assert.equal(first.candidates.length, 26)
+  assert.deepEqual(second.candidates.map((row) => row.transaction.id), ['transaction-26'])
+})
+
+test('install icon PNG dimensions match the metadata and include an Apple icon', () => {
+  const icons = [...(manifest().icons || []), { src: '/icons/apple-touch-icon.png', sizes: '180x180' }]
+  for (const icon of icons) {
+    const png = readFileSync(new URL(`../public${icon.src}`, import.meta.url))
+    assert.equal(png.subarray(0, 8).toString('hex'), '89504e470d0a1a0a')
+    assert.equal(`${png.readUInt32BE(16)}x${png.readUInt32BE(20)}`, icon.sizes)
+  }
+})
+
 test('History limits rendered movements while preserving full filtered totals', () => {
   const history = source('app/history/HistoryClient.tsx')
   assert.match(history, /HISTORY_PAGE_SIZE = 50/)

@@ -40,6 +40,8 @@ export function paginateReviewQueue(input: {
   subset?: 'needs-category' | 'spending-excluded' | 'transaction'
   spendingPeriod?: string
   transactionId?: string
+  query?: string
+  category?: string
   page: number
   pageSize?: number
 }) {
@@ -72,15 +74,32 @@ export function paginateReviewQueue(input: {
     selected = input.candidates.filter((candidate) => candidate.transaction.id === input.transactionId)
   }
 
+  // Filter the whole selected view before grouping/pagination, never just the
+  // rows already delivered to the browser. Global dashboard counts stay intact.
+  const query = input.query?.trim().toLocaleLowerCase() || ''
+  const categoryQuery = input.category?.trim().toLocaleLowerCase() || ''
+  selected = selected.filter((candidate) => {
+    const category = candidate.canonicalCategory?.displayName || candidate.suggestedCategory || 'Needs category'
+    const metadata = candidate.transaction.metadata
+    const text = [candidate.merchant, candidate.transaction.description,
+      metadata?.institutionName, metadata?.accountName, metadata?.accountMask,
+      category, candidate.classification].filter(Boolean).join(' ').toLocaleLowerCase()
+    return (!query || text.includes(query)) && (!categoryQuery || category.toLocaleLowerCase().includes(categoryQuery))
+  })
+
   const grouped = new Map<string, ReviewQueueCandidate[]>()
   selected.forEach((candidate) => {
     const key = groupKey(candidate)
     grouped.set(key, [...(grouped.get(key) || []), candidate])
   })
   const groups = [...grouped.values()]
-  const pageSize = input.pageSize || 25
+  const pageSize = Number.isFinite(input.pageSize)
+    ? Math.min(25, Math.max(1, Math.floor(input.pageSize!)))
+    : 25
   const pageCount = Math.max(1, Math.ceil(groups.length / pageSize))
-  const page = Math.min(Math.max(1, input.page), pageCount)
+  const page = Number.isFinite(input.page)
+    ? Math.min(Math.max(1, Math.floor(input.page)), pageCount)
+    : 1
   const pageGroups = groups.slice((page - 1) * pageSize, page * pageSize)
   const pageCandidates = pageGroups.flat()
   const pageIds = new Set(pageCandidates.map((candidate) => `${candidate.transaction.sourceTable}:${candidate.transaction.id}:${candidate.classification}`))

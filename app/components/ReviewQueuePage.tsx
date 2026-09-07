@@ -16,6 +16,8 @@ export type ReviewQueueSearchParams = {
   month?: string
   transaction?: string
   page?: string
+  q?: string
+  category?: string
 }
 
 export default async function ReviewQueuePage({
@@ -43,6 +45,8 @@ export default async function ReviewQueuePage({
     transactionId: params?.transaction,
     page: requestedPage,
     pageSize: 25,
+    query: params?.q,
+    category: params?.category,
   })
 
   return (
@@ -58,8 +62,9 @@ export default async function ReviewQueuePage({
         subtitle: 'Decide qué representa cada movimiento antes de añadirlo a tu historial financiero.',
       }}
     >
-      <section id="queue">
+      <section id="queue" tabIndex={-1}>
         <ReviewQueueClient
+          key={JSON.stringify([initialTab, initialSubset, spendingPeriod, params?.transaction, paginated.page, params?.q, params?.category])}
           athReview={paginated.athReview}
           candidates={paginated.candidates}
           categoryOptions={getUniqueSystemCategoryOptions()}

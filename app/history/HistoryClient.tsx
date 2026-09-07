@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { useMemo, useState, useTransition } from 'react'
+import { useMemo, useRef, useState, useTransition } from 'react'
 import AthEvidencePanel from './AthEvidencePanel'
 import MerchantLogo from '../components/MerchantLogo'
 
@@ -185,6 +185,13 @@ export default function HistoryClient({
   const [athDetail, setAthDetail] = useState<{ movement: HistoryMovement; evidence: Array<Record<string, unknown>> } | null>(null)
   const [athLoadingId, setAthLoadingId] = useState<string | null>(null)
   const [page, setPage] = useState(1)
+  const resultsRef = useRef<HTMLElement>(null)
+
+  function changePage(next: number) {
+    setPage(next)
+    resultsRef.current?.scrollIntoView({ block: 'start' })
+    resultsRef.current?.focus({ preventScroll: true })
+  }
 
   async function openAthDetail(movement: HistoryMovement) {
     if (!movement.quickEntryId) return
@@ -648,7 +655,7 @@ export default function HistoryClient({
           </p>
         </section>
       ) : (
-        <section className="overflow-hidden rounded border">
+        <section aria-label="Movimientos del historial" className="scroll-mt-4 overflow-hidden rounded border" ref={resultsRef} tabIndex={-1}>
           <div className="hidden grid-cols-7 gap-3 border-b p-3 text-sm font-semibold opacity-70 md:grid">
             <span>Fecha</span>
             <span>Comercio / persona</span>
@@ -747,9 +754,9 @@ export default function HistoryClient({
         </section>
       )}
       {pageCount > 1 && <nav aria-label="Páginas del historial" className="flex min-h-11 flex-wrap items-center justify-between gap-3 rounded-xl border p-3">
-        <button className="min-h-11 rounded-lg border px-4 py-2 text-sm font-semibold disabled:opacity-40" disabled={currentPage <= 1} onClick={() => setPage((value) => Math.max(1, value - 1))} type="button">Anterior</button>
-        <p className="text-center text-sm opacity-80">Página {currentPage} de {pageCount} · {filteredMovements.length} movimientos · {HISTORY_PAGE_SIZE} por página</p>
-        <button className="min-h-11 rounded-lg border px-4 py-2 text-sm font-semibold disabled:opacity-40" disabled={currentPage >= pageCount} onClick={() => setPage((value) => Math.min(pageCount, value + 1))} type="button">Siguiente</button>
+        <button className="min-h-11 rounded-lg border px-4 py-2 text-sm font-semibold disabled:opacity-40" disabled={currentPage <= 1} onClick={() => changePage(Math.max(1, currentPage - 1))} type="button">Anterior</button>
+        <p aria-live="polite" className="text-center text-sm opacity-80">Página {currentPage} de {pageCount} · {filteredMovements.length} movimientos · {HISTORY_PAGE_SIZE} por página</p>
+        <button className="min-h-11 rounded-lg border px-4 py-2 text-sm font-semibold disabled:opacity-40" disabled={currentPage >= pageCount} onClick={() => changePage(Math.min(pageCount, currentPage + 1))} type="button">Siguiente</button>
       </nav>}
       {athDetail && <AthEvidencePanel initialEvidence={athDetail.evidence} movement={athDetail.movement} onClose={() => setAthDetail(null)} />}
     </div>

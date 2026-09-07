@@ -767,16 +767,23 @@ export function ReviewQueueClient({
   const router = useRouter()
   const searchParams = useSearchParams()
   const activeTab = initialTab
-  const [showFilters, setShowFilters] = useState(false)
-  const [query, setQuery] = useState('')
-  const [categoryFilter, setCategoryFilter] = useState('')
+  const [showFilters, setShowFilters] = useState(Boolean(searchParams.get('q') || searchParams.get('category')))
+  const [query, setQuery] = useState(searchParams.get('q') || '')
+  const [categoryFilter, setCategoryFilter] = useState(searchParams.get('category') || '')
   const [skippedKeys, setSkippedKeys] = useState<string[]>([])
-  function navigateQueue(next: { tab?: ReviewTab; page?: number }) {
+  function navigateQueue(next: { tab?: ReviewTab; page?: number; query?: string; category?: string }) {
     const params = new URLSearchParams(searchParams.toString())
     if (next.tab) {
       params.set('tab', next.tab)
       params.delete('subset')
       params.delete('transaction')
+      params.set('page', '1')
+    }
+    if (next.query !== undefined || next.category !== undefined) {
+      for (const [key, value] of [['q', next.query], ['category', next.category]] as const) {
+        if (value?.trim()) params.set(key, value.trim())
+        else params.delete(key)
+      }
       params.set('page', '1')
     }
     if (next.page) params.set('page', String(next.page))
@@ -821,23 +828,7 @@ export function ReviewQueueClient({
       : initialSubset === 'transaction' && activeTab === 'all'
         ? candidates.filter((candidate) => candidate.transaction.id === transactionId)
       : tabCandidates[activeTab]
-  const filteredCandidates = selectedCandidates.filter((candidate) => {
-    const text = [
-      normalizedName(candidate),
-      accountLabel(candidate.transaction),
-      categoryLabel(candidate),
-      candidate.classification,
-    ]
-      .join(' ')
-      .toLowerCase()
-
-    return (
-      (!query || text.includes(query.toLowerCase())) &&
-      (!categoryFilter ||
-        categoryLabel(candidate).toLowerCase().includes(categoryFilter.toLowerCase()))
-    )
-  })
-  const groups = groupCandidates(filteredCandidates).filter(
+  const groups = groupCandidates(selectedCandidates).filter(
     (group) => !skippedKeys.includes(group.key)
   )
   const tabs: { id: ReviewTab; label: string; count: number }[] = [
@@ -912,7 +903,7 @@ export function ReviewQueueClient({
                 onClick={() => downloadCsv('review-queue.csv', exportRows(visibleCandidates))}
                 type="button"
               >
-                Exportar cola
+                Exportar página
               </button>
               <button
                 className="min-h-11 rounded-md px-3 py-2 text-xs font-semibold text-slate-300 transition hover:bg-white/[0.07] hover:text-white focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-indigo-300"
@@ -921,16 +912,16 @@ export function ReviewQueueClient({
                 }
                 type="button"
               >
-                Exportar duplicados
+                Duplicados de esta página
               </button>
             </div>
           </div>
         </div>
 
         {showFilters && (
-          <div className="mt-3 grid grid-cols-1 gap-3 border-t border-slate-700/70 pt-3 md:grid-cols-3">
+          <form onSubmit={(event) => { event.preventDefault(); navigateQueue({ query, category: categoryFilter }) }} className="mt-3 grid grid-cols-1 gap-3 border-t border-slate-700/70 pt-3 md:grid-cols-3">
             <label className="text-sm text-slate-300">
-              Search
+              Buscar en toda la vista
               <input
                 className="mt-1 w-full rounded-lg border border-slate-600 bg-[#081225] px-3 py-2 text-slate-100 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-indigo-300"
                 onChange={(event) => setQuery(event.target.value)}
@@ -938,26 +929,28 @@ export function ReviewQueueClient({
               />
             </label>
             <label className="text-sm text-slate-300">
-              Category
+              Categoría
               <input
                 className="mt-1 w-full rounded-lg border border-slate-600 bg-[#081225] px-3 py-2 text-slate-100 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-indigo-300"
                 onChange={(event) => setCategoryFilter(event.target.value)}
                 value={categoryFilter}
               />
             </label>
-            <div className="flex items-end">
+            <div className="flex flex-wrap items-end gap-2">
+              <button className="min-h-11 rounded-lg bg-indigo-500 px-3 py-2 text-sm font-semibold text-white" type="submit">Aplicar filtros</button>
               <button
                 className="rounded-lg border border-slate-600 px-3 py-2 text-sm text-slate-200 hover:bg-white/[0.06] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-300"
                 onClick={() => {
                   setQuery('')
                   setCategoryFilter('')
+                  navigateQueue({ query: '', category: '' })
                 }}
                 type="button"
               >
-                Clear filters
+                Limpiar filtros
               </button>
             </div>
-          </div>
+          </form>
         )}
       </section>
 
