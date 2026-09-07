@@ -25,7 +25,7 @@ export default async function PaymentsPage() {
       .eq('is_active', true),
     supabase
       .from('scheduled_payments')
-      .select('id, name, household_id, amount, due_day, owner, recurrence_type, recurrence_interval, is_active, notes')
+      .select('id, name, household_id, amount, due_day, owner, recurrence_type, recurrence_interval, is_active, notes, custom_schedule_notes')
       .eq('household_id', membership.household_id)
       .eq('is_active', true)
       .order('due_day', { ascending: true }),
@@ -35,7 +35,7 @@ export default async function PaymentsPage() {
       .eq('household_id', membership.household_id),
     supabase
       .from('obligation_instances')
-      .select('obligation_id, status')
+      .select('obligation_id, status, expected_date')
       .eq('household_id', membership.household_id),
   ])
   if (obligationsResult.error) throw obligationsResult.error

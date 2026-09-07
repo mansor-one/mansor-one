@@ -136,3 +136,27 @@ test('legacy rows already marked as migrated are not offered as duplicate config
   })
   assert.equal(report.all.length, 0)
 })
+
+test('biweekly configuration requires a full anchor date instead of a due day', () => {
+  const configured = buildObligationConfigurationReport({
+    obligations: [],
+    scheduledPayments: [{
+      id: 'barber', name: 'Barbero', household_id: 'household', amount: 40,
+      due_day: null, owner: 'household', recurrence_type: 'biweekly',
+      recurrence_interval: 1, is_active: true,
+      custom_schedule_notes: 'anchor_date:2026-08-07',
+    }],
+  })
+  const missingAnchor = buildObligationConfigurationReport({
+    obligations: [],
+    scheduledPayments: [{
+      id: 'barber', name: 'Barbero', household_id: 'household', amount: 40,
+      due_day: null, owner: 'household', recurrence_type: 'biweekly',
+      recurrence_interval: 1, is_active: true,
+    }],
+  })
+
+  assert.equal(configured.needsConfiguration.length, 0)
+  assert.equal(missingAnchor.needsConfiguration[0].issues.some((issue) => issue.code === 'due_day'), false)
+  assert.equal(missingAnchor.needsConfiguration[0].issues.some((issue) => issue.code === 'anchor_date'), true)
+})

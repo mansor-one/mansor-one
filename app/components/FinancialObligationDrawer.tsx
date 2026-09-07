@@ -3,7 +3,7 @@
 import { paymentStatusPresentation, type PaymentInstance } from '@/lib/financial-engine'
 import type { PaymentAccountOption } from '@/lib/financial-engine/payment-account-options'
 import Link from 'next/link'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import ConfirmObligationPaid from './ConfirmObligationPaid'
 import ConfigureLegacyObligation from './ConfigureLegacyObligation'
 
@@ -21,6 +21,12 @@ type Details = {
   suggestedPaymentAccount: { id: string; reason: string } | null
   missingInformation: string[]
   lineage: Record<string, string | null>
+  entityIds?: {
+    creditCardId: string | null
+    plaidAccountId: string | null
+    connectionId: string | null
+    liabilityId: string | null
+  }
   paymentState: {
     settlementState: 'pending_settlement' | null
     candidateState: 'possible_match' | null
@@ -46,6 +52,40 @@ function money(value: unknown) {
   return `$${Number(value || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 }
 
+function entityId(value: unknown) {
+  return typeof value === 'string' && value ? value : null
+}
+
+function timelineCardHref(details: Details) {
+  const id = details.entityIds?.creditCardId || entityId(details.card?.id)
+  return id ? `/cards?cardId=${encodeURIComponent(id)}&action=edit&from=timeline` : null
+}
+
+function timelineAccountHref(details: Details) {
+  const reportedAccount = details.paymentState.reportedPayment
+  const reportedSource = reportedAccount?.paymentAccountSource
+  const reportedId = entityId(reportedAccount?.paymentAccountId)
+  if (reportedId && (reportedSource === 'manual_account' || reportedSource === 'plaid_account')) {
+    const source = reportedSource === 'manual_account' ? 'manual' : 'plaid'
+    return `/portfolio?accountId=${encodeURIComponent(reportedId)}&accountSource=${source}&action=edit&from=timeline`
+  }
+
+  const id = details.entityIds?.plaidAccountId || entityId(details.linkedPlaidAccount?.id)
+  return id ? `/portfolio?accountId=${encodeURIComponent(id)}&accountSource=plaid&action=edit&from=timeline` : null
+}
+
+function timelineConnectionHref(details: Details) {
+  const id = details.entityIds?.connectionId || entityId(details.linkedPlaidAccount?.connection_id)
+  return id ? `/plaid?connectionId=${encodeURIComponent(id)}&from=timeline` : null
+}
+
+function missingInformationHref(item: string, details: Details) {
+  const cardFields = new Set(['APR', 'Terminación de cuenta', 'Pago automático', 'Límite de crédito'])
+  if (cardFields.has(item)) return timelineCardHref(details) || '/repair-center'
+  if (item === 'Cuenta de pago') return timelineAccountHref(details) || '/repair-center'
+  return '/repair-center'
+}
+
 function Field({ label, value, source }: { label: string; value: unknown; source?: string | null }) {
   const missing = value === null || value === undefined || value === ''
   return <div className="rounded-lg border border-white/10 bg-white/[0.03] p-3"><p className="text-xs text-slate-400">{label}</p><p className={missing ? 'text-slate-400' : 'font-semibold text-white'}>{text(value)}</p>{source && <p className="mt-1 text-[11px] text-slate-500">Fuente: {source}</p>}</div>
@@ -55,6 +95,7 @@ export default function FinancialObligationDrawer({ payment, onClose }: { paymen
   const [details, setDetails] = useState<Details | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [savingCandidate, setSavingCandidate] = useState<string | null>(null)
+  const drawerRef = useRef<HTMLElement>(null)
 
   useEffect(() => {
     const controller = new AbortController()
@@ -69,9 +110,32 @@ export default function FinancialObligationDrawer({ payment, onClose }: { paymen
   }, [payment.obligationInstanceId])
 
   useEffect(() => {
-    function close(event: KeyboardEvent) { if (event.key === 'Escape') onClose() }
+    const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    const previousOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    drawerRef.current?.focus()
+    function close(event: KeyboardEvent) {
+      if (event.key === 'Escape') onClose()
+      if (event.key === 'Tab') {
+        const focusable = [...(drawerRef.current?.querySelectorAll<HTMLElement>('a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled])') || [])]
+        if (focusable.length === 0) return
+        const first = focusable[0]
+        const last = focusable[focusable.length - 1]
+        if (event.shiftKey && document.activeElement === first) {
+          event.preventDefault()
+          last.focus()
+        } else if (!event.shiftKey && document.activeElement === last) {
+          event.preventDefault()
+          first.focus()
+        }
+      }
+    }
     window.addEventListener('keydown', close)
-    return () => window.removeEventListener('keydown', close)
+    return () => {
+      document.body.style.overflow = previousOverflow
+      window.removeEventListener('keydown', close)
+      opener?.focus()
+    }
   }, [onClose])
 
   const obligation = details?.obligation
@@ -98,6 +162,9 @@ export default function FinancialObligationDrawer({ payment, onClose }: { paymen
     reconciledDate: String(link?.reconciled_at || ''),
     confidence: payment.lifecycleMatchedTransaction?.confidence,
   })
+  const cardHref = details ? timelineCardHref(details) : null
+  const accountHref = details ? timelineAccountHref(details) : null
+  const connectionHref = details ? timelineConnectionHref(details) : null
 
   async function decideCandidate(paymentLinkId: string, action: 'reject' | 'confirm') {
     setSavingCandidate(paymentLinkId)
@@ -124,8 +191,8 @@ export default function FinancialObligationDrawer({ payment, onClose }: { paymen
   }
 
   return <div className="fixed inset-0 z-50 flex justify-end bg-black/65" role="dialog" aria-modal="true" aria-label={`Detalles de ${payment.name || 'obligación'}`} onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}>
-    <aside className="h-full w-full max-w-2xl overflow-y-auto border-l border-white/10 bg-[#08101f] p-5 shadow-2xl sm:p-7">
-      <div className="flex items-start justify-between gap-3"><div><p className="text-sm text-indigo-200">Obligación financiera</p><h2 className="text-2xl font-bold">{payment.name || 'Pago'}</h2><span className={`mt-2 inline-flex rounded-full border px-2 py-1 text-xs font-semibold ${presentation.classes}`}><span aria-hidden="true">{presentation.icon}</span>&nbsp;{presentation.label}</span><p className="mt-2 max-w-xl text-sm text-slate-300">{presentation.explanation}</p>{presentation.relativeLabel && <p className="mt-1 text-sm font-semibold text-white">{presentation.relativeLabel}</p>}{presentation.confidence !== null && <p className="mt-1 text-sm font-semibold">Confianza {presentation.confidence}% · {presentation.confidenceStrength}</p>}</div><button className="rounded-lg border border-white/10 px-3 py-2" onClick={onClose}>Cerrar</button></div>
+    <aside className="mobile-safe-drawer h-full w-full max-w-2xl overflow-y-auto border-l border-white/10 bg-[#08101f] p-5 shadow-2xl outline-none sm:p-7" ref={drawerRef} tabIndex={-1}>
+      <div className="flex items-start justify-between gap-3"><div><p className="text-sm text-indigo-200">Obligación financiera</p><h2 className="text-2xl font-bold">{payment.name || 'Pago'}</h2><span className={`mt-2 inline-flex rounded-full border px-2 py-1 text-xs font-semibold ${presentation.classes}`}><span aria-hidden="true">{presentation.icon}</span>&nbsp;{presentation.label}</span><p className="mt-2 max-w-xl text-sm text-slate-300">{presentation.explanation}</p>{presentation.relativeLabel && <p className="mt-1 text-sm font-semibold text-white">{presentation.relativeLabel}</p>}{presentation.confidence !== null && <p className="mt-1 text-sm font-semibold">Confianza {presentation.confidence}% · {presentation.confidenceStrength}</p>}</div><button className="min-h-11 min-w-11 rounded-lg border border-white/10 px-3 py-2" onClick={onClose}>Cerrar</button></div>
       {error && <p className="mt-5 rounded border border-red-800 bg-red-950/30 p-3 text-red-100">{error}</p>}
       {!payment.obligationInstanceId && <div className="mt-6 space-y-4"><p className="rounded border border-amber-900/60 bg-amber-950/20 p-3 text-amber-100">Este pago proviene de un calendario anterior que todavía no tiene una instancia de obligación enlazada. Su historial no se modificó.</p><div className="grid gap-2 sm:grid-cols-2"><Field label="Importe" value={Number(payment.amount || 0) > 0 ? money(payment.amount) : 'Monto no configurado'}/><Field label="Vencimiento contractual" value={payment.due_date || payment.expected_date}/><Field label="Fecha límite de gracia" value={payment.grace_until || payment.grace_due_date}/><Field label="Responsable" value={payment.owner}/></div><ConfigureLegacyObligation payment={payment}/></div>}
       {payment.obligationInstanceId && !details && !error && <p className="mt-5 text-slate-400">Cargando detalles…</p>}
@@ -133,7 +200,7 @@ export default function FinancialObligationDrawer({ payment, onClose }: { paymen
         <section><h3 className="mb-3 font-bold">Resumen</h3><div className="grid gap-2 sm:grid-cols-2"><Field label="Importe" value={Number(instance?.amount_expected || payment.amount || 0) > 0 ? money(instance?.amount_expected || payment.amount) : 'Monto no configurado'} source={details.lineage.amount}/><Field label="Tipo" value={obligation?.obligation_type}/><Field label="Responsable" value={obligation?.owner || payment.owner}/><Field label="Frecuencia" value={obligation?.frequency}/><Field label="Institución o proveedor" value={details.provider?.provider_name || details.card?.bank || details.loan?.lender}/><Field label="Saldo actual" value={details.linkedPlaidAccount?.current_balance ? money(details.linkedPlaidAccount.current_balance) : details.loan?.balance ? money(details.loan.balance) : null} source={details.lineage.balance}/></div></section>
         <section><h3 className="mb-3 font-bold">Fechas importantes</h3><div className="grid gap-2 sm:grid-cols-2"><Field label="Vencimiento contractual" value={dueDate} source={details.lineage.dueDate}/><Field label="Fecha límite de gracia" value={grace} source={details.lineage.graceDeadline}/><Field label="Fecha usada por Salud Financiera y Flujo de Caja" value={grace || dueDate} source={grace ? 'Límite de gracia' : 'Vencimiento contractual'}/><Field label="Pago real" value={link?.confirmed_at}/><Field label="Última conciliación" value={link?.reconciled_at}/></div></section>
         {(details.card || details.loan) && <section><h3 className="mb-3 font-bold">Tarjeta o préstamo</h3><div className="grid gap-2 sm:grid-cols-2"><Field label="APR" value={details.card?.regular_apr || details.loan?.apr}/><Field label="Pago mínimo" value={details.linkedPlaidAccount?.plaid_minimum_payment_amount ? money(details.linkedPlaidAccount.plaid_minimum_payment_amount) : details.card?.minimum_payment ? money(details.card.minimum_payment) : details.loan?.monthly_payment ? money(details.loan.monthly_payment) : null}/><Field label="Límite de crédito" value={details.card?.credit_limit ? money(details.card.credit_limit) : null}/><Field label="Crédito disponible" value={details.linkedPlaidAccount?.available_balance ? money(details.linkedPlaidAccount.available_balance) : null}/><Field label="Terminación" value={details.card?.manual_last4}/><Field label="Pago automático" value={details.card?.autopay_enabled === true ? 'Activo' : details.card?.autopay_enabled === false ? 'No activo' : null}/></div></section>}
-        <section><h3 className="mb-3 font-bold">Información pendiente</h3>{details.missingInformation.length ? <div className="space-y-2">{details.missingInformation.map((item) => <div className="flex items-center justify-between rounded-lg border border-amber-900/60 bg-amber-950/20 p-3" key={item}><span><strong>{item}</strong><span className="ml-2 text-slate-400">No configurado</span></span><Link className="text-indigo-200 underline" href={item === 'Monto' ? '/repair-center' : details.card ? '/cards' : '/portfolio'}>Configurar</Link></div>)}</div> : <p className="text-sm text-slate-400">La información principal está completa.</p>}</section>
+        <section><h3 className="mb-3 font-bold">Información pendiente</h3>{details.missingInformation.length ? <div className="space-y-2">{details.missingInformation.map((item) => <div className="flex items-center justify-between rounded-lg border border-amber-900/60 bg-amber-950/20 p-3" key={item}><span><strong>{item}</strong><span className="ml-2 text-slate-400">No configurado</span></span><Link className="text-indigo-200 underline" href={missingInformationHref(item, details)}>Configurar</Link></div>)}</div> : <p className="text-sm text-slate-400">La información principal está completa.</p>}</section>
         {editablePayment && <section><h3 className="font-bold">Pago reportado</h3><p className="text-sm text-slate-400">Puedes corregir el importe, fecha, cuenta, método o nota mientras esperamos evidencia bancaria.</p><ConfirmObligationPaid obligationInstanceId={payment.obligationInstanceId!} amount={editablePayment.reportedAmount} defaultPaymentMethod={payment.paymentMethod} paymentAccounts={details.paymentAccounts} suggestedAccount={details.suggestedPaymentAccount} submissionMethod={details.paymentState.submissionMethod || undefined} existingPayment={editablePayment}/></section>}
         {payment.obligationInstanceId && !editablePayment && !['paid', 'matched', 'in_transit'].includes(payment.truthStatus || '') && <section><h3 className="font-bold">Confirmar pago</h3><ConfirmObligationPaid obligationInstanceId={payment.obligationInstanceId} amount={Number(instance?.amount_expected || payment.amount || 0)} defaultPaymentMethod={payment.paymentMethod} paymentAccounts={details.paymentAccounts} suggestedAccount={details.suggestedPaymentAccount}/></section>}
         {detectedLinks.length > 0 && <section><h3 className="mb-3 font-bold">Evidencia candidata</h3><div className="space-y-3">{detectedLinks.map((candidate) => {
@@ -148,7 +215,7 @@ export default function FinancialObligationDrawer({ payment, onClose }: { paymen
           const unappliedAmount = fullCredit ? candidateAmount - expectedAmount : 0
           return <div className="rounded border border-sky-900 bg-sky-950/20 p-3 text-sm" key={String(candidate.id)}><div className="flex justify-between gap-2"><strong>{text(imported?.merchant, 'Transacción')}</strong><strong>{money(candidateAmount)}</strong></div><p className="text-slate-300">{text(imported?.transaction_date, 'Sin fecha')} · {text(imported?.institution_name, '')} {text(imported?.account_name, '')}</p><p className={exactAmount || debtReductionCredit ? 'text-emerald-200' : 'text-amber-200'}>{exactAmount ? 'El importe coincide exactamente.' : partialCredit ? `Crédito al estado de cuenta: cubre ${money(candidateAmount)} de ${money(expectedAmount)}.` : fullCredit ? `Este crédito cubre el 100% de la obligación (${money(expectedAmount)}). El excedente de ${money(unappliedAmount)} no se aplicará a otra obligación.` : `No elegible: se esperaban ${money(expectedAmount)}.`}</p><div className="mt-2 flex flex-wrap gap-2"><button className="rounded border px-3 py-2" disabled={savingCandidate === candidate.id} onClick={() => decideCandidate(String(candidate.id), 'reject')}>No corresponde a este pago</button>{(exactAmount || debtReductionCredit) && <button className="rounded border border-emerald-500 px-3 py-2 font-semibold text-emerald-100" disabled={savingCandidate === candidate.id} onClick={() => decideCandidate(String(candidate.id), 'confirm')}>{partialCredit ? 'Vincular como crédito parcial' : fullCredit ? 'Confirmar y cerrar obligación' : 'Confirmar esta evidencia'}</button>}</div></div>
         })}</div></section>}
-        <section className="flex flex-wrap gap-2">{Boolean(details.card?.id) && <Link className="rounded border px-3 py-2" href="/cards">Ver tarjeta</Link>}{Boolean(details.loan?.id) && <Link className="rounded border px-3 py-2" href="/portfolio">Ver préstamo</Link>}{Boolean(details.linkedPlaidAccount?.id) && <Link className="rounded border px-3 py-2" href="/portfolio#plaid-accounts">Ver cuenta</Link>}<Link className="rounded border px-3 py-2" href="/timeline#payments">Ver historial de pagos</Link></section>
+        <section className="flex flex-wrap gap-2">{cardHref && <Link className="rounded border px-3 py-2" href={cardHref}>Editar tarjeta</Link>}{Boolean(details.loan?.id) && <Link className="rounded border px-3 py-2" href="/portfolio#liabilities">Ver préstamo</Link>}{accountHref && <Link className="rounded border px-3 py-2" href={accountHref}>Editar cuenta</Link>}{connectionHref && <Link className="rounded border px-3 py-2" href={connectionHref}>Ver conexión bancaria</Link>}<Link className="rounded border px-3 py-2" href="/timeline#payments">Ver historial de pagos</Link></section>
         <details className="rounded border border-white/10 p-3"><summary className="cursor-pointer font-semibold">Ver detalles técnicos</summary><pre className="mt-3 overflow-x-auto whitespace-pre-wrap text-xs text-slate-400">{JSON.stringify({ lineage: details.lineage, paymentLinks: details.paymentLinks, reconciliationEvents: details.reconciliationEvents }, null, 2)}</pre></details>
       </div>}
     </aside>

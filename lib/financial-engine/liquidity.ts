@@ -327,14 +327,18 @@ function expectedScheduledPayment(
   month: number,
   year: number,
   today: string,
-  amount: number | null = null
+  amount: number | null = null,
+  cycleDueDate?: string
 ): PaymentInstance | null {
-  const dateWindow = scheduledPaymentDateWindow(scheduledPayment, month, year)
+  const isBiweekly = scheduledPayment.recurrence_type === 'biweekly'
+  const dateWindow = isBiweekly && cycleDueDate
+    ? { dueDate: cycleDueDate, graceUntilDate: cycleDueDate, graceDays: 0 }
+    : scheduledPaymentDateWindow(scheduledPayment, month, year)
   if (!dateWindow.dueDate || !dateWindow.graceUntilDate) return null
 
   return withLifecycle(
     {
-      id: `scheduled:${scheduledPayment.id}:${year}-${month}`,
+      id: `scheduled:${scheduledPayment.id}:${dateWindow.dueDate}`,
       name: scheduledPayment.name,
       amount: Number(amount ?? scheduledPayment.amount ?? 0),
       status: 'pending',
@@ -450,11 +454,17 @@ export function buildPaymentLifecycleView({
       .map((instance) => ({
         month: Number(instance.payment_month),
         year: Number(instance.payment_year),
+        dueDate: instance.expected_date || instance.due_date || instance.effective_due_date,
       }))
-      .filter(({ month, year }) => month >= 1 && month <= 12 && year > 0)
+      .filter(({ month, year, dueDate }) => Boolean(dueDate) || (month >= 1 && month <= 12 && year > 0))
 
     return enumerateRecurringCycles({
-      source: payment,
+      source: {
+        ...payment,
+        start_date: payment.start_date ||
+          String(payment.custom_schedule_notes || '').match(/anchor_date:(\d{4}-\d{2}-\d{2})/i)?.[1] ||
+          null,
+      },
       startDate: today,
       horizonEnd,
       existingCycles,
@@ -470,7 +480,8 @@ export function buildPaymentLifecycleView({
             payment,
             cycle.month,
             cycle.year
-          )
+          ),
+          cycle.dueDate
         )
       )
       .filter((instance): instance is PaymentInstance => instance !== null)

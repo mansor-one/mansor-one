@@ -315,12 +315,24 @@ export type Database = {
           exclude_from_spending: boolean | null
           from_card: string | null
           gmail_message_id: string
+          gmail_connection_id: string | null
           household_id: string
           id: string
           is_ignored: boolean | null
           is_internal_transfer: boolean | null
           matched_plaid_transaction_id: string | null
           message: string | null
+          occurred_at: string | null
+          timezone: string
+          reference: string | null
+          counterparty_phone_last4: string | null
+          source_descriptor: string | null
+          destination_descriptor: string | null
+          parse_status: string
+          parser_version: string
+          content_fingerprint: string | null
+          parsed_fields: Json
+          imported_at: string
           raw_snippet: string | null
           subject: string | null
           suggested_category: string | null
@@ -339,12 +351,24 @@ export type Database = {
           exclude_from_spending?: boolean | null
           from_card?: string | null
           gmail_message_id: string
+          gmail_connection_id?: string | null
           household_id: string
           id?: string
           is_ignored?: boolean | null
           is_internal_transfer?: boolean | null
           matched_plaid_transaction_id?: string | null
           message?: string | null
+          occurred_at?: string | null
+          timezone?: string
+          reference?: string | null
+          counterparty_phone_last4?: string | null
+          source_descriptor?: string | null
+          destination_descriptor?: string | null
+          parse_status?: string
+          parser_version?: string
+          content_fingerprint?: string | null
+          parsed_fields?: Json
+          imported_at?: string
           raw_snippet?: string | null
           subject?: string | null
           suggested_category?: string | null
@@ -363,12 +387,24 @@ export type Database = {
           exclude_from_spending?: boolean | null
           from_card?: string | null
           gmail_message_id?: string
+          gmail_connection_id?: string | null
           household_id?: string
           id?: string
           is_ignored?: boolean | null
           is_internal_transfer?: boolean | null
           matched_plaid_transaction_id?: string | null
           message?: string | null
+          occurred_at?: string | null
+          timezone?: string
+          reference?: string | null
+          counterparty_phone_last4?: string | null
+          source_descriptor?: string | null
+          destination_descriptor?: string | null
+          parse_status?: string
+          parser_version?: string
+          content_fingerprint?: string | null
+          parsed_fields?: Json
+          imported_at?: string
           raw_snippet?: string | null
           subject?: string | null
           suggested_category?: string | null
@@ -407,6 +443,102 @@ export type Database = {
           created_at?: string | null
           id?: string
           transaction_id?: string | null
+        }
+        Relationships: []
+      }
+      ath_movil_match_candidates: {
+        Row: {
+          id: string
+          household_id: string
+          ath_email_id: string
+          plaid_import_id: string
+          score: number
+          score_version: string
+          reasons: Json
+          rank: number
+          status: string
+          created_at: string
+          evaluated_at: string | null
+          reviewed_at: string | null
+          reviewed_by: string | null
+          rejection_reason: string | null
+        }
+        Insert: {
+          id?: string
+          household_id: string
+          ath_email_id: string
+          plaid_import_id: string
+          score: number
+          score_version: string
+          reasons?: Json
+          rank: number
+          status?: string
+          created_at?: string
+          evaluated_at?: string | null
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          rejection_reason?: string | null
+        }
+        Update: {
+          id?: string
+          household_id?: string
+          ath_email_id?: string
+          plaid_import_id?: string
+          score?: number
+          score_version?: string
+          reasons?: Json
+          rank?: number
+          status?: string
+          created_at?: string
+          evaluated_at?: string | null
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          rejection_reason?: string | null
+        }
+        Relationships: []
+      }
+      gmail_evidence_sync_state: {
+        Row: {
+          id: string
+          household_id: string
+          last_history_id: string | null
+          last_email_at: string | null
+          last_attempt_at: string | null
+          last_success_at: string | null
+          encrypted_refresh_token: string | null
+          token_iv: string | null
+          token_auth_tag: string | null
+          last_authorized_at: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          household_id: string
+          last_history_id?: string | null
+          last_email_at?: string | null
+          last_attempt_at?: string | null
+          last_success_at?: string | null
+          encrypted_refresh_token?: string | null
+          token_iv?: string | null
+          token_auth_tag?: string | null
+          last_authorized_at?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          household_id?: string
+          last_history_id?: string | null
+          last_email_at?: string | null
+          last_attempt_at?: string | null
+          last_success_at?: string | null
+          encrypted_refresh_token?: string | null
+          token_iv?: string | null
+          token_auth_tag?: string | null
+          last_authorized_at?: string | null
+          created_at?: string
+          updated_at?: string
         }
         Relationships: []
       }
@@ -1088,6 +1220,7 @@ export type Database = {
           id: string
           name: string
           role: string
+          updated_at: string
         }
         Insert: {
           active?: boolean | null
@@ -1097,6 +1230,7 @@ export type Database = {
           id?: string
           name: string
           role?: string
+          updated_at?: string
         }
         Update: {
           active?: boolean | null
@@ -1106,6 +1240,7 @@ export type Database = {
           id?: string
           name?: string
           role?: string
+          updated_at?: string
         }
         Relationships: [
           {
@@ -2039,6 +2174,7 @@ export type Database = {
           encrypted_access_token: string | null
           household_id: string
           id: string
+          institution_id: string | null
           institution_name: string | null
           item_id: string | null
           last_repair_success_at: string | null
@@ -2061,6 +2197,7 @@ export type Database = {
           encrypted_access_token?: string | null
           household_id: string
           id?: string
+          institution_id?: string | null
           institution_name?: string | null
           item_id?: string | null
           last_repair_success_at?: string | null
@@ -2083,6 +2220,7 @@ export type Database = {
           encrypted_access_token?: string | null
           household_id?: string
           id?: string
+          institution_id?: string | null
           institution_name?: string | null
           item_id?: string | null
           last_repair_success_at?: string | null
@@ -2119,6 +2257,11 @@ export type Database = {
           imported: boolean | null
           institution_name: string | null
           merchant: string | null
+          merchant_confidence: string | null
+          merchant_entity_id: string | null
+          merchant_logo_source: string | null
+          merchant_logo_url: string | null
+          merchant_website: string | null
           pending: boolean
           pending_transaction_id: string | null
           plaid_account_id: string | null
@@ -2145,6 +2288,11 @@ export type Database = {
           imported?: boolean | null
           institution_name?: string | null
           merchant?: string | null
+          merchant_confidence?: string | null
+          merchant_entity_id?: string | null
+          merchant_logo_source?: string | null
+          merchant_logo_url?: string | null
+          merchant_website?: string | null
           pending?: boolean
           pending_transaction_id?: string | null
           plaid_account_id?: string | null
@@ -2171,6 +2319,11 @@ export type Database = {
           imported?: boolean | null
           institution_name?: string | null
           merchant?: string | null
+          merchant_confidence?: string | null
+          merchant_entity_id?: string | null
+          merchant_logo_source?: string | null
+          merchant_logo_url?: string | null
+          merchant_website?: string | null
           pending?: boolean
           pending_transaction_id?: string | null
           plaid_account_id?: string | null
@@ -2194,6 +2347,36 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      plaid_institution_assets: {
+        Row: {
+          fetched_at: string
+          institution_id: string
+          logo_base64: string | null
+          official_name: string
+          primary_color: string | null
+          updated_at: string
+          website: string | null
+        }
+        Insert: {
+          fetched_at?: string
+          institution_id: string
+          logo_base64?: string | null
+          official_name: string
+          primary_color?: string | null
+          updated_at?: string
+          website?: string | null
+        }
+        Update: {
+          fetched_at?: string
+          institution_id?: string
+          logo_base64?: string | null
+          official_name?: string
+          primary_color?: string | null
+          updated_at?: string
+          website?: string | null
+        }
+        Relationships: []
       }
       plaid_items: {
         Row: {
@@ -2923,42 +3106,63 @@ export type Database = {
       }
       transaction_enrichments: {
         Row: {
+          ath_match_candidate_id: string | null
+          ath_movil_email_id: string | null
           confidence_score: number | null
           created_at: string
           enrichment_source: string
           enrichment_type: string
+          extractor_version: string | null
           household_id: string
           id: string
           matched_value: string | null
           metadata: Json
           plaid_import_id: string | null
+          purpose: string | null
           quick_entry_id: string | null
+          reasons: Json
+          related_person_id: string | null
+          status: string
           user_id: string
         }
         Insert: {
+          ath_match_candidate_id?: string | null
+          ath_movil_email_id?: string | null
           confidence_score?: number | null
           created_at?: string
           enrichment_source: string
           enrichment_type: string
+          extractor_version?: string | null
           household_id: string
           id?: string
           matched_value?: string | null
           metadata?: Json
           plaid_import_id?: string | null
+          purpose?: string | null
           quick_entry_id?: string | null
+          reasons?: Json
+          related_person_id?: string | null
+          status?: string
           user_id: string
         }
         Update: {
+          ath_match_candidate_id?: string | null
+          ath_movil_email_id?: string | null
           confidence_score?: number | null
           created_at?: string
           enrichment_source?: string
           enrichment_type?: string
+          extractor_version?: string | null
           household_id?: string
           id?: string
           matched_value?: string | null
           metadata?: Json
           plaid_import_id?: string | null
+          purpose?: string | null
           quick_entry_id?: string | null
+          reasons?: Json
+          related_person_id?: string | null
+          status?: string
           user_id?: string
         }
         Relationships: [
@@ -3085,45 +3289,57 @@ export type Database = {
         Row: {
           confidence_score: number | null
           created_at: string
+          enrichment_id: string | null
           household_id: string
           id: string
+          interpreter_version: string | null
           metadata: Json
           plaid_import_id: string | null
           quick_entry_id: string | null
+          rank: number
           reason: string | null
           source: string
           status: string
           suggested_category: string
+          suggested_category_code: string | null
           updated_at: string
           user_id: string
         }
         Insert: {
           confidence_score?: number | null
           created_at?: string
+          enrichment_id?: string | null
           household_id: string
           id?: string
+          interpreter_version?: string | null
           metadata?: Json
           plaid_import_id?: string | null
           quick_entry_id?: string | null
+          rank?: number
           reason?: string | null
           source: string
           status?: string
           suggested_category: string
+          suggested_category_code?: string | null
           updated_at?: string
           user_id: string
         }
         Update: {
           confidence_score?: number | null
           created_at?: string
+          enrichment_id?: string | null
           household_id?: string
           id?: string
+          interpreter_version?: string | null
           metadata?: Json
           plaid_import_id?: string | null
           quick_entry_id?: string | null
+          rank?: number
           reason?: string | null
           source?: string
           status?: string
           suggested_category?: string
+          suggested_category_code?: string | null
           updated_at?: string
           user_id?: string
         }
@@ -3249,6 +3465,16 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      decide_ath_movil_candidate: {
+        Args: {
+          p_action: string
+          p_candidate_id: string
+          p_household_id: string
+          p_rejection_reason?: string | null
+          p_reviewed_by: string
+        }
+        Returns: Json
+      }
       configure_legacy_paid_obligation: {
         Args: {
           p_category_code: string | null

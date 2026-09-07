@@ -7,6 +7,7 @@ import {
   verifyGoogleOAuthState,
 } from '@/lib/security/oauth-state'
 import { createClient } from '@/lib/supabase/server'
+import { storeHouseholdGoogleRefreshToken } from '@/lib/gmail/token-store'
 
 export async function GET(req: NextRequest) {
   const supabase = await createClient()
@@ -73,10 +74,20 @@ export async function GET(req: NextRequest) {
     }),
   })
 
-  if (!tokenRes.ok) {
+  const tokenPayload = await tokenRes.json() as { refresh_token?: unknown }
+  if (!tokenRes.ok || typeof tokenPayload.refresh_token !== 'string') {
     return NextResponse.json(
       { error: 'Google token exchange failed' },
       { status: 400 }
+    )
+  }
+
+  try {
+    await storeHouseholdGoogleRefreshToken(auth.householdId, tokenPayload.refresh_token)
+  } catch {
+    return NextResponse.json(
+      { error: 'Google authorization could not be saved' },
+      { status: 500 }
     )
   }
 

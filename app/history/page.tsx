@@ -99,6 +99,17 @@ function movementFromTransaction(
     sourceTable: transaction.sourceTable,
     quickEntryId:
       transaction.sourceTable === 'quick_entries' ? transaction.id : null,
+    plaidImportId:
+      (transaction.metadata.plaidImportId as string | null) ||
+      (transaction.sourceTable === 'plaid_imports' ? transaction.id : null),
+    merchantLogoPlaidImportId:
+      transaction.metadata.merchantEntityId &&
+      transaction.metadata.merchantLogoUrl
+        ? ((transaction.metadata.plaidImportId as string | null) ||
+          (transaction.sourceTable === 'plaid_imports'
+            ? transaction.id
+            : null))
+        : null,
     date: transaction.date,
     merchant: context.normalizedMerchant || context.rawMerchant,
     rawMerchant: context.rawMerchant,

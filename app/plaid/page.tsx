@@ -1,6 +1,8 @@
 import { requireUser } from '@/lib/auth/requireUser'
 import type { Metadata } from 'next'
+import Link from 'next/link'
 import AppShell from '../components/AppShell'
+import ContextualEntityTarget from '../components/ContextualEntityTarget'
 import InstitutionLogo from '../components/InstitutionLogo'
 import ConnectPlaidButton from './ConnectPlaidButton'
 import PlaidSyncActions from './PlaidSyncActions'
@@ -19,6 +21,7 @@ export const metadata: Metadata = {
 type PlaidConnection = {
   id: string
   institution_name: string | null
+  institution_id: string | null
   created_at: string | null
   user_id: string | null
   encrypted_access_token: string | null
@@ -98,10 +101,16 @@ function accountTypeLabel(account: PlaidAccount) {
   return account.subtype || account.type || 'Sin tipo'
 }
 
-export default async function PlaidPage() {
+export default async function PlaidPage({
+  searchParams,
+}: {
+  searchParams?: Promise<{ connectionId?: string; from?: string }>
+}) {
+  const params = (await searchParams) || {}
   const { supabase, user } = await requireUser()
   const [
     connectionsResult,
+    connectionVisualsResult,
     accountsResult,
     syncRunResult,
     successfulRunResult,
@@ -113,6 +122,18 @@ export default async function PlaidPage() {
       )
       .eq('user_id', user.id)
       .order('created_at', { ascending: false }),
+    // Visual metadata is optional until the Plaid Logos migration exists.
+    // A missing institution_id column must never hide financial connections.
+    (async () => {
+      try {
+        return await supabase
+          .from('plaid_connections')
+          .select('id, institution_id')
+          .eq('user_id', user.id)
+      } catch {
+        return { data: null }
+      }
+    })(),
     supabase
       .from('plaid_accounts')
       .select(
@@ -126,7 +147,16 @@ export default async function PlaidPage() {
 
   const connections = connectionsResult.data
   const error = connectionsResult.error
-  const safeConnections = (connections || []) as PlaidConnection[]
+  const institutionIdByConnection = new Map(
+    (connectionVisualsResult.data || []).map((connection) => [
+      connection.id,
+      connection.institution_id,
+    ])
+  )
+  const safeConnections = (connections || []).map((connection) => ({
+    ...connection,
+    institution_id: institutionIdByConnection.get(connection.id) || null,
+  })) as PlaidConnection[]
   const safeAccounts = (accountsResult.data || []) as PlaidAccount[]
   const dashboardAccountIds = includedDashboardAccountIds(safeAccounts)
   const accountsByConnection = safeAccounts.reduce((acc, account) => {
@@ -146,6 +176,11 @@ export default async function PlaidPage() {
     (connection) =>
       connection.status === 'archived' || connection.archived_at !== null
   )
+  const requestedConnectionId = params.connectionId || null
+  const targetedConnection = requestedConnectionId
+    ? safeConnections.find((connection) => connection.id === requestedConnectionId) || null
+    : null
+  const invalidTarget = Boolean(requestedConnectionId && !targetedConnection)
   const renderConnectionCard = (
     connection: PlaidConnection,
     archived = false
@@ -188,8 +223,8 @@ export default async function PlaidPage() {
     const needsLiabilitiesConsent = String(
       connection.last_sync_error || ''
     ).includes('ADDITIONAL_CONSENT_REQUIRED:PRODUCT_LIABILITIES')
-    const displayStatus = needsLiabilitiesConsent
-      ? 'Requiere autorización'
+    const displayStatus = needsLiabilitiesConsent && !needsRepair
+      ? 'Autorización adicional'
       : needsRepair
         ? 'Requiere atención'
         : status
@@ -197,9 +232,10 @@ export default async function PlaidPage() {
       ? 'border-amber-700 bg-amber-950/50 text-amber-100'
       : statusClasses
 
+    const targeted = targetedConnection?.id === connection.id
     return (
+      <ContextualEntityTarget active={targeted} entityId={connection.id} key={connection.id} label="Conexión seleccionada desde Pagos">
       <article
-        key={connection.id}
         className={`space-y-4 rounded border p-5 shadow-sm ${
           archived
             ? 'border-neutral-800 bg-neutral-950/60'
@@ -208,7 +244,7 @@ export default async function PlaidPage() {
       >
         <div className="flex items-start justify-between gap-4">
           <div className="flex min-w-0 items-start gap-3">
-            <InstitutionLogo institution={institution} />
+            <InstitutionLogo institution={institution} institutionId={connection.institution_id} />
             <div className="min-w-0">
               <p className="text-xs uppercase tracking-normal text-neutral-500">
                 Institución
@@ -381,6 +417,7 @@ export default async function PlaidPage() {
           />
         )}
       </article>
+      </ContextualEntityTarget>
     )
   }
 
@@ -394,9 +431,19 @@ export default async function PlaidPage() {
           'Conecta bancos y tarjetas para mantener balances y movimientos al día. Mansor One guarda la conexión de forma segura en el servidor.',
       }}
     >
+        {params.from === 'timeline' && (
+          <Link className="inline-flex rounded-lg border border-white/10 px-3 py-2 text-sm font-semibold" href="/timeline">
+            Volver a Pagos
+          </Link>
+        )}
+        {invalidTarget && (
+          <p className="rounded border border-amber-800 bg-amber-950/30 p-3 text-sm text-amber-100">
+            La conexión solicitada no está disponible en este hogar. Mostramos la página normal.
+          </p>
+        )}
         <ConnectPlaidButton />
 
-        <PlaidSyncActions initialRun={syncRunResult.data ? { ...syncRunResult.data, last_successful_at: successfulRunResult.data?.completed_at || null } : null} connectionNeedsAttention={activeConnections.some((connection) => Boolean(connection.last_sync_error) || !connection.encrypted_access_token)} />
+        <PlaidSyncActions initialRun={syncRunResult.data ? { ...syncRunResult.data, last_successful_at: successfulRunResult.data?.completed_at || null } : null} connectionNeedsAttention={activeConnections.some((connection) => plaidConnectionNeedsRepair(connection.status, connection.last_sync_error) || !connection.encrypted_access_token)} />
 
         <section className="space-y-4">
           <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">

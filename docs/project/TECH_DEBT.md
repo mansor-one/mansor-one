@@ -14,10 +14,10 @@ Resolved in Phase 0:
 
 ## P1
 
-- Phase 1 contained the highest-priority client-side legacy Supabase pages:
-  `/accounts`, `/quick-entry`, `/payment-instances`, `/imports`. They remain
-  legacy product surfaces, but no longer query financial tables from Client
-  Components.
+- Phase 1 contained the highest-priority client-side legacy Supabase pages.
+  `/accounts` now redirects to `/portfolio`; `/quick-entry`,
+  `/payment-instances`, and `/imports` remain legacy product surfaces but no
+  longer query financial tables from Client Components.
 - Phase 2 removed the remaining financial browser-client Supabase imports found
   in `/assets` and `/priorities`; remaining page-level debt is server-side.
 - Server-rendered legacy pages still query financial tables directly instead

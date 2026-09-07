@@ -1,10 +1,12 @@
 import { NextResponse } from 'next/server'
 import { createServerSupabase } from '@/lib/supabase/server'
-import { Configuration, PlaidApi, PlaidEnvironments } from 'plaid'
+import { Configuration, CountryCode, PlaidApi, PlaidEnvironments } from 'plaid'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { requireApiUser } from '@/lib/auth/requireApiUser'
 import { requireMutationOrigin } from '@/lib/security/request-origin'
 import { connectionAccessToken } from '@/lib/plaid/connection-token'
+import { getSupabaseAdmin } from '@/lib/supabase/admin'
+import { selectInstitutionMetadata } from '@/lib/plaid/institution-metadata'
 
 const configuration = new Configuration({
   basePath:
@@ -64,7 +66,7 @@ export async function syncPlaidAccountsForUser(
     let connectionQuery = supabase
       .from('plaid_connections')
       .select(
-        'id, user_id, institution_name, access_token, encrypted_access_token, token_iv, token_auth_tag, created_at'
+        'id, user_id, household_id, institution_id, institution_name, access_token, encrypted_access_token, token_iv, token_auth_tag, created_at'
       )
       .eq('user_id', userId)
       .or('encrypted_access_token.not.is.null,access_token.not.is.null')
@@ -104,6 +106,39 @@ export async function syncPlaidAccountsForUser(
       try {
         const accessToken = connectionAccessToken(connection)
         if (!accessToken) throw new Error('Missing Plaid access token')
+
+        // Visual metadata is deliberately best-effort and cannot affect connection health.
+        try {
+          const admin = getSupabaseAdmin()
+          const itemResponse = await plaidClient.itemGet({ access_token: accessToken })
+          const institutionId = itemResponse.data.item.institution_id || null
+          if (institutionId) {
+            await admin.from('plaid_connections').update({ institution_id: institutionId })
+              .eq('id', connection.id).eq('user_id', userId).eq('household_id', connection.household_id)
+            const { data: cachedAsset } = await admin.from('plaid_institution_assets')
+              .select('institution_id').eq('institution_id', institutionId).maybeSingle()
+            if (!cachedAsset) {
+              const institutionResponse = await plaidClient.institutionsGetById({
+                institution_id: institutionId,
+                country_codes: [CountryCode.Us],
+                options: { include_optional_metadata: true },
+              })
+              const asset = selectInstitutionMetadata(institutionResponse.data.institution)
+              if (asset) {
+                await admin.from('plaid_institution_assets').insert({
+                  ...asset,
+                  fetched_at: new Date().toISOString(),
+                  updated_at: new Date().toISOString(),
+                })
+              }
+            }
+          }
+        } catch (visualError) {
+          console.warn('Plaid institution visual metadata unavailable', {
+            connection_id: connection.id,
+            message: visualError instanceof Error ? visualError.message : String(visualError),
+          })
+        }
 
         const response = syncAccounts ? await plaidClient.accountsBalanceGet({ access_token: accessToken }) : null
         const accounts = response?.data.accounts || []

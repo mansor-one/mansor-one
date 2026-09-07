@@ -4,6 +4,12 @@ import { obligationPaymentEditState } from '@/lib/financial-engine/obligation-pa
 import { createServerSupabase } from '@/lib/supabase/server'
 import { NextResponse } from 'next/server'
 
+function legacyScheduledPaymentId(value: unknown) {
+  return String(value || '').match(
+    /\bscheduled_payments\.([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\b/i
+  )?.[1] || null
+}
+
 export async function GET(_request: Request, context: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await context.params
@@ -32,9 +38,16 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
 
     const obligation = obligationResult.data
     const name = obligation?.name || ''
-    const [scheduleResult, cardResult, liabilityResult, priorLinksResult] = await Promise.all([
-      supabase.from('scheduled_payments').select('*').eq('user_id', auth.user.id).ilike('name', name).limit(1).maybeSingle(),
-      supabase.from('credit_cards').select('*').eq('user_id', auth.user.id).ilike('name', name).limit(1).maybeSingle(),
+    const scheduledPaymentId = legacyScheduledPaymentId(obligation?.notes)
+    const scheduleResult = scheduledPaymentId
+      ? await supabase.from('scheduled_payments').select('*').eq('user_id', auth.user.id).eq('id', scheduledPaymentId).maybeSingle()
+      : await supabase.from('scheduled_payments').select('*').eq('user_id', auth.user.id).ilike('name', name).limit(1).maybeSingle()
+    if (scheduleResult.error) throw scheduleResult.error
+    const cardResult = scheduleResult.data?.credit_card_id
+      ? await supabase.from('credit_cards').select('*').eq('user_id', auth.user.id).eq('id', scheduleResult.data.credit_card_id).maybeSingle()
+      : await supabase.from('credit_cards').select('*').eq('user_id', auth.user.id).ilike('name', name).limit(1).maybeSingle()
+    if (cardResult.error) throw cardResult.error
+    const [liabilityResult, priorLinksResult] = await Promise.all([
       supabase.from('liabilities').select('*').ilike('name', name).limit(1).maybeSingle(),
       obligation?.id
         ? supabase.from('obligation_payment_links').select('payment_account_id, confirmed_at, obligation_instances!inner(obligation_id)')
@@ -83,6 +96,12 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
       paymentLinks: links, reconciliationEvents: eventsResult.data || [],
       paymentState,
       paymentAccounts: options, suggestedPaymentAccount: suggestion, missingInformation: missing,
+      entityIds: {
+        creditCardId: cardResult.data?.id || null,
+        plaidAccountId: linkedPlaidAccount?.id || null,
+        connectionId: linkedPlaidAccount?.connection_id || null,
+        liabilityId: liabilityResult.data?.id || null,
+      },
       lineage: {
         amount: instance.source || 'obligation instance',
         dueDate: 'obligation_instances.effective_due_date',

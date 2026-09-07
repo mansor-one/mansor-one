@@ -17,6 +17,7 @@ import { createServerSupabase } from '@/lib/supabase/server'
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import AppShell from '../components/AppShell'
+import ContextualEntityTarget from '../components/ContextualEntityTarget'
 import {
   revokePlaidConnectionAction,
   updateManualAccountAction,
@@ -36,6 +37,10 @@ type PortfolioPageProps = {
     showArchived?: string
     saved?: string
     error?: string
+    accountId?: string
+    accountSource?: 'manual' | 'plaid'
+    action?: string
+    from?: string
   }>
 }
 
@@ -112,9 +117,13 @@ function historicalConnectionLabel(account: PortfolioPlaidAccount) {
 function ManualAccountCard({
   account,
   allAccounts,
+  targeted = false,
+  editRequested = false,
 }: {
   account: ManualAccount
   allAccounts: ManualAccount[]
+  targeted?: boolean
+  editRequested?: boolean
 }) {
   const status = accountStatus(account)
   const replacementOptions = allAccounts.filter(
@@ -122,6 +131,7 @@ function ManualAccountCard({
   )
 
   return (
+    <ContextualEntityTarget active={targeted} entityId={account.id || 'unknown'} focusEditor={editRequested} label={editRequested ? 'Editando la cuenta seleccionada desde Pagos' : 'Cuenta seleccionada desde Pagos'}>
     <form
       action={updateManualAccountAction}
       className="space-y-3 rounded border border-neutral-800 bg-neutral-900 p-4"
@@ -239,15 +249,19 @@ function ManualAccountCard({
         Save account
       </button>
     </form>
+    </ContextualEntityTarget>
   )
 }
 
 function HistoricalPlaidAccountCard({
   account,
+  targeted = false,
 }: {
   account: PortfolioPlaidAccount
+  targeted?: boolean
 }) {
   return (
+    <ContextualEntityTarget active={targeted} entityId={account.id || 'unknown'}>
     <div className="space-y-3 rounded border border-neutral-800 bg-neutral-900 p-4">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
         <div>
@@ -289,13 +303,15 @@ function HistoricalPlaidAccountCard({
         <span>Last account sync: {account.updated_at || 'Unknown'}</span>
       </div>
     </div>
+    </ContextualEntityTarget>
   )
 }
 
-function PlaidAccountCard({ account }: { account: ConnectedAccount }) {
+function PlaidAccountCard({ account, targeted = false, editRequested = false }: { account: ConnectedAccount; targeted?: boolean; editRequested?: boolean }) {
   const status = accountStatus(account)
 
   return (
+    <ContextualEntityTarget active={targeted} entityId={account.id || 'unknown'} focusEditor={editRequested} label={editRequested ? 'Editando la cuenta seleccionada desde Pagos' : 'Cuenta seleccionada desde Pagos'}>
     <form
       action={updatePlaidAccountAction}
       className="space-y-3 rounded border border-neutral-800 bg-neutral-900 p-4"
@@ -409,6 +425,7 @@ function PlaidAccountCard({ account }: { account: ConnectedAccount }) {
         Save Plaid account
       </button>
     </form>
+    </ContextualEntityTarget>
   )
 }
 
@@ -657,9 +674,9 @@ function CardLiabilityRow({ card }: { card: CardProfile }) {
     <div className="rounded border border-red-950 bg-neutral-900 p-3">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <p className="font-medium">💳 {card.displayName}</p>
+          <p className="font-medium">💳 {card.cardDisplayName}</p>
           <p className="text-sm text-neutral-400">
-            {card.institution || 'Unknown institution'} · {card.source}
+            {card.issuerName || 'Unknown institution'} · {card.source}
           </p>
         </div>
         <div className="text-left sm:text-right">
@@ -682,8 +699,8 @@ export default async function PortfolioPage({
   searchParams,
 }: PortfolioPageProps) {
   const params = (await searchParams) || {}
-  const showHidden = params.showHidden === '1'
-  const showArchived = params.showArchived === '1'
+  const requestedShowHidden = params.showHidden === '1'
+  const requestedShowArchived = params.showArchived === '1'
   const saved =
     params.saved === 'manual-account' ||
     params.saved === 'plaid-account' ||
@@ -701,6 +718,21 @@ export default async function PortfolioPage({
     getPortfolioManagementData(supabase, user.id),
     getCardsSummary(supabase, user.id),
   ])
+  const requestedAccountId = params.accountId || null
+  const targetedManualAccount = requestedAccountId && params.accountSource !== 'plaid'
+    ? management.manualAccounts.find((account) => account.id === requestedAccountId) || null
+    : null
+  const targetedPlaidAccount = requestedAccountId && params.accountSource !== 'manual'
+    ? management.plaidAccounts.find((account) => account.id === requestedAccountId) || null
+    : null
+  const targetedAccount = targetedManualAccount || targetedPlaidAccount
+  const invalidTarget = Boolean(requestedAccountId && !targetedAccount)
+  const showHidden = requestedShowHidden || Boolean(
+    targetedAccount && accountStatus(targetedAccount) === 'hidden'
+  )
+  const showArchived = requestedShowArchived || Boolean(
+    targetedAccount && accountStatus(targetedAccount) === 'archived'
+  )
   const authoritativeCardBalance = cards.activeCards.reduce((sum, card) => sum + Number(card.currentBalance || 0), 0)
   const authoritativeNetWorth = portfolio.totalAssetBalance - authoritativeCardBalance
   const authoritativeCreditLimit = cards.activeCards.reduce((sum, card) => sum + Number(card.creditLimit || 0), 0)
@@ -717,6 +749,17 @@ export default async function PortfolioPage({
           'Cuentas, efectivo, deudas y valor neto. Los cambios manuales preservan el historial.',
       }}
     >
+
+        {params.from === 'timeline' && (
+          <Link className="inline-flex rounded-lg border border-white/10 px-3 py-2 text-sm font-semibold" href="/timeline">
+            Volver a Pagos
+          </Link>
+        )}
+        {invalidTarget && (
+          <p className="rounded border border-amber-800 bg-amber-950/30 p-3 text-sm text-amber-100">
+            La cuenta solicitada no está disponible en este hogar. Mostramos la página normal.
+          </p>
+        )}
 
         <section
           className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4"
@@ -812,6 +855,8 @@ export default async function PortfolioPage({
                 key={account.id}
                 account={account}
                 allAccounts={management.manualAccounts}
+                editRequested={params.action === 'edit'}
+                targeted={targetedManualAccount?.id === account.id}
               />
             ))}
           </div>
@@ -831,6 +876,8 @@ export default async function PortfolioPage({
                   key={account.id}
                   account={account}
                   allAccounts={management.manualAccounts}
+                  editRequested={params.action === 'edit'}
+                  targeted={targetedManualAccount?.id === account.id}
                 />
               ))}
             </div>
@@ -846,6 +893,8 @@ export default async function PortfolioPage({
                   key={account.id}
                   account={account}
                   allAccounts={management.manualAccounts}
+                  editRequested={params.action === 'edit'}
+                  targeted={targetedManualAccount?.id === account.id}
                 />
               ))}
             </div>
@@ -862,7 +911,7 @@ export default async function PortfolioPage({
           </div>
           <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
             {management.activePlaidAccounts.map((account) => (
-              <PlaidAccountCard key={account.id} account={account} />
+              <PlaidAccountCard key={account.id} account={account} editRequested={params.action === 'edit'} targeted={targetedPlaidAccount?.id === account.id} />
             ))}
           </div>
           {management.activePlaidAccounts.length === 0 && (
@@ -889,6 +938,7 @@ export default async function PortfolioPage({
                 <HistoricalPlaidAccountCard
                   key={account.id}
                   account={account}
+                  targeted={targetedPlaidAccount?.id === account.id}
                 />
               ))}
             </div>
@@ -900,7 +950,7 @@ export default async function PortfolioPage({
             <h2 className="text-2xl font-bold">Hidden Plaid Accounts</h2>
             <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
               {management.hiddenPlaidAccounts.map((account) => (
-                <PlaidAccountCard key={account.id} account={account} />
+                <PlaidAccountCard key={account.id} account={account} editRequested={params.action === 'edit'} targeted={targetedPlaidAccount?.id === account.id} />
               ))}
             </div>
           </section>
@@ -911,7 +961,7 @@ export default async function PortfolioPage({
             <h2 className="text-2xl font-bold">Archived Plaid Accounts</h2>
             <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
               {management.archivedPlaidAccounts.map((account) => (
-                <PlaidAccountCard key={account.id} account={account} />
+                <PlaidAccountCard key={account.id} account={account} editRequested={params.action === 'edit'} targeted={targetedPlaidAccount?.id === account.id} />
               ))}
             </div>
           </section>

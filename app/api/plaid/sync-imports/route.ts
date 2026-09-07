@@ -8,6 +8,7 @@ import { Configuration, PlaidApi, PlaidEnvironments } from 'plaid'
 import { lifecycleActionsForSync } from '@/lib/financial-engine/plaid-transaction-lifecycle'
 import { reconcileOpenObligationsAfterPlaidSync } from '@/lib/financial-engine/obligation-reconciliation-engine'
 import { connectionAccessToken } from '@/lib/plaid/connection-token'
+import { emptyMerchantVisualMetadata, selectMerchantVisualMetadata } from '@/lib/plaid/visual-metadata'
 
 const configuration = new Configuration({
   basePath:
@@ -382,6 +383,7 @@ export async function syncPlaidImportsForUser(
           transaction.personal_finance_category?.primary || null
 
         const account = accountsByPlaidId.get(transaction.account_id)
+        const visualMetadata = selectMerchantVisualMetadata(transaction)
 
         return {
           user_id: connection.user_id,
@@ -410,6 +412,7 @@ export async function syncPlaidImportsForUser(
           amount: transaction.amount,
           plaid_category: plaidPrimary,
           suggested_category: categorizeTransaction(merchant, plaidPrimary),
+          ...(visualMetadata || emptyMerchantVisualMetadata()),
           imported: existingImport?.imported === true,
           pending: transaction.pending === true,
           pending_transaction_id: transaction.pending_transaction_id || null,

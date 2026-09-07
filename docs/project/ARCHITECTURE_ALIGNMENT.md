@@ -24,10 +24,10 @@ Financial Engine -> Atlas -> MCP -> Automations
 - `app/api/robototina/answer/route.ts` is the official Q&A API.
 - Legacy Pablo API is retired with `410 Gone`.
 - Product Shell keeps React presentation-focused for the migrated pages.
-- Phase 1 contained `/accounts`, `/quick-entry`, `/payment-instances`, and
-  `/imports`: their Client Components no longer import Supabase or issue table
-  queries directly. Legacy reads now pass through server pages/actions and
-  `lib/financial-engine/legacy-surface-containment.ts`.
+- `/accounts` is retired as a product surface and redirects authenticated users
+  to the canonical `/portfolio` experience. `/quick-entry`,
+  `/payment-instances`, and `/imports` remain contained behind server
+  pages/actions and `lib/financial-engine/legacy-surface-containment.ts`.
 
 ## What is partially aligned
 
@@ -54,9 +54,8 @@ Financial Engine -> Atlas -> MCP -> Automations
 
 Contained legacy surfaces:
 
-- `/accounts`, `/quick-entry`, `/imports`, and `/payment-instances` still have
-  legacy product behavior/copy, but no longer query Supabase from Client
-  Components.
+- `/quick-entry`, `/imports`, and `/payment-instances` still have legacy product
+  behavior/copy, but no longer query Supabase from Client Components.
 
 ## Phase 0 alignment fixes
 

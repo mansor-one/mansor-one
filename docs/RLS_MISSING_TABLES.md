@@ -35,7 +35,7 @@ The local application started successfully. Unauthenticated checks returned:
 | `/login` | HTTP 200 |
 | `/`, `/accounts`, `/spending`, `/plaid`, `/ath-movil`, `/priorities`, `/goals`, `/timeline` | HTTP 307 to `/login?next=...` |
 
-This verifies the login boundary and route availability but not authenticated data loading. An authenticated browser session is required to test Dashboard, Accounts, Spending/transactions, Plaid sync, ATH Móvil, Priorities, Goals and Obligations. Capture the exact browser console, network response, and server log if any page fails.
+This verifies the login boundary and route availability but not authenticated data loading. For an authenticated session, `/accounts` now redirects to `/portfolio`; Dashboard, Portfolio, Spending/transactions, Plaid sync, ATH Móvil, Priorities, Goals and Obligations still require browser validation. Capture the exact browser console, network response, and server log if any page fails.
 
 ## Password protection
 

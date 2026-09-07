@@ -6,6 +6,7 @@ export type ObligationConfigurationIssueCode =
   | 'payment_account'
   | 'due_day_conflict'
   | 'instances'
+  | 'anchor_date'
 
 export type ObligationConfigurationIssue = {
   code: ObligationConfigurationIssueCode
@@ -22,6 +23,7 @@ export type ObligationConfigurationItem = {
   owner: string | null
   recurrence: string | null
   recurrenceInterval: number | null
+  anchorDate: string | null
   paymentMethod: string | null
   householdId: string
   issues: ObligationConfigurationIssue[]
@@ -56,6 +58,7 @@ type ScheduledPaymentRow = {
   recurrence_interval?: number | null
   is_active?: boolean | null
   notes?: string | null
+  custom_schedule_notes?: string | null
 }
 
 type PlanningItemRow = {
@@ -70,6 +73,7 @@ type PlanningItemRow = {
 type ObligationInstanceRow = {
   obligation_id: string
   status?: string | null
+  expected_date?: string | null
 }
 
 const OWNER_VALUES = new Set(['manuel', 'soraya', 'household'])
@@ -81,6 +85,7 @@ const RECURRENCE_VALUES = new Set([
   'yearly',
   'one_time',
   'custom',
+  'biweekly',
 ])
 
 function text(value: unknown) {
@@ -119,17 +124,23 @@ function issue(
 
 function canonicalItem(
   row: CanonicalObligationRow,
+  obligationInstances: ObligationInstanceRow[],
   extraIssues: ObligationConfigurationIssue[] = []
 ): ObligationConfigurationItem {
   const amount = positiveAmount(row.default_amount ?? row.amount)
   const dueDay = validDay(row.due_day)
   const owner = validOwner(row.owner)
   const recurrence = validRecurrence(row.frequency || row.recurrence, 1)
+  const anchorDate = obligationInstances
+    .filter((instance) => instance.obligation_id === row.id && instance.expected_date)
+    .map((instance) => instance.expected_date!.slice(0, 10))
+    .sort()[0] || row.due_date?.slice(0, 10) || null
   const paymentMethod = text(row.payment_method)
   const issues: ObligationConfigurationIssue[] = [...extraIssues]
 
   if (!amount) issues.push(issue('amount', 'Monto esperado', 'Falta un importe positivo para proyectar la obligación.'))
-  if (!dueDay && recurrence !== 'one_time') issues.push(issue('due_day', 'Día de vencimiento', 'Sin un día de vencimiento no se puede ubicar el próximo ciclo.'))
+  if (!dueDay && recurrence !== 'one_time' && recurrence !== 'biweekly') issues.push(issue('due_day', 'Día de vencimiento', 'Sin un día de vencimiento no se puede ubicar el próximo ciclo.'))
+  if (recurrence === 'biweekly' && !anchorDate) issues.push(issue('anchor_date', 'Fecha ancla', 'La recurrencia cada 14 días requiere una fecha contractual completa.'))
   if (!owner) issues.push(issue('owner', 'Responsable', 'Selecciona Manuel, Soraya o el hogar.'))
   if (!recurrence) issues.push(issue('recurrence', 'Recurrencia', 'La frecuencia no permite calcular el siguiente ciclo.'))
   if (!paymentMethod) issues.push(issue('payment_account', 'Cuenta habitual', 'Indica la cuenta o método que normalmente paga esta obligación.'))
@@ -143,6 +154,7 @@ function canonicalItem(
     owner,
     recurrence,
     recurrenceInterval: 1,
+    anchorDate,
     paymentMethod,
     householdId: row.household_id,
     issues,
@@ -158,10 +170,12 @@ function scheduledItem(row: ScheduledPaymentRow): ObligationConfigurationItem {
   const dueDay = validDay(row.due_day)
   const owner = validOwner(row.owner)
   const recurrence = validRecurrence(row.recurrence_type, row.recurrence_interval)
+  const anchorDate = String(row.custom_schedule_notes || '').match(/anchor_date:(\d{4}-\d{2}-\d{2})/i)?.[1] || null
   const issues: ObligationConfigurationIssue[] = []
 
   if (!amount) issues.push(issue('amount', 'Monto esperado', 'Falta un importe positivo para proyectar este calendario legacy.'))
-  if (!dueDay && recurrence !== 'one_time') issues.push(issue('due_day', 'Día de vencimiento', 'Sin un día de vencimiento no se generan ocurrencias.'))
+  if (!dueDay && recurrence !== 'one_time' && recurrence !== 'biweekly') issues.push(issue('due_day', 'Día de vencimiento', 'Sin un día de vencimiento no se generan ocurrencias.'))
+  if (recurrence === 'biweekly' && !anchorDate) issues.push(issue('anchor_date', 'Fecha ancla', 'La recurrencia cada 14 días requiere una fecha contractual completa.'))
   if (!owner) issues.push(issue('owner', 'Responsable', 'Selecciona Manuel, Soraya o el hogar.'))
   if (!recurrence) issues.push(issue('recurrence', 'Recurrencia', 'La recurrencia legacy está ausente o no es suficiente.'))
 
@@ -174,6 +188,7 @@ function scheduledItem(row: ScheduledPaymentRow): ObligationConfigurationItem {
     owner,
     recurrence,
     recurrenceInterval: Number(row.recurrence_interval || 1),
+    anchorDate,
     paymentMethod: null,
     householdId: row.household_id,
     issues,
@@ -229,7 +244,9 @@ function canonicalParityIssues({
     ? Number(planning.due_date.slice(8, 10))
     : null
   const legacyDueDay = legacy?.due_day ?? null
+  const recurrence = validRecurrence(row.frequency || row.recurrence, 1)
   const hasConflict = Boolean(
+    recurrence !== 'biweekly' &&
     !hasConfirmedContractualDay(row) &&
     ((legacy && (!legacyDueDay || legacyDueDay !== row.due_day)) ||
       (planningDueDay && planningDueDay !== row.due_day))
@@ -270,7 +287,7 @@ export function buildObligationConfigurationReport({
 }) {
   const canonical = obligations
     .filter((row) => row.is_active !== false)
-    .map((row) => canonicalItem(row, canonicalParityIssues({
+    .map((row) => canonicalItem(row, obligationInstances, canonicalParityIssues({
       row,
       scheduledPayments,
       planningItems,

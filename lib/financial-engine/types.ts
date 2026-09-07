@@ -196,8 +196,9 @@ export type CardProfileSource = 'manual' | 'plaid' | 'merged'
 
 export type CardProfile = {
   id: string
-  displayName: string
-  institution: string | null
+  cardDisplayName: string
+  issuerName: string | null
+  issuerInstitutionId?: string | null
   owner: string | null
   ownerId: string | null
   source: CardProfileSource
@@ -334,6 +335,7 @@ export type ScheduledPayment = {
   created_at?: string | null
   start_date?: string | null
   end_date?: string | null
+  custom_schedule_notes?: string | null
 }
 
 export type IncomeSchedule = {

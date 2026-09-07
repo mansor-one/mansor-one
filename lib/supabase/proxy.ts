@@ -7,7 +7,7 @@ import {
 import { getSafeRedirectPath } from '@/lib/auth/redirects'
 import { getSupabasePublishableKey, getSupabaseUrl } from './config'
 
-const PUBLIC_ROUTES = new Set(['/login'])
+const PUBLIC_ROUTES = new Set(['/login', '/manifest.webmanifest'])
 
 function isPublicRoute(pathname: string) {
   return PUBLIC_ROUTES.has(pathname)

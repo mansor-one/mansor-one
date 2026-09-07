@@ -8,6 +8,9 @@ export type RecurringCycleSource = {
   created_at?: string | null
   start_date?: string | null
   end_date?: string | null
+  anchor_date?: string | null
+  due_date?: string | null
+  custom_schedule_notes?: string | null
 }
 
 export const DEFAULT_HOUSEHOLD_TIME_ZONE = 'America/Puerto_Rico'
@@ -17,6 +20,23 @@ export type RecurringCycle = {
   year: number
   month: number
   dueDate: string
+}
+
+export function recurrenceAnchorDate(source: RecurringCycleSource) {
+  const markedAnchor = String(source.custom_schedule_notes || '').match(
+    /(?:^|\|)\s*anchor_date:(\d{4}-\d{2}-\d{2})(?:\s*\||$)/i
+  )?.[1]
+  const candidate = source.anchor_date || source.start_date || source.due_date || markedAnchor || null
+  return candidate && isoParts(candidate) ? candidate.slice(0, 10) : null
+}
+
+export function withRecurrenceAnchorMarker(notes: string | null | undefined, anchorDate: string) {
+  if (!isoParts(anchorDate)) throw new Error(`Invalid recurrence anchor date: ${anchorDate}`)
+  const withoutPrevious = String(notes || '')
+    .split('|')
+    .map((part) => part.trim())
+    .filter((part) => part && !/^anchor_date:/i.test(part))
+  return [...withoutPrevious, `anchor_date:${anchorDate.slice(0, 10)}`].join(' | ')
 }
 
 function isoParts(value: string) {
@@ -101,13 +121,37 @@ export function enumerateRecurringCycles({
   source: RecurringCycleSource
   startDate: string
   horizonEnd: string
-  existingCycles?: Array<{ year: number; month: number }>
+  existingCycles?: Array<{ year?: number; month?: number; dueDate?: string | null; expected_date?: string | null }>
 }): RecurringCycle[] {
-  if (source.is_active === false || !source.due_day) return []
+  if (source.is_active === false) return []
   const start = isoParts(startDate)
   const end = isoParts(horizonEnd)
   if (!start || !end || startDate > horizonEnd) return []
 
+  const recurrenceType = String(source.recurrence_type || '').toLowerCase()
+  const anchorDate = recurrenceAnchorDate(source)
+  const existingDateKeys = new Set(existingCycles
+    .map((cycle) => cycle.dueDate || cycle.expected_date)
+    .filter((value): value is string => Boolean(value))
+    .map((value) => value.slice(0, 10)))
+
+  if (recurrenceType === 'biweekly') {
+    if (!anchorDate) return []
+    const sourceEnd = source.end_date?.slice(0, 10) || null
+    let dueDate = anchorDate
+    while (dueDate < startDate) dueDate = addCalendarDays(dueDate, 14)
+    const cycles: RecurringCycle[] = []
+    while (dueDate <= horizonEnd && (!sourceEnd || dueDate <= sourceEnd)) {
+      if (!existingDateKeys.has(dueDate)) {
+        const parts = isoParts(dueDate)!
+        cycles.push({ scheduleId: source.id, year: parts.year, month: parts.month, dueDate })
+      }
+      dueDate = addCalendarDays(dueDate, 14)
+    }
+    return cycles
+  }
+
+  if (!source.due_day) return []
   const cadence = cadenceMonths(source)
   const allowedMonths = activeMonths(source)
   if (!cadence && !allowedMonths) return []
@@ -132,7 +176,7 @@ export function enumerateRecurringCycles({
     if (dueDate < startDate || dueDate > horizonEnd) continue
     if (dueDate < sourceStart) continue
     if (sourceEnd && dueDate > sourceEnd) continue
-    if (existingCycleKeys.has(`${year}-${month}`)) continue
+    if (existingDateKeys.has(dueDate) || existingCycleKeys.has(`${year}-${month}`)) continue
     cycles.push({ scheduleId: source.id, year, month, dueDate })
   }
 

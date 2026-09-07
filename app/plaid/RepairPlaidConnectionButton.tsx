@@ -132,13 +132,23 @@ export default function RepairPlaidConnectionButton({
 
   return (
     <div className="space-y-3 rounded border border-amber-800 bg-amber-950/30 p-4">
+      <h4 className="font-semibold text-amber-50">
+        {requestLiabilitiesConsent
+          ? 'Autorización adicional requerida'
+          : 'Conexión requiere atención'}
+      </h4>
       <p className="text-sm text-amber-100">
         {syncPending
           ? 'La conexión ya fue reparada. Falta completar la actualización de cuentas y movimientos.'
           : requestLiabilitiesConsent
-            ? 'Plaid necesita tu autorización para consultar tarjetas y préstamos. Tus cuentas y movimientos continuarán conectados.'
+            ? 'Tus cuentas y movimientos siguen conectados correctamente. Plaid necesita tu permiso adicional para consultar información de tarjetas y préstamos.'
           : plaidRepairMessage(institution)}
       </p>
+      {requestLiabilitiesConsent && (
+        <p className="text-sm font-medium text-emerald-200">
+          ✓ Conexión bancaria activa
+        </p>
+      )}
       <button
         className="rounded border border-amber-600 bg-amber-950 px-4 py-2 text-sm font-semibold text-amber-50 transition hover:border-amber-400 disabled:cursor-not-allowed disabled:opacity-50"
         disabled={loading || launchWhenReady}
@@ -150,7 +160,7 @@ export default function RepairPlaidConnectionButton({
           : syncPending
             ? 'Reintentar sincronización'
             : requestLiabilitiesConsent
-              ? 'Actualizar autorización'
+              ? 'Autorizar tarjetas y préstamos'
               : 'Reparar conexión'}
       </button>
       {message && (

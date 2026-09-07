@@ -2,9 +2,13 @@ import { NextResponse } from 'next/server'
 import { requireApiUser } from '@/lib/auth/requireApiUser'
 import { requireMutationOrigin } from '@/lib/security/request-origin'
 import { createServerSupabase } from '@/lib/supabase/server'
+import {
+  recurrenceAnchorDate,
+  withRecurrenceAnchorMarker,
+} from '@/lib/financial-engine/recurring-cycle-enumerator'
 
 const OWNERS = new Set(['Manuel', 'Soraya', 'household'])
-const RECURRENCES = new Set(['monthly', 'quarterly', 'every_3_months', 'annual', 'one_time', 'custom'])
+const RECURRENCES = new Set(['monthly', 'biweekly', 'quarterly', 'every_3_months', 'annual', 'one_time', 'custom'])
 
 function text(value: unknown) {
   return typeof value === 'string' && value.trim() ? value.trim() : null
@@ -39,6 +43,7 @@ export async function PATCH(request: Request) {
     const owner = text(body.owner)
     const recurrence = text(body.recurrence)?.toLowerCase() || null
     const configuredAmount = amount(body.amount)
+    const anchorDate = text(body.anchorDate)
     const dueDay = recurrence === 'one_time' ? day(body.dueDay) : day(body.dueDay)
 
     if (!id || !['obligation', 'scheduled_payment'].includes(source || '')) {
@@ -47,8 +52,11 @@ export async function PATCH(request: Request) {
     if (!owner || !OWNERS.has(owner) || !recurrence || !RECURRENCES.has(recurrence)) {
       return NextResponse.json({ error: 'Responsable o recurrencia inválidos.' }, { status: 400 })
     }
-    if (!configuredAmount || (recurrence !== 'one_time' && !dueDay)) {
+    if (!configuredAmount || (recurrence !== 'one_time' && recurrence !== 'biweekly' && !dueDay)) {
       return NextResponse.json({ error: 'Completa el monto y el día de vencimiento.' }, { status: 400 })
+    }
+    if (recurrence === 'biweekly' && !recurrenceAnchorDate({ id, anchor_date: anchorDate })) {
+      return NextResponse.json({ error: 'Indica una fecha ancla válida para la recurrencia cada 14 días.' }, { status: 400 })
     }
 
     const { data: membership, error: membershipError } = await supabase
@@ -91,6 +99,7 @@ export async function PATCH(request: Request) {
           person: owner,
           frequency: recurrence,
           recurrence,
+          due_date: recurrence === 'biweekly' ? anchorDate : undefined,
           payment_method: paymentMethod,
           notes,
           updated_at: new Date().toISOString(),
@@ -102,6 +111,14 @@ export async function PATCH(request: Request) {
       if (error) throw error
       if (!data) return NextResponse.json({ error: 'Obligación no encontrada.' }, { status: 404 })
     } else {
+      const { data: existingSchedule, error: existingScheduleError } = await supabase
+        .from('scheduled_payments')
+        .select('custom_schedule_notes')
+        .eq('id', id)
+        .eq('household_id', membership.household_id)
+        .maybeSingle()
+      if (existingScheduleError) throw existingScheduleError
+      if (!existingSchedule) return NextResponse.json({ error: 'Calendario no encontrado.' }, { status: 404 })
       const { data, error } = await supabase
         .from('scheduled_payments')
         .update({
@@ -110,6 +127,9 @@ export async function PATCH(request: Request) {
           owner,
           recurrence_type: recurrence,
           recurrence_interval: interval(body.recurrenceInterval),
+          custom_schedule_notes: recurrence === 'biweekly'
+            ? withRecurrenceAnchorMarker(existingSchedule.custom_schedule_notes, anchorDate!)
+            : existingSchedule.custom_schedule_notes,
         })
         .eq('id', id)
         .eq('household_id', membership.household_id)

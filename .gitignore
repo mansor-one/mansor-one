@@ -40,3 +40,8 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 mansor-one/
+
+# Device restore artifacts (keep dependency lockfiles trackable)
+*.ipsw
+*.ipsw.lock
+restore_*.log

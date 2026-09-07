@@ -61,11 +61,44 @@ test('liabilities consent uses Update Mode on the existing Item', () => {
   assert.match(route, /additional_consented_products:\s*\[Products\.Liabilities\]/)
   assert.match(route, /access_token:\s*accessToken/)
   assert.doesNotMatch(route, /itemPublicTokenExchange|public_token/)
-  assert.match(button, /'Actualizar autorización'/)
+  assert.match(button, /'Autorización adicional requerida'/)
+  assert.match(button, /Tus cuentas y movimientos siguen conectados correctamente\./)
+  assert.match(button, /Plaid necesita tu permiso adicional para consultar información de tarjetas y préstamos\./)
+  assert.match(button, /'Autorizar tarjetas y préstamos'/)
+  assert.match(button, /✓ Conexión bancaria activa/)
   assert.match(button, /requestLiabilitiesConsent/)
   assert.match(completion, /completionSource === 'liabilities_consent'/)
   assert.match(completion, /liabilities:\s*completionSource === 'liabilities_consent'/)
   assert.match(page, /!archived && needsLiabilitiesConsent/)
+})
+
+test('Plaid connection UX distinguishes healthy, additional consent, and repair states', () => {
+  const page = source('app/plaid/page.tsx')
+  const button = source('app/plaid/RepairPlaidConnectionButton.tsx')
+
+  assert.match(page, /needsLiabilitiesConsent && !needsRepair/)
+  assert.match(page, /\? 'Autorización adicional'/)
+  assert.match(page, /:\s*needsRepair\s*\? 'Requiere atención'\s*:\s*status/)
+  assert.match(button, /'Conexión requiere atención'/)
+  assert.match(button, /requestLiabilitiesConsent[\s\S]*?'Autorizar tarjetas y préstamos'[\s\S]*?: 'Reparar conexión'/)
+  assert.doesNotMatch(
+    page.match(/connectionNeedsAttention=\{([\s\S]*?)\}\s*\/>/)?.[1] || '',
+    /Boolean\(connection\.last_sync_error\)/
+  )
+})
+
+test('successful liabilities authorization clears the warning and enables the next liabilities sync', () => {
+  const completion = source('app/api/plaid/complete-update/route.ts')
+  const page = source('app/plaid/page.tsx')
+  const successBranch = completion.slice(
+    completion.indexOf("const completedAt = new Date().toISOString()"),
+    completion.indexOf("return completionResponse(\n      'repair_and_sync_completed'")
+  )
+
+  assert.match(completion, /liabilities:\s*completionSource === 'liabilities_consent'/)
+  assert.match(successBranch, /last_sync_error:\s*null/)
+  assert.match(page, /connection\.last_sync_error \|\| ''/)
+  assert.match(page, /ADDITIONAL_CONSENT_REQUIRED:PRODUCT_LIABILITIES/)
 })
 
 test('connection repair authorization is household-scoped and denies outsiders', () => {

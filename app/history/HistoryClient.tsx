@@ -3,11 +3,15 @@
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useMemo, useState, useTransition } from 'react'
+import AthEvidencePanel from './AthEvidencePanel'
+import MerchantLogo from '../components/MerchantLogo'
 
 export type HistoryMovement = {
   id: string
   sourceTable: string
   quickEntryId: string | null
+  plaidImportId: string | null
+  merchantLogoPlaidImportId: string | null
   date: string
   merchant: string
   rawMerchant: string
@@ -33,6 +37,8 @@ type HistoryClientProps = {
   movements: HistoryMovement[]
   resolvedDuplicateMovements: HistoryMovement[]
 }
+
+const HISTORY_PAGE_SIZE = 50
 
 const monthNames = [
   'Enero',
@@ -176,6 +182,25 @@ export default function HistoryClient({
   const [selectedCategory, setSelectedCategory] = useState('')
   const [savingId, setSavingId] = useState<string | null>(null)
   const [saveState, setSaveState] = useState<SaveState>(null)
+  const [athDetail, setAthDetail] = useState<{ movement: HistoryMovement; evidence: Array<Record<string, unknown>> } | null>(null)
+  const [athLoadingId, setAthLoadingId] = useState<string | null>(null)
+  const [page, setPage] = useState(1)
+
+  async function openAthDetail(movement: HistoryMovement) {
+    if (!movement.quickEntryId) return
+    setAthLoadingId(movement.id)
+    try {
+      const response = await fetch(`/api/transactions/ath-evidence?quickEntryId=${encodeURIComponent(movement.quickEntryId)}`)
+      const result = await response.json()
+      if (!response.ok) {
+        setSaveState({ id: movement.id, tone: 'error', message: result.error || 'No se pudo cargar el contexto ATH.' })
+        return
+      }
+      setAthDetail({ movement, evidence: Array.isArray(result.evidence) ? result.evidence : [] })
+    } finally {
+      setAthLoadingId(null)
+    }
+  }
 
   const categories = useMemo(
     () => uniqueSorted(movements.map((movement) => movement.category)),
@@ -265,10 +290,17 @@ export default function HistoryClient({
     (sum, movement) => sum + movement.amount,
     0
   )
+  const pageCount = Math.max(1, Math.ceil(filteredMovements.length / HISTORY_PAGE_SIZE))
+  const currentPage = Math.min(page, pageCount)
+  const pagedMovements = filteredMovements.slice(
+    (currentPage - 1) * HISTORY_PAGE_SIZE,
+    currentPage * HISTORY_PAGE_SIZE
+  )
 
   function applyPeriod(period: { month: string; year: string }) {
     setMonth(period.month)
     setYear(period.year)
+    setPage(1)
   }
 
   function clearFilters() {
@@ -280,6 +312,7 @@ export default function HistoryClient({
     setYear('all')
     setMinAmount('')
     setMaxAmount('')
+    setPage(1)
   }
 
   function startEditing(movement: HistoryMovement) {
@@ -393,7 +426,7 @@ export default function HistoryClient({
               </div>
               <Link
                 className="inline-flex w-full shrink-0 items-center justify-center rounded-lg border border-amber-300/50 bg-amber-300/10 px-4 py-2 text-sm font-semibold text-amber-100 transition hover:border-amber-200 hover:bg-amber-300/20 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-300 md:w-auto"
-                href="/dev/confirmed-ledger-duplicates"
+                href="/robototina/review?tab=duplicates#queue"
               >
                 Revisar resoluciones
               </Link>
@@ -410,7 +443,7 @@ export default function HistoryClient({
                 key={movement.id}
               >
                 <div><span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500 md:hidden">Fecha</span><span className="text-slate-300">{displayDate(movement.date)}</span></div>
-                <div className="min-w-0"><span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500 md:hidden">Comercio / Persona</span><span className="break-words font-semibold text-white">{movement.merchant}</span></div>
+                <div className="flex min-w-0 items-center gap-2"><MerchantLogo merchant={movement.merchant} plaidImportId={movement.merchantLogoPlaidImportId} size="sm" /><span><span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500 md:hidden">Comercio / Persona</span><span className="break-words font-semibold text-white">{movement.merchant}</span></span></div>
                 <div><span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500 md:hidden">Monto</span><strong className="text-slate-100">{money(movement.amount)}</strong></div>
                 <div><span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500 md:hidden">Categoría</span><span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${categoryPillClasses(movement.categoryKind)}`}>{movement.category}</span></div>
                 <div className="min-w-0"><span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500 md:hidden">Cuenta / Tarjeta</span><span className="inline-flex max-w-full break-words rounded-md border border-sky-400/25 bg-sky-400/10 px-2.5 py-1 text-xs font-medium text-sky-100">{movement.bankAccount}</span></div>
@@ -442,14 +475,14 @@ export default function HistoryClient({
               </button>
               <button
                 className="rounded border px-3 py-2 text-sm"
-                onClick={() => setPaymentMethod('Crédito')}
+                onClick={() => { setPaymentMethod('Crédito'); setPage(1) }}
                 type="button"
               >
                 Crédito
               </button>
               <button
                 className="rounded border px-3 py-2 text-sm"
-                onClick={() => setPaymentMethod('Débito')}
+                onClick={() => { setPaymentMethod('Débito'); setPage(1) }}
                 type="button"
               >
                 Débito
@@ -465,7 +498,7 @@ export default function HistoryClient({
               <span className="text-sm font-medium">Comercio o persona</span>
               <input
                 className="w-full rounded border bg-transparent px-3 py-2"
-                onChange={(event) => setSearch(event.target.value)}
+                onChange={(event) => { setSearch(event.target.value); setPage(1) }}
                 placeholder="Buscar"
                 type="search"
                 value={search}
@@ -476,7 +509,7 @@ export default function HistoryClient({
               <span className="text-sm font-medium">Categoría</span>
               <select
                 className="w-full rounded border bg-transparent px-3 py-2"
-                onChange={(event) => setCategory(event.target.value)}
+                onChange={(event) => { setCategory(event.target.value); setPage(1) }}
                 value={category}
               >
                 <option value="all">Todas</option>
@@ -492,7 +525,7 @@ export default function HistoryClient({
               <span className="text-sm font-medium">Banco / cuenta</span>
               <select
                 className="w-full rounded border bg-transparent px-3 py-2"
-                onChange={(event) => setBankAccount(event.target.value)}
+                onChange={(event) => { setBankAccount(event.target.value); setPage(1) }}
                 value={bankAccount}
               >
                 <option value="all">Todas</option>
@@ -508,7 +541,7 @@ export default function HistoryClient({
               <span className="text-sm font-medium">Método de pago</span>
               <select
                 className="w-full rounded border bg-transparent px-3 py-2"
-                onChange={(event) => setPaymentMethod(event.target.value)}
+                onChange={(event) => { setPaymentMethod(event.target.value); setPage(1) }}
                 value={paymentMethod}
               >
                 <option value="all">Todos</option>
@@ -524,7 +557,7 @@ export default function HistoryClient({
               <span className="text-sm font-medium">Mes</span>
               <select
                 className="w-full rounded border bg-transparent px-3 py-2"
-                onChange={(event) => setMonth(event.target.value)}
+                onChange={(event) => { setMonth(event.target.value); setPage(1) }}
                 value={month}
               >
                 <option value="all">Todos</option>
@@ -540,7 +573,7 @@ export default function HistoryClient({
               <span className="text-sm font-medium">Año</span>
               <select
                 className="w-full rounded border bg-transparent px-3 py-2"
-                onChange={(event) => setYear(event.target.value)}
+                onChange={(event) => { setYear(event.target.value); setPage(1) }}
                 value={year}
               >
                 <option value="all">Todos</option>
@@ -557,7 +590,7 @@ export default function HistoryClient({
               <input
                 className="w-full rounded border bg-transparent px-3 py-2"
                 min="0"
-                onChange={(event) => setMinAmount(event.target.value)}
+                onChange={(event) => { setMinAmount(event.target.value); setPage(1) }}
                 placeholder="0"
                 type="number"
                 value={minAmount}
@@ -569,7 +602,7 @@ export default function HistoryClient({
               <input
                 className="w-full rounded border bg-transparent px-3 py-2"
                 min="0"
-                onChange={(event) => setMaxAmount(event.target.value)}
+                onChange={(event) => { setMaxAmount(event.target.value); setPage(1) }}
                 placeholder="Sin límite"
                 type="number"
                 value={maxAmount}
@@ -627,7 +660,7 @@ export default function HistoryClient({
           </div>
 
           <div className="divide-y">
-            {filteredMovements.map((movement) => (
+            {pagedMovements.map((movement) => (
               <div
                 className="grid grid-cols-1 gap-2 p-3 md:grid-cols-7 md:items-center"
                 key={movement.id}
@@ -635,7 +668,7 @@ export default function HistoryClient({
                 <span className="text-sm opacity-80">
                   {displayDate(movement.date)}
                 </span>
-                <span className="font-medium">{movement.merchant}</span>
+                <span className="flex items-center gap-2 font-medium"><MerchantLogo merchant={movement.merchant} plaidImportId={movement.merchantLogoPlaidImportId} size="sm" />{movement.merchant}</span>
                 <strong>{money(movement.amount)}</strong>
                 <div className="space-y-2">
                   <span>{movement.category}</span>
@@ -703,14 +736,7 @@ export default function HistoryClient({
                 <span>{movement.paymentMethod}</span>
                 <span>
                   {movement.quickEntryId ? (
-                    <button
-                      className="rounded border px-3 py-2 text-sm"
-                      disabled={savingId === movement.id || isPending}
-                      onClick={() => startEditing(movement)}
-                      type="button"
-                    >
-                      Editar categoría
-                    </button>
+                    <span className="flex flex-wrap gap-2"><button className="rounded border px-3 py-2 text-sm" disabled={savingId === movement.id || isPending} onClick={() => startEditing(movement)} type="button">Editar categoría</button><button className="rounded border px-3 py-2 text-sm" disabled={athLoadingId === movement.id} onClick={() => openAthDetail(movement)} type="button">{athLoadingId === movement.id ? 'Cargando…' : 'Ver detalle'}</button></span>
                   ) : (
                     <span className="text-sm opacity-60">No editable</span>
                   )}
@@ -720,6 +746,12 @@ export default function HistoryClient({
           </div>
         </section>
       )}
+      {pageCount > 1 && <nav aria-label="Páginas del historial" className="flex min-h-11 flex-wrap items-center justify-between gap-3 rounded-xl border p-3">
+        <button className="min-h-11 rounded-lg border px-4 py-2 text-sm font-semibold disabled:opacity-40" disabled={currentPage <= 1} onClick={() => setPage((value) => Math.max(1, value - 1))} type="button">Anterior</button>
+        <p className="text-center text-sm opacity-80">Página {currentPage} de {pageCount} · {filteredMovements.length} movimientos · {HISTORY_PAGE_SIZE} por página</p>
+        <button className="min-h-11 rounded-lg border px-4 py-2 text-sm font-semibold disabled:opacity-40" disabled={currentPage >= pageCount} onClick={() => setPage((value) => Math.min(pageCount, value + 1))} type="button">Siguiente</button>
+      </nav>}
+      {athDetail && <AthEvidencePanel initialEvidence={athDetail.evidence} movement={athDetail.movement} onClose={() => setAthDetail(null)} />}
     </div>
   )
 }

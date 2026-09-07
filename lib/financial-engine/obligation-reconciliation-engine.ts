@@ -17,7 +17,7 @@ export function selectAutomaticReconciliations(matches: ReconciliationMatch[]) {
     match.dateDifferenceDays !== null &&
     match.dateDifferenceDays <= 10 &&
     match.scoreFactors.some((factor) =>
-      factor.passed && ['merchant_pattern_match', 'identity_compatible', 'institution_match', 'payment_account_match'].includes(factor.code)
+      factor.passed && ['merchant_pattern_match', 'provider_match', 'identity_compatible', 'institution_match', 'payment_account_match'].includes(factor.code)
     )
   )
   const transactionCounts = new Map<string, number>()
@@ -54,7 +54,7 @@ export async function reconcileOpenObligationsAfterPlaidSync(
   ] = await Promise.all([
     supabase
       .from('obligation_instances')
-      .select('id, amount_expected, status, effective_due_date, updated_at, notes, obligations(name, default_amount, frequency)')
+      .select('id, amount_expected, amount_is_estimated, status, effective_due_date, updated_at, notes, obligations(name, default_amount, amount_is_estimated, frequency, obligation_type, category_code, description, payment_method), obligation_providers(provider_name)')
       .eq('user_id', userId)
       .in('status', ['pending', 'initiated']),
     supabase
@@ -126,6 +126,9 @@ export async function reconcileOpenObligationsAfterPlaidSync(
   )
   const payments: ReconciliationPaymentInstance[] = (instancesResult.data || []).map((row) => {
     const obligation = Array.isArray(row.obligations) ? row.obligations[0] : row.obligations
+    const provider = Array.isArray(row.obligation_providers)
+      ? row.obligation_providers[0]
+      : row.obligation_providers
     const pendingLink = pendingLinksByInstance.get(row.id)
     const fundingAccount = pendingLink?.payment_account_source === 'plaid_account'
       ? plaidAccountsById.get(pendingLink.payment_account_id)
@@ -142,7 +145,12 @@ export async function reconcileOpenObligationsAfterPlaidSync(
       fundingPlaidAccountId: fundingAccount?.plaid_account_id || null,
       fundingAccountName: fundingAccount
         ? `${fundingAccount.institution_name || ''} ${fundingAccount.name || ''}`.trim()
-        : null,
+        : obligation?.payment_method || null,
+      amountIsEstimated: row.amount_is_estimated || obligation?.amount_is_estimated || false,
+      providerName: provider?.provider_name || null,
+      obligationType: obligation?.obligation_type || null,
+      categoryCode: obligation?.category_code || null,
+      contextNotes: [obligation?.description, row.notes].filter(Boolean).join(' ') || null,
     }
   })
   const transactions: ReconciliationTransaction[] = (importsResult.data || [])

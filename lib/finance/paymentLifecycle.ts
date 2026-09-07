@@ -277,14 +277,17 @@ export function projectedCanonicalInstances(
   for (const profile of summary.active) {
     // The first canonical instance is the explicit configuration boundary.
     // Masters with no confirmed starting cycle stay in Needs Configuration.
-    if (!profile.instances.length || !profile.due_day || !profile.default_amount) {
+    if (
+      !profile.instances.length ||
+      (!profile.due_day && profile.frequency !== 'biweekly') ||
+      !profile.default_amount
+    ) {
       continue
     }
 
-    const existingCycles = profile.instances.map((instance) => {
-      const [year, month] = instance.expected_date.slice(0, 10).split('-').map(Number)
-      return { year, month }
-    })
+    const existingCycles = profile.instances.map((instance) => ({
+      dueDate: instance.expected_date,
+    }))
     const firstInstance = [...profile.instances].sort((left, right) =>
       left.expected_date.localeCompare(right.expected_date)
     )[0]
@@ -314,7 +317,7 @@ export function projectedCanonicalInstances(
         Number(profile.grace_period_days || 0)
       )
       projected.push({
-        id: `projected:${profile.id}:${cycle.year}-${cycle.month}`,
+        id: `projected:${profile.id}:${cycle.dueDate}`,
         user_id: profile.user_id,
         obligation_id: profile.id,
         provider_id: profile.currentProvider?.id || null,

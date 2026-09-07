@@ -1,13 +1,14 @@
 'use client'
 
 import { useMemo, useState, useTransition } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { ReviewQueueCandidateActions } from './ReviewQueueCandidateActions'
 import { ActionableTransactionCard } from './ActionableTransactionCard'
 import type {
   LedgerSummaryTransaction,
   ReviewQueueCandidate,
 } from '@/lib/financial-engine'
+import type { ReviewQueueCounts } from '@/lib/financial-engine/review-queue-pagination'
 
 type CategoryOption = {
   value: string
@@ -30,6 +31,8 @@ type ReviewQueueClientProps = {
   transactionId?: string
   planningFunds: Array<{ id: string; name: string }>
   owners: string[]
+  globalCounts: ReviewQueueCounts
+  pagination: { page: number; pageCount: number; pageSize: number; totalGroups: number }
 }
 
 type ReviewTab =
@@ -758,12 +761,27 @@ export function ReviewQueueClient({
   transactionId,
   planningFunds,
   owners,
+  globalCounts,
+  pagination,
 }: ReviewQueueClientProps) {
-  const [activeTab, setActiveTab] = useState<ReviewTab>(initialTab)
+  const router = useRouter()
+  const searchParams = useSearchParams()
+  const activeTab = initialTab
   const [showFilters, setShowFilters] = useState(false)
   const [query, setQuery] = useState('')
   const [categoryFilter, setCategoryFilter] = useState('')
   const [skippedKeys, setSkippedKeys] = useState<string[]>([])
+  function navigateQueue(next: { tab?: ReviewTab; page?: number }) {
+    const params = new URLSearchParams(searchParams.toString())
+    if (next.tab) {
+      params.set('tab', next.tab)
+      params.delete('subset')
+      params.delete('transaction')
+      params.set('page', '1')
+    }
+    if (next.page) params.set('page', String(next.page))
+    router.push(`?${params.toString()}#queue`)
+  }
   const exactDuplicates = useMemo(
     () => possibleDuplicate.filter(isExactImportedDuplicate),
     [possibleDuplicate]
@@ -823,21 +841,21 @@ export function ReviewQueueClient({
     (group) => !skippedKeys.includes(group.key)
   )
   const tabs: { id: ReviewTab; label: string; count: number }[] = [
-    { id: 'toReview', label: 'Needs review', count: toReview.length },
-    { id: 'ready', label: 'Ready', count: readyToConfirm.length },
-    { id: 'duplicates', label: 'Possible duplicates', count: possibleDuplicate.length },
-    { id: 'ath', label: 'ATH transactions', count: athReview.length },
-    { id: 'all', label: 'All', count: candidates.length },
+    { id: 'toReview', label: 'Needs review', count: globalCounts.toReview },
+    { id: 'ready', label: 'Ready', count: globalCounts.ready },
+    { id: 'duplicates', label: 'Possible duplicates', count: globalCounts.duplicates },
+    { id: 'ath', label: 'ATH transactions', count: globalCounts.ath },
+    { id: 'all', label: 'All', count: globalCounts.all },
   ]
   const summaryCards = [
-    { label: 'Needs review', value: toReview.length, icon: '!', accent: 'border-amber-400/30 bg-amber-400/10 text-amber-200' },
-    { label: 'Ready', value: readyToConfirm.length, icon: '✓', accent: 'border-emerald-400/30 bg-emerald-400/10 text-emerald-200' },
-    { label: 'Possible duplicates', value: possibleDuplicates.length, icon: '◇', accent: 'border-violet-400/30 bg-violet-400/10 text-violet-200' },
-    { label: 'ATH transactions', value: athReview.length, icon: 'A', accent: 'border-sky-400/30 bg-sky-400/10 text-sky-200' },
-    { label: 'Visible transactions', value: visibleCandidates.length, icon: '≡', accent: 'border-indigo-400/30 bg-indigo-400/10 text-indigo-200' },
+    { label: 'Needs review', value: globalCounts.toReview, icon: '!', accent: 'border-amber-400/30 bg-amber-400/10 text-amber-200' },
+    { label: 'Ready', value: globalCounts.ready, icon: '✓', accent: 'border-emerald-400/30 bg-emerald-400/10 text-emerald-200' },
+    { label: 'Possible duplicates', value: globalCounts.duplicates, icon: '◇', accent: 'border-violet-400/30 bg-violet-400/10 text-violet-200' },
+    { label: 'ATH transactions', value: globalCounts.ath, icon: 'A', accent: 'border-sky-400/30 bg-sky-400/10 text-sky-200' },
+    { label: 'Visible transactions', value: globalCounts.visible, icon: '≡', accent: 'border-indigo-400/30 bg-indigo-400/10 text-indigo-200' },
   ]
 
-  if (candidates.length === 0 && athReview.length === 0 && paymentConfirmation.length === 0) {
+  if (globalCounts.all === 0 && globalCounts.toReview === 0) {
     return <section className="rounded-2xl border border-emerald-900/60 bg-emerald-950/20 p-8 text-center shadow-[0_20px_70px_rgba(0,0,0,0.18)]"><div className="mx-auto grid h-12 w-12 place-items-center rounded-full border border-emerald-700 bg-emerald-900/40 text-emerald-200" aria-hidden="true">✓</div><h2 className="mt-4 text-2xl font-bold text-white">Todo está al día</h2><p className="mt-2 text-slate-300">No hay movimientos que requieran tu revisión.</p></section>
   }
 
@@ -864,13 +882,13 @@ export function ReviewQueueClient({
               {tabs.map((tab) => (
                 <button
                   aria-pressed={activeTab === tab.id}
-                  className={`rounded-md px-3 py-1.5 text-sm font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-300 ${
+                  className={`min-h-11 rounded-md px-3 py-2 text-sm font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-300 ${
                     activeTab === tab.id
                       ? 'bg-indigo-500/25 text-indigo-100 shadow-sm ring-1 ring-inset ring-indigo-400/40'
                       : 'text-slate-300 hover:bg-white/[0.06] hover:text-white'
                   }`}
                   key={tab.id}
-                  onClick={() => setActiveTab(tab.id)}
+                  onClick={() => navigateQueue({ tab: tab.id })}
                   type="button"
                 >
                   {tab.label} <span className="ml-1 text-xs opacity-75">{tab.count}</span>
@@ -882,7 +900,7 @@ export function ReviewQueueClient({
           <div className="flex flex-wrap items-center gap-2 xl:justify-end" aria-label="Queue tools">
             <button
               aria-expanded={showFilters}
-              className="rounded-lg border border-slate-600 bg-slate-800/60 px-3 py-1.5 text-sm font-medium text-slate-200 transition hover:border-slate-500 hover:bg-slate-700/70 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-300"
+              className="min-h-11 rounded-lg border border-slate-600 bg-slate-800/60 px-3 py-2 text-sm font-medium text-slate-200 transition hover:border-slate-500 hover:bg-slate-700/70 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-300"
               onClick={() => setShowFilters((value) => !value)}
               type="button"
             >
@@ -890,14 +908,14 @@ export function ReviewQueueClient({
             </button>
             <div className="flex flex-wrap gap-1.5 rounded-lg border border-slate-700 bg-[#081225] p-1">
               <button
-                className="rounded-md px-2.5 py-1 text-xs font-semibold text-slate-300 transition hover:bg-white/[0.07] hover:text-white focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-indigo-300"
+                className="min-h-11 rounded-md px-3 py-2 text-xs font-semibold text-slate-300 transition hover:bg-white/[0.07] hover:text-white focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-indigo-300"
                 onClick={() => downloadCsv('review-queue.csv', exportRows(visibleCandidates))}
                 type="button"
               >
                 Exportar cola
               </button>
               <button
-                className="rounded-md px-2.5 py-1 text-xs font-semibold text-slate-300 transition hover:bg-white/[0.07] hover:text-white focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-indigo-300"
+                className="min-h-11 rounded-md px-3 py-2 text-xs font-semibold text-slate-300 transition hover:bg-white/[0.07] hover:text-white focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-indigo-300"
                 onClick={() =>
                   downloadCsv('possible-duplicates.csv', exportRows(possibleDuplicate))
                 }
@@ -958,6 +976,12 @@ export function ReviewQueueClient({
           <div className="border rounded p-4 opacity-70">No transactions in this view.</div>
         )}
       </section>
+
+      {pagination.pageCount > 1 && <nav aria-label="Páginas de Review Queue" className="flex min-h-11 flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-700/70 bg-[#0b1730] p-3">
+        <button className="min-h-11 rounded-lg border border-slate-600 px-4 py-2 text-sm font-semibold disabled:opacity-40" disabled={pagination.page <= 1} onClick={() => navigateQueue({ page: pagination.page - 1 })} type="button">Anterior</button>
+        <p className="text-center text-sm text-slate-300">Página {pagination.page} de {pagination.pageCount} · {pagination.totalGroups} grupos · máximo {pagination.pageSize} por página</p>
+        <button className="min-h-11 rounded-lg border border-slate-600 px-4 py-2 text-sm font-semibold disabled:opacity-40" disabled={pagination.page >= pagination.pageCount} onClick={() => navigateQueue({ page: pagination.page + 1 })} type="button">Siguiente</button>
+      </nav>}
 
       {exactDuplicates.length > 0 && (
         <details className="border rounded p-4">

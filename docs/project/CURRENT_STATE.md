@@ -29,9 +29,9 @@ Plaid.
 - Category Conflict review workflow.
 - Vercel Security Gate para `/dev`, `/lab` y rutas Gmail diagnosticas.
 - Documentos de deployment Vercel y rollback.
-- Phase 1 Legacy Surface Containment: `/accounts`, `/quick-entry`,
-  `/payment-instances` e `/imports` ya no leen Supabase desde Client
-  Components.
+- Phase 1 Legacy Surface Containment: `/accounts` fue retirada y redirige a
+  `/portfolio`; `/quick-entry`, `/payment-instances` e `/imports` ya no leen
+  Supabase desde Client Components.
 - Phase 2 also removed remaining financial browser-client Supabase imports from
   `/assets` and `/priorities`; remaining direct reads are server-side legacy
   surfaces.
@@ -99,9 +99,10 @@ Plaid.
 - `/api/pablo/answer` esta retirado y responde `410 Gone`.
 - `lib/pablo/*` no aparece como activo en el inventario actual.
 - Paginas antiguas como `/priorities`, `/cashflow`, `/payments`,
-  `/payment-instances`, `/accounts`, `/quick-entry` e `/imports` deben
-  tratarse como legacy hasta migracion completa de producto. Las cuatro rutas
-  contenidas en Phase 1 ya no tienen acceso directo a Supabase desde cliente.
+  `/payment-instances`, `/quick-entry` e `/imports` deben tratarse como legacy
+  hasta migracion completa de producto. `/accounts` ya redirige a `/portfolio`.
+  Las rutas restantes contenidas en Phase 1 ya no tienen acceso directo a
+  Supabase desde cliente.
 - `/goals` y `/merchant-rules` siguen siendo legacy funcionales, pero ya pasan
   por server boundary en lugar de cliente Supabase directo.
 
@@ -112,9 +113,10 @@ Plaid.
   menciones historicas validas en docs.
 - `/goals` lee/escribe `financial_goals` desde server helper/actions; ya no
   evade la arquitectura desde Client Component.
-- Varias paginas legacy consultan tablas directas. Las rutas `/accounts`,
-  `/quick-entry`, `/payment-instances` e `/imports` quedaron contenidas detras
-  de server boundary/helper, pero siguen siendo legacy de producto.
+- Varias paginas legacy consultan tablas directas. `/accounts` fue retirada a
+  favor de `/portfolio`; `/quick-entry`, `/payment-instances` e `/imports`
+  quedaron contenidas detras de server boundary/helper, pero siguen siendo
+  legacy de producto.
 - Service role se usa en rutas server; parece server-only, pero requiere
   vigilancia estricta.
 - `.env.local` existe localmente; no se imprimio ningun secreto.

@@ -1,3 +1,9 @@
+'use client'
+
+import Image from 'next/image'
+import { useState } from 'react'
+import { showLogoInitials } from '@/lib/plaid/logo-load-state'
+
 type InstitutionBrand = {
   label: string
   initials: string
@@ -8,6 +14,7 @@ type InstitutionLogoProps = {
   institution?: string | null
   size?: 'sm' | 'md'
   showLabel?: boolean
+  institutionId?: string | null
 }
 
 const institutionBrands: Array<{
@@ -55,19 +62,11 @@ const institutionBrands: Array<{
     },
   },
   {
-    aliases: ['CITI', 'CITIBANK', 'BEST BUY'],
+    aliases: ['CITI', 'CITIBANK'],
     brand: {
-      label: 'Citi / Best Buy',
-      initials: 'CB',
+      label: 'Citi',
+      initials: 'CI',
       badgeClassName: 'border-indigo-700 bg-indigo-950 text-indigo-100',
-    },
-  },
-  {
-    aliases: ['PEP BOYS'],
-    brand: {
-      label: 'Pep Boys',
-      initials: 'PB',
-      badgeClassName: 'border-amber-700 bg-amber-950 text-amber-100',
     },
   },
 ]
@@ -103,7 +102,10 @@ export default function InstitutionLogo({
   institution,
   size = 'md',
   showLabel = false,
+  institutionId,
 }: InstitutionLogoProps) {
+  const [loaded, setLoaded] = useState(false)
+  const [failed, setFailed] = useState(false)
   const brand = brandForInstitution(institution)
   const label = brand?.label || institution || 'Institución'
   const initials = brand?.initials || initialsFor(institution)
@@ -117,10 +119,30 @@ export default function InstitutionLogo({
     <span className="inline-flex items-center gap-2">
       <span
         aria-label={label}
-        className={`inline-flex shrink-0 items-center justify-center rounded border font-bold ${sizeClassName} ${badgeClassName}`}
+        className={`relative inline-flex shrink-0 items-center justify-center overflow-hidden rounded border font-bold ${sizeClassName} ${badgeClassName}`}
         title={label}
       >
-        {initials}
+        {showLogoInitials({ loaded, failed }) ? (
+          <span data-institution-initials>{initials}</span>
+        ) : null}
+        {institutionId && !failed ? (
+          <Image
+            alt=""
+            className={`absolute inset-0 rounded bg-[#f8fafc] object-contain transition-opacity ${loaded ? 'opacity-100' : 'opacity-0'}`}
+            height={size === 'sm' ? 28 : 40}
+            onError={() => {
+              setLoaded(false)
+              setFailed(true)
+            }}
+            onLoad={() => {
+              setFailed(false)
+              setLoaded(true)
+            }}
+            src={`/api/plaid/assets/institutions/${encodeURIComponent(institutionId)}`}
+            unoptimized
+            width={size === 'sm' ? 28 : 40}
+          />
+        ) : null}
       </span>
       {showLabel ? (
         <span className="min-w-0 truncate text-neutral-200">{label}</span>

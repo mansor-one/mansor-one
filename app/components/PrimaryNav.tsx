@@ -2,8 +2,8 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { useState } from 'react'
 import AuthenticatedUserMenu from './AuthenticatedUserMenu'
+import MobileNavigation from './MobileNavigation'
 
 type NavItem = {
   href: string
@@ -17,6 +17,7 @@ const householdNav: NavItem[] = [
   { href: '/robototina', label: 'Robototina', description: 'Asesora', icon: '◉' },
   { href: '/repair-center', label: 'Reparaciones', description: 'Salud de datos', icon: '◒' },
   { href: '/spending', label: 'Gastos', description: 'Consumo', icon: '◔' },
+  { href: '/reports', label: 'Reportes', description: 'Cierre mensual', icon: '▦' },
   { href: '/history', label: 'Movimientos', description: 'Historial', icon: '▤' },
   { href: '/timeline', label: 'Pagos', description: 'Calendario', icon: '□' },
   { href: '/cards', label: 'Tarjetas', description: 'Crédito', icon: '▭' },
@@ -98,7 +99,6 @@ function NavLinks({
 
 export default function PrimaryNav() {
   const pathname = usePathname()
-  const [open, setOpen] = useState(false)
   const showInternal = pathname.startsWith('/dev') || pathname.startsWith('/lab')
 
   return (
@@ -113,32 +113,11 @@ export default function PrimaryNav() {
             <span className="block text-xs text-slate-400">Finanzas para el hogar</span>
           </span>
         </Link>
-        <button
-          aria-expanded={open}
-          className="rounded-lg border border-white/10 bg-white/6 px-3 py-2 text-sm font-semibold text-slate-100 lg:hidden"
-          onClick={() => setOpen((value) => !value)}
-          type="button"
-        >
-          Menú
-        </button>
       </div>
 
       <div className="mt-8 hidden flex-1 flex-col gap-1 lg:flex">
         <NavLinks items={householdNav} pathname={pathname} />
       </div>
-
-      {open && (
-        <div className="mt-3 grid gap-1 rounded-2xl border border-white/10 bg-[#0b1220]/95 p-2 shadow-[0_18px_60px_rgba(0,0,0,0.25)] backdrop-blur lg:hidden">
-          <NavLinks
-            items={householdNav}
-            onNavigate={() => setOpen(false)}
-            pathname={pathname}
-          />
-          <div className="mt-2 border-t border-white/8 pt-2">
-            <AuthenticatedUserMenu />
-          </div>
-        </div>
-      )}
 
       {showInternal && (
         <div className="mt-4 border-t border-white/8 pt-4 lg:mt-6">
@@ -154,6 +133,7 @@ export default function PrimaryNav() {
       <div className="mt-auto hidden space-y-3 border-t border-white/8 pt-5 lg:block">
         <AuthenticatedUserMenu />
       </div>
+      <MobileNavigation />
     </nav>
   )
 }

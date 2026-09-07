@@ -22,6 +22,7 @@ import {
 import Link from 'next/link'
 import AppShell from './components/AppShell'
 import InstitutionLogo from './components/InstitutionLogo'
+import MerchantLogo from './components/MerchantLogo'
 import PaymentScheduleView from './components/PaymentScheduleView'
 import FinancialHealthDrawer from './components/FinancialHealthDrawer'
 import ExplainableInsight, { type ExplainableInsightData } from './components/ExplainableInsight'
@@ -42,6 +43,8 @@ type Movement = {
   categoryCode: string | null
   context: TransactionContext
   impact: FinancialImpactResult
+  institutionId: string | null
+  merchantLogoPlaidImportId: string | null
 }
 
 type ReconciliationLinkRow = {
@@ -224,12 +227,22 @@ function dedupeMovements(movements: Movement[]) {
 
 function movementFromTransaction(
   transaction: LedgerSummaryTransaction,
-  reconciliation: MovementReconciliationContext | null
+  reconciliation: MovementReconciliationContext | null,
+  institutionIdByPlaidAccountId: Map<string, string>
 ): Movement | null {
   if (!transaction.date) return null
 
   const context = transactionContext(transaction)
   const categoryCode = resolvedCategoryCode(transaction)
+  const plaidAccountId = typeof transaction.metadata.plaidAccountId === 'string'
+    ? transaction.metadata.plaidAccountId
+    : null
+  const plaidImportId = typeof transaction.metadata.plaidImportId === 'string'
+    ? transaction.metadata.plaidImportId
+    : null
+  const hasTrustedMerchantLogo =
+    typeof transaction.metadata.merchantEntityId === 'string' &&
+    typeof transaction.metadata.merchantLogoUrl === 'string'
 
   return {
     id: `${transaction.sourceTable}:${transaction.id}`,
@@ -240,6 +253,12 @@ function movementFromTransaction(
     categoryCode,
     context,
     impact: classifyRecentMovementImpact(transaction, reconciliation),
+    institutionId: plaidAccountId
+      ? institutionIdByPlaidAccountId.get(plaidAccountId) || null
+      : null,
+    merchantLogoPlaidImportId: plaidImportId && hasTrustedMerchantLogo
+      ? plaidImportId
+      : null,
   }
 }
 
@@ -491,6 +510,38 @@ export default async function Home() {
     today: dateOnly(now),
   })
   const ledgerSummary = reviewQueue.source.ledgerSummary
+  const { data: homePlaidAccounts, error: homePlaidAccountsError } = await supabase
+    .from('plaid_accounts')
+    .select('plaid_account_id, connection_id')
+    .eq('user_id', user.id)
+  if (homePlaidAccountsError) throw homePlaidAccountsError
+  const connectionIds = [...new Set((homePlaidAccounts || [])
+    .map((account) => account.connection_id)
+    .filter((id): id is string => Boolean(id)))]
+  let homeConnectionVisuals: Array<{ id: string; institution_id: string | null }> = []
+  if (connectionIds.length > 0) {
+    const visualsResult = await supabase
+      .from('plaid_connections')
+      .select('id, institution_id')
+      .eq('user_id', user.id)
+      .in('id', connectionIds)
+    if (!visualsResult.error) {
+      homeConnectionVisuals = visualsResult.data || []
+    }
+  }
+  const institutionIdByConnectionId = new Map(
+    homeConnectionVisuals.map((connection) => [connection.id, connection.institution_id])
+  )
+  const institutionIdByPlaidAccountId = new Map(
+    (homePlaidAccounts || []).flatMap((account) => {
+      const institutionId = account.connection_id
+        ? institutionIdByConnectionId.get(account.connection_id)
+        : null
+      return account.plaid_account_id && institutionId
+        ? [[account.plaid_account_id, institutionId] as const]
+        : []
+    })
+  )
   const semiMonthlySpending = calculateSemiMonthlySpending(
     ledgerSummary.confirmedLedgerEntries,
     now,
@@ -532,7 +583,8 @@ export default async function Home() {
           (transaction.plaidTransactionId
             ? reconciliationByTransaction.get(`plaid:${transaction.plaidTransactionId}`)
             : null) ||
-          null
+          null,
+        institutionIdByPlaidAccountId
       ))
       .filter((movement): movement is Movement => movement !== null)
   )
@@ -975,9 +1027,16 @@ export default async function Home() {
                 key={movement.id}
               >
                 <span className="text-neutral-400">{movement.date}</span>
-                <span className="min-w-0">
-                  <span className="block truncate font-medium">{movement.merchant}</span>
-                  {movement.impact.contextText && <span className="block text-xs text-neutral-300">{movement.impact.contextText}</span>}
+                <span className="flex min-w-0 items-center gap-2">
+                  <MerchantLogo
+                    merchant={movement.merchant}
+                    plaidImportId={movement.merchantLogoPlaidImportId}
+                    size="sm"
+                  />
+                  <span className="min-w-0">
+                    <span className="block truncate font-medium">{movement.merchant}</span>
+                    {movement.impact.contextText && <span className="block text-xs text-neutral-300">{movement.impact.contextText}</span>}
+                  </span>
                 </span>
                 <span>{money(movement.amount)}</span>
                 <span>{movement.category}</span>
@@ -991,6 +1050,7 @@ export default async function Home() {
                 <span className="flex min-w-0 items-center gap-2 text-neutral-400">
                   <InstitutionLogo
                     institution={displayInstitution(movement.context)}
+                    institutionId={movement.institutionId}
                     size="sm"
                   />
                   <span className="min-w-0 truncate">

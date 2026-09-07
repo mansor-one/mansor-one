@@ -28,6 +28,11 @@ import {
 } from './reconciliation'
 import { analyzeFinancialIdentity } from './financial-identity'
 import { normalizeMerchantText } from './merchant-normalization'
+import { loadAthEvidenceForPlaidImports } from '../ath-movil/evidence-loader'
+import {
+  loadTransactionContextsForPlaidImports,
+  type ReviewTransactionContext,
+} from '../transaction-intelligence/context-loader'
 
 export type ReviewQueueClassification =
   | 'readyToConfirm'
@@ -67,6 +72,22 @@ export type ReviewQueueCandidate = {
   } | null
   duplicateContext: LedgerDuplicateCandidate | null
   reasons: string[]
+  athEvidence: Array<{
+    candidateId: string
+    emailId: string
+    score: number
+    rank: number
+    status: string
+    reasons: Array<{ code: string; positive: boolean; points: number; message: string }>
+    occurredAt: string | null
+    direction: string | null
+    counterpartyName: string | null
+    counterpartyPhoneLast4: string | null
+    message: string | null
+    reference: string | null
+  }>
+  transactionContext: ReviewTransactionContext | null
+  transactionContextMatchesCurrentCategory: boolean
 }
 
 export type ReviewQueueStatistics = {
@@ -216,6 +237,7 @@ function classifyCandidate({
   canonicalCategory,
   merchantKnowledge,
   financialIdentity,
+  hasAthEvidence,
 }: {
   transaction: LedgerSummaryTransaction
   duplicateContext: LedgerDuplicateCandidate | null
@@ -223,6 +245,7 @@ function classifyCandidate({
   canonicalCategory: CanonicalCategory | null
   merchantKnowledge: MerchantKnowledge | null
   financialIdentity: FinancialIdentityAnalysis
+  hasAthEvidence: boolean
 }): ReviewQueueClassification {
   const isAth = Boolean(
     normalizeMerchantText(transaction.description).match(/\bATH\b|\bATHM\b|ATH MOVIL/)
@@ -243,6 +266,7 @@ function classifyCandidate({
   ) {
     return 'paymentConfirmation'
   }
+  if (hasAthEvidence) return 'athReview'
   if (
     hasIdentityCategory &&
     [
@@ -441,6 +465,38 @@ export async function getReviewQueue(
     getLedgerSummary(supabase, userId),
     getOpenPayments(supabase),
   ])
+  const plaidImportIds = ledgerSummary.importCandidates
+    .filter((transaction) => transaction.sourceTable === 'plaid_imports')
+    .map((transaction) => transaction.id)
+  const [{ athMatches, athEmails }, transactionContextsByPlaidId] = await Promise.all([
+    loadAthEvidenceForPlaidImports(supabase, plaidImportIds),
+    loadTransactionContextsForPlaidImports(supabase, plaidImportIds),
+  ])
+  const athEmailById = new Map(athEmails.map((email) => [email.id, email]))
+  const athEvidenceByPlaidId = new Map<string, ReviewQueueCandidate['athEvidence']>()
+  for (const match of athMatches) {
+    const email = athEmailById.get(match.ath_email_id)
+    if (!email) continue
+    const reasons = Array.isArray(match.reasons)
+      ? match.reasons.filter((reason): reason is { code: string; positive: boolean; points: number; message: string } => Boolean(reason && typeof reason === 'object' && 'code' in reason && 'message' in reason))
+      : []
+    const evidence = athEvidenceByPlaidId.get(match.plaid_import_id) || []
+    evidence.push({
+      candidateId: match.id,
+      emailId: match.ath_email_id,
+      score: match.score,
+      rank: match.rank,
+      status: match.status,
+      reasons,
+      occurredAt: email.occurred_at,
+      direction: email.direction,
+      counterpartyName: email.counterparty_name,
+      counterpartyPhoneLast4: email.counterparty_phone_last4,
+      message: email.message,
+      reference: email.reference,
+    })
+    athEvidenceByPlaidId.set(match.plaid_import_id, evidence)
+  }
   const knowledgeByMerchant = merchantKnowledgeByName([
     ...ledgerSummary.confirmedLedgerEntries,
     ...ledgerSummary.importedSourceRows,
@@ -499,6 +555,17 @@ export async function getReviewQueue(
       const duplicateContext = duplicateByImportId.get(transaction.id) || null
       const reconciliationContext =
         reconciliationByTransactionId.get(transaction.id) || null
+      const athEvidence = transaction.sourceTable === 'plaid_imports'
+        ? athEvidenceByPlaidId.get(transaction.id) || []
+        : []
+      const transactionContext = transaction.sourceTable === 'plaid_imports'
+        ? transactionContextsByPlaidId.get(transaction.id) || null
+        : null
+      const transactionCategoryCode = canonicalCategoryCodeForText(transaction.category)
+      const transactionContextMatchesCurrentCategory = Boolean(
+        transactionContext?.suggestions.length === 1 &&
+        transactionContext.suggestions[0].categoryCode === transactionCategoryCode
+      )
       const classification = classifyCandidate({
         transaction,
         duplicateContext,
@@ -506,6 +573,7 @@ export async function getReviewQueue(
         canonicalCategory,
         merchantKnowledge,
         financialIdentity,
+        hasAthEvidence: athEvidence.some((item) => item.status === 'suggested' || item.status === 'confirmed'),
       })
       const confidence = confidenceForCandidate({
         classification,
@@ -559,6 +627,9 @@ export async function getReviewQueue(
           reconciliationContext,
           financialIdentity,
         }),
+        athEvidence,
+        transactionContext,
+        transactionContextMatchesCurrentCategory,
       }
     })
     .sort(compareCandidates)

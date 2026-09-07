@@ -141,7 +141,7 @@ order:
 3. `/payment-instances`
 4. `/cashflow`
 5. `/income`
-6. `/accounts`
+6. `/accounts` (retired to `/portfolio`)
 7. `/quick-entry`
 
 Production navigation already avoids these pages, so route removal can happen

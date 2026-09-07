@@ -1,25 +1,5 @@
 import type { FinancialSupabaseClient } from './types'
 
-export type LegacyManualAccount = {
-  id: string
-  name: string | null
-  account_type: string | null
-  currency: string | null
-  balance: number | string | null
-  is_spendable: boolean | null
-}
-
-export type LegacyPlaidAccount = {
-  id: string
-  name: string | null
-  type: string | null
-  subtype: string | null
-  available_balance: number | string | null
-  current_balance: number | string | null
-  institution_name: string | null
-  updated_at: string | null
-}
-
 export type LegacySpendableAccount = {
   id: string
   name: string | null
@@ -52,11 +32,6 @@ type MerchantRule = {
   confidence_score: number | string | null
 }
 
-export type LegacyAccountsReport = {
-  manualAccounts: LegacyManualAccount[]
-  plaidAccounts: LegacyPlaidAccount[]
-}
-
 export type LegacyPaymentsReport = {
   payments: LegacyPaymentInstance[]
   liabilities: LegacyLiability[]
@@ -68,33 +43,6 @@ export type ImportPreviewResult = {
   category: string
   transactionType: string
   confidence: number
-}
-
-export async function getLegacyAccountsReport(
-  supabase: FinancialSupabaseClient,
-  userId: string
-): Promise<LegacyAccountsReport> {
-  const { data: manualData, error: manualError } = await supabase
-    .from('accounts')
-    .select('*')
-    .eq('user_id', userId)
-    .eq('is_active', true)
-    .order('name', { ascending: true })
-
-  if (manualError) throw manualError
-
-  const { data: plaidData, error: plaidError } = await supabase
-    .from('plaid_accounts')
-    .select('*')
-    .eq('user_id', userId)
-    .order('name', { ascending: true })
-
-  if (plaidError) throw plaidError
-
-  return {
-    manualAccounts: (manualData || []) as LegacyManualAccount[],
-    plaidAccounts: (plaidData || []) as LegacyPlaidAccount[],
-  }
 }
 
 export async function getLegacySpendableAccounts(

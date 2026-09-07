@@ -628,8 +628,8 @@ function buildProfile({
     ]
       .filter(Boolean)
       .join('|') || `card:${manual?.name || account?.name || 'unknown'}`,
-    displayName: manual?.name || account?.name || schedule?.name || 'Card',
-    institution: account?.institution_name || manual?.bank || null,
+    cardDisplayName: manual?.name || account?.name || schedule?.name || 'Card',
+    issuerName: account?.institution_name || manual?.bank || null,
     owner,
     ownerId: manual?.owner_id || null,
     source: sourceForProfile(manual, account),

@@ -94,6 +94,9 @@ type PlaidImportRow = {
   transaction_status?: string | null
   superseded_by_transaction_id?: string | null
   removed_at?: string | null
+  merchant_entity_id?: string | null
+  merchant_logo_url?: string | null
+  merchant_logo_source?: string | null
 }
 
 type QuickEntryRow = {
@@ -219,6 +222,10 @@ function plaidImportTransaction(row: PlaidImportRow): LedgerSummaryTransaction {
       transactionStatus: row.transaction_status || 'active',
       supersededByTransactionId: row.superseded_by_transaction_id || null,
       removedAt: row.removed_at || null,
+      plaidImportId: row.id,
+      merchantEntityId: row.merchant_entity_id || null,
+      merchantLogoUrl: row.merchant_logo_url || null,
+      merchantLogoSource: row.merchant_logo_source || null,
     },
   }
 }
@@ -272,6 +279,17 @@ function quickEntryTransaction(
         null,
       plaidSupersededByTransactionId:
         (matchingPlaidImport?.metadata.supersededByTransactionId as string | null) ||
+        null,
+      plaidImportId:
+        (matchingPlaidImport?.metadata.plaidImportId as string | null) || null,
+      merchantEntityId:
+        (matchingPlaidImport?.metadata.merchantEntityId as string | null) ||
+        null,
+      merchantLogoUrl:
+        (matchingPlaidImport?.metadata.merchantLogoUrl as string | null) ||
+        null,
+      merchantLogoSource:
+        (matchingPlaidImport?.metadata.merchantLogoSource as string | null) ||
         null,
     },
   }

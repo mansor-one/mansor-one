@@ -1,9 +1,11 @@
 import 'server-only'
 
-export async function getGoogleAccessToken() {
+import { getHouseholdGoogleRefreshToken } from './token-store'
+
+export async function getGoogleAccessToken(householdId: string) {
   const clientId = process.env.GOOGLE_CLIENT_ID
   const clientSecret = process.env.GOOGLE_CLIENT_SECRET
-  const refreshToken = process.env.GOOGLE_REFRESH_TOKEN
+  const refreshToken = await getHouseholdGoogleRefreshToken(householdId)
 
   if (!clientId || !clientSecret || !refreshToken) {
     throw new Error('Gmail integration is unavailable')

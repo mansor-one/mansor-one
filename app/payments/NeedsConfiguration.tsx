@@ -16,6 +16,7 @@ function ConfigurationCard({ item }: { item: ObligationConfigurationItem }) {
   const [owner, setOwner] = useState(item.owner || '')
   const [recurrence, setRecurrence] = useState(item.recurrence || '')
   const [recurrenceInterval, setRecurrenceInterval] = useState(item.recurrenceInterval?.toString() || '1')
+  const [anchorDate, setAnchorDate] = useState(item.anchorDate || '')
   const [paymentMethod, setPaymentMethod] = useState(item.paymentMethod || '')
   const [dueDayConfirmed, setDueDayConfirmed] = useState(false)
   const [status, setStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
@@ -36,6 +37,7 @@ function ConfigurationCard({ item }: { item: ObligationConfigurationItem }) {
           owner,
           recurrence,
           recurrenceInterval,
+          anchorDate,
           paymentMethod,
           confirmDueDayConflict:
             item.requiresDueDayConfirmation && dueDayConfirmed,
@@ -104,12 +106,19 @@ function ConfigurationCard({ item }: { item: ObligationConfigurationItem }) {
           <select className={fieldClass()} onChange={(event) => setRecurrence(event.target.value)} value={recurrence}>
             <option value="">Seleccionar</option>
             <option value="monthly">Mensual</option>
+            <option value="biweekly">Cada 14 días</option>
             <option value="quarterly">Trimestral</option>
             <option value="annual">Anual</option>
             <option value="one_time">Una vez</option>
             <option value="custom">Personalizada</option>
           </select>
         </label>
+        {recurrence === 'biweekly' && (
+          <label className="text-sm text-slate-300">
+            Fecha ancla contractual
+            <input className={fieldClass()} onChange={(event) => setAnchorDate(event.target.value)} type="date" value={anchorDate} />
+          </label>
+        )}
         {recurrence === 'custom' && (
           <label className="text-sm text-slate-300">
             Intervalo en meses

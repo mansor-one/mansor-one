@@ -643,7 +643,7 @@ function buildCardChecks({
         highUtilization.length > 0
           ? highUtilization.map(
               (card) =>
-                `${card.displayName}: ${percent(card.utilizationPercent)} utilization`
+                `${card.cardDisplayName}: ${percent(card.utilizationPercent)} utilization`
             )
           : ['Utilization is below the high-risk threshold.'],
       affectedCount: highUtilization.length,
@@ -663,7 +663,7 @@ function buildCardChecks({
         missingMetadata.length > 0
           ? missingMetadata.map(
               (card) =>
-                `${card.displayName}: ${card.missingDataChecklist.join(', ')}`
+                `${card.cardDisplayName}: ${card.missingDataChecklist.join(', ')}`
             )
           : ['No missing card strategy metadata detected.'],
       affectedCount: missingMetadata.length,
@@ -718,7 +718,7 @@ function buildCardChecks({
           : 'Active card profiles are linked to connected account data.',
       evidence:
         disconnected.length > 0
-          ? disconnected.map((card) => card.displayName)
+          ? disconnected.map((card) => card.cardDisplayName)
           : ['Cards Summary resolved active card links.'],
       affectedCount: disconnected.length,
       actionHref: '/cards',

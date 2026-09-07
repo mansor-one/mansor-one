@@ -3,6 +3,10 @@ import { readFileSync } from 'node:fs'
 import test from 'node:test'
 
 const history = readFileSync(new URL('../app/history/HistoryClient.tsx', import.meta.url), 'utf8')
+const canonicalReviewRoute = readFileSync(
+  new URL('../app/robototina/review/page.tsx', import.meta.url),
+  'utf8'
+)
 
 test('resolved duplicates use the dark Mansor One warning treatment', () => {
   assert.match(history, /bg-\[#0b1730\]/)
@@ -18,5 +22,12 @@ test('resolved duplicate rows preserve accessible responsive labels and pills', 
   assert.match(history, /md:hidden">Comercio \/ Persona/)
   assert.match(history, /categoryPillClasses\(movement\.categoryKind\)/)
   assert.match(history, /border-sky-400\/25 bg-sky-400\/10/)
-  assert.match(history, /href="\/dev\/confirmed-ledger-duplicates"/)
+  assert.match(history, /href="\/robototina\/review\?tab=duplicates#queue"/)
+  assert.doesNotMatch(history, /href="\/dev\/confirmed-ledger-duplicates"/)
+})
+
+test('history duplicate review link targets the existing canonical product route', () => {
+  assert.match(canonicalReviewRoute, /ReviewQueuePage/)
+  assert.match(canonicalReviewRoute, /@\/app\/components\/ReviewQueuePage/)
+  assert.match(history, />\s*Revisar resoluciones\s*<\/Link>/)
 })

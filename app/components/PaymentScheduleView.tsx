@@ -131,7 +131,7 @@ function GraceWindowMarker({
     <button
       type="button"
       onClick={onOpen}
-      className={`rounded border px-2 py-1 text-[11px] ${
+      className={`min-h-11 w-full rounded border px-2 py-1 text-[11px] ${
         isLastGraceDay
           ? 'border-amber-500 bg-amber-950/70 text-amber-100'
           : 'border-amber-900 bg-amber-950/30 text-amber-200'
@@ -157,7 +157,7 @@ function PaymentChip({ payment, onOpen, today }: { payment: PaymentInstance; onO
 
   return (
     <div className={`w-full rounded border px-2 py-1.5 text-left text-xs ${presentation.classes}`}>
-      <button type="button" onClick={onOpen} className="w-full text-left">
+      <button type="button" onClick={onOpen} className="min-h-11 w-full text-left">
       <div className="flex items-start justify-between gap-2">
         <span className="min-w-0 truncate font-medium">
           {payment.name || 'Pago'}
@@ -188,7 +188,7 @@ function PaymentListRow({ payment, onOpen, today }: { payment: PaymentInstance; 
 
   return (
     <div className="w-full rounded border border-neutral-800 bg-neutral-950 p-3 text-left">
-      <button type="button" onClick={onOpen} className="w-full text-left">
+      <button type="button" onClick={onOpen} className="min-h-11 w-full text-left">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0">
           <p className="truncate font-medium text-neutral-100">
@@ -307,7 +307,7 @@ export default function PaymentScheduleView({
                   : 'text-neutral-400'
               }`}
             >
-              Calendario
+              <span className="md:hidden">Agenda</span><span className="hidden md:inline">Calendario</span>
             </button>
             <button
               type="button"

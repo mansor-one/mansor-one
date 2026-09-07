@@ -31,7 +31,7 @@ export async function GET() {
   const manager = await requireHouseholdGmailManager(supabase)
   if (!manager.ok) return manager.response
 
-  const accessToken = await getGoogleAccessToken()
+  const accessToken = await getGoogleAccessToken(manager.householdId)
 
   const q = encodeURIComponent('from:info@notifications.evertecinc.com')
   const listRes = await fetch(

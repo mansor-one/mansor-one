@@ -2,11 +2,16 @@
 
 import type { CardProfile, CardsSummary } from '@/lib/financial-engine'
 import { useRouter } from 'next/navigation'
-import { FormEvent, useMemo, useState, useTransition } from 'react'
+import Link from 'next/link'
+import { FormEvent, useEffect, useMemo, useState, useTransition } from 'react'
 import InstitutionLogo from '../components/InstitutionLogo'
 
 type CardsClientProps = {
   summary: CardsSummary
+  initialCardId?: string | null
+  initialAction?: 'edit' | null
+  invalidTarget?: boolean
+  returnToTimeline?: boolean
 }
 
 type FilterKey = 'all' | 'attention' | 'active' | 'connected' | 'archived'
@@ -118,11 +123,11 @@ function numberFieldValue(value: number | null | undefined) {
 }
 
 function manualProfileName(card: CardProfile) {
-  if (card.displayName && card.institution) {
-    return `${card.institution} ${card.displayName}`.trim()
+  if (card.cardDisplayName && card.issuerName) {
+    return `${card.issuerName} ${card.cardDisplayName}`.trim()
   }
 
-  return card.displayName
+  return card.cardDisplayName
 }
 
 function Metric({ label, value }: { label: string; value: string | number }) {
@@ -152,12 +157,28 @@ function SummaryTile({
   )
 }
 
-export default function CardsClient({ summary }: CardsClientProps) {
+export default function CardsClient({
+  summary,
+  initialCardId = null,
+  initialAction = null,
+  invalidTarget = false,
+  returnToTimeline = false,
+}: CardsClientProps) {
   const router = useRouter()
   const [filter, setFilter] = useState<FilterKey>('all')
-  const [action, setAction] = useState<ActionState>(null)
+  const [action, setAction] = useState<ActionState>(
+    initialCardId && initialAction === 'edit'
+      ? { cardId: initialCardId, mode: 'edit' }
+      : null
+  )
   const [message, setMessage] = useState<string | null>(null)
   const [isPending, startTransition] = useTransition()
+
+  useEffect(() => {
+    if (!initialCardId) return
+    const target = document.getElementById(`card-${initialCardId}`)
+    target?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  }, [initialAction, initialCardId])
 
   const visibleCards = useMemo(() => {
     if (filter === 'attention') return summary.attentionNeeded
@@ -346,6 +367,16 @@ export default function CardsClient({ summary }: CardsClientProps) {
 
   return (
     <div className="space-y-8">
+      {returnToTimeline && (
+        <Link className="inline-flex rounded-lg border border-white/10 px-3 py-2 text-sm font-semibold" href="/timeline">
+          Volver a Pagos
+        </Link>
+      )}
+      {invalidTarget && (
+        <p className="rounded border border-amber-800 bg-amber-950/30 p-3 text-sm text-amber-100">
+          La tarjeta solicitada no está disponible en este hogar. Mostramos la página normal.
+        </p>
+      )}
       {message && (
         <div className="rounded border border-sky-700 bg-sky-950/40 p-3 text-sm">
           {message}
@@ -400,7 +431,7 @@ export default function CardsClient({ summary }: CardsClientProps) {
             <tbody>
               {summary.cards.map((card) => (
                 <tr className="border-b border-neutral-800" key={card.id}>
-                  <td className="py-3 pr-4 font-medium">{card.displayName}</td>
+                  <td className="py-3 pr-4 font-medium">{card.cardDisplayName}</td>
                   <td className="py-3 pr-4">{sourceLabel(card)}</td>
                   <td className="py-3 pr-4">
                     {card.scheduledPaymentId ? 'Programado' : 'Sin calendario'}
@@ -448,18 +479,28 @@ export default function CardsClient({ summary }: CardsClientProps) {
       <section className="grid grid-cols-1 gap-4 xl:grid-cols-2">
         {visibleCards.map((card) => (
           <article
-            className="rounded-lg border border-neutral-800 bg-neutral-900 p-4"
+            className={`rounded-lg border bg-neutral-900 p-4 ${initialCardId === card.id ? 'border-indigo-400 ring-2 ring-indigo-400/40' : 'border-neutral-800'}`}
+            data-contextual-target={initialCardId === card.id ? 'true' : undefined}
+            id={`card-${card.id}`}
             key={card.id}
           >
+            {initialCardId === card.id && initialAction === 'edit' && (
+              <p className="mb-3 rounded border border-indigo-300/20 bg-indigo-400/10 px-3 py-2 text-sm font-semibold text-indigo-100">
+                Editando la tarjeta seleccionada desde Pagos
+              </p>
+            )}
             <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
               <div className="flex min-w-0 items-start gap-3">
-                <InstitutionLogo institution={card.institution} />
+                <InstitutionLogo
+                  institution={card.issuerInstitutionId ? card.issuerName : card.cardDisplayName}
+                  institutionId={card.issuerInstitutionId}
+                />
                 <div className="min-w-0">
                   <p className="truncate text-xs uppercase tracking-wide text-neutral-500">
-                    {fallback(card.institution, 'Institución no identificada')}
+                    {fallback(card.issuerName, 'Institución no identificada')}
                   </p>
                   <h3 className="mt-1 truncate text-xl font-bold">
-                    {card.displayName}
+                    {card.cardDisplayName}
                   </h3>
                   <p className="mt-1 text-sm text-neutral-400">
                     {sourceLabel(card)} ·{' '}
@@ -765,7 +806,7 @@ function EditCardForm({
       <h4 className="text-lg font-bold">Editar tarjeta</h4>
       <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
         <Field label="Nombre">
-          <TextInput defaultValue={card.displayName} name="name" />
+          <TextInput defaultValue={card.cardDisplayName} name="name" />
         </Field>
         <Field label="Dueño">
           <OwnerSelect defaultValue={card.ownerId} ownerOptions={ownerOptions} />
@@ -898,7 +939,7 @@ function ManualProfileForm({
           <TextInput defaultValue={manualProfileName(card)} name="name" />
         </Field>
         <Field label="Institución">
-          <TextInput defaultValue={card.institution} name="bank" />
+          <TextInput defaultValue={card.issuerName} name="bank" />
         </Field>
         <Field label="Dueño">
           <OwnerSelect defaultValue={card.ownerId} ownerOptions={ownerOptions} />
@@ -987,7 +1028,7 @@ function ScheduleForm({
       <h4 className="text-lg font-bold">Crear calendario de pago</h4>
       <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
         <Field label="Nombre del pago">
-          <TextInput defaultValue={card.displayName} name="name" />
+          <TextInput defaultValue={card.cardDisplayName} name="name" />
         </Field>
         <Field label="Pago mínimo">
           <TextInput

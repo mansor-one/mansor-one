@@ -7,6 +7,8 @@ import {
   contractualDueDate,
   dateInTimeZone,
   enumerateRecurringCycles,
+  recurrenceAnchorDate,
+  withRecurrenceAnchorMarker,
 } from '../lib/financial-engine/recurring-cycle-enumerator.ts'
 
 function monthly(overrides: Record<string, unknown> = {}) {
@@ -15,6 +17,17 @@ function monthly(overrides: Record<string, unknown> = {}) {
     amount: 100,
     due_day: 5,
     recurrence_type: 'monthly',
+    is_active: true,
+    ...overrides,
+  }
+}
+
+function biweekly(anchorDate: string, overrides: Record<string, unknown> = {}) {
+  return {
+    id: 'biweekly-schedule',
+    amount: 40,
+    recurrence_type: 'biweekly',
+    start_date: anchorDate,
     is_active: true,
     ...overrides,
   }
@@ -102,6 +115,85 @@ test('existing cycles are not duplicated and a paid cycle is not revived', () =>
 
   assert.equal(cycles.some((cycle) => cycle.month === 8), false)
   assert.ok(cycles.some((cycle) => cycle.month === 9))
+})
+
+test('biweekly means an exact 14-day cadence from a full anchor date', () => {
+  const cycles = enumerateRecurringCycles({
+    source: biweekly('2026-01-02'),
+    startDate: '2026-01-01',
+    horizonEnd: '2026-02-28',
+  })
+
+  assert.deepEqual(cycles.map((cycle) => cycle.dueDate), [
+    '2026-01-02', '2026-01-16', '2026-01-30',
+    '2026-02-13', '2026-02-27',
+  ])
+})
+
+test('biweekly supports both two and three occurrences in one month', () => {
+  const january = enumerateRecurringCycles({
+    source: biweekly('2026-01-02'),
+    startDate: '2026-01-01',
+    horizonEnd: '2026-01-31',
+  })
+  const february = enumerateRecurringCycles({
+    source: biweekly('2026-02-06'),
+    startDate: '2026-02-01',
+    horizonEnd: '2026-02-28',
+  })
+
+  assert.equal(january.length, 3)
+  assert.equal(february.length, 2)
+})
+
+test('biweekly crosses years and February without month arithmetic', () => {
+  const cycles = enumerateRecurringCycles({
+    source: biweekly('2026-12-18'),
+    startDate: '2026-12-18',
+    horizonEnd: '2027-02-28',
+  })
+
+  assert.deepEqual(cycles.map((cycle) => cycle.dueDate), [
+    '2026-12-18', '2027-01-01', '2027-01-15', '2027-01-29',
+    '2027-02-12', '2027-02-26',
+  ])
+})
+
+test('biweekly deduplicates only the exact expected date', () => {
+  const cycles = enumerateRecurringCycles({
+    source: biweekly('2026-01-02'),
+    startDate: '2026-01-01',
+    horizonEnd: '2026-01-31',
+    existingCycles: [{ dueDate: '2026-01-16' }],
+  })
+
+  assert.deepEqual(cycles.map((cycle) => cycle.dueDate), [
+    '2026-01-02', '2026-01-30',
+  ])
+})
+
+test('the anchor marker is validated, replaceable and preserves unrelated legacy notes', () => {
+  const notes = withRecurrenceAnchorMarker(
+    'migrated_from:legacy | anchor_date:2026-01-02',
+    '2026-02-06'
+  )
+  assert.equal(notes, 'migrated_from:legacy | anchor_date:2026-02-06')
+  assert.equal(recurrenceAnchorDate({ id: 'legacy', custom_schedule_notes: notes }), '2026-02-06')
+  assert.throws(() => withRecurrenceAnchorMarker(null, '2026-02-31'))
+})
+
+test('monthly, quarterly, annual and custom month cadences remain unchanged', () => {
+  const dates = (recurrence_type: string, recurrence_interval?: number) =>
+    enumerateRecurringCycles({
+      source: monthly({ recurrence_type, recurrence_interval }),
+      startDate: '2026-01-01',
+      horizonEnd: '2027-01-05',
+    }).map((cycle) => cycle.dueDate)
+
+  assert.equal(dates('monthly').length, 13)
+  assert.deepEqual(dates('quarterly'), ['2026-01-05', '2026-04-05', '2026-07-05', '2026-10-05', '2027-01-05'])
+  assert.deepEqual(dates('annual'), ['2026-01-05', '2027-01-05'])
+  assert.deepEqual(dates('custom', 2), ['2026-01-05', '2026-03-05', '2026-05-05', '2026-07-05', '2026-09-05', '2026-11-05', '2027-01-05'])
 })
 
 test('an existing open July cycle does not hide a generated August cycle', () => {

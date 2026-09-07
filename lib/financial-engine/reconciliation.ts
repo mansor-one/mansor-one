@@ -9,6 +9,7 @@ import {
   normalizeFinancialIdentityName,
 } from './financial-identity.ts'
 import { normalizeMerchantAlias } from './merchant-normalization.ts'
+import { obligationMatchTerms } from './obligation-match-aliases.ts'
 import {
   classifyDebtReductionCredit,
   hasDebtReductionCreditPattern,
@@ -48,6 +49,11 @@ export type ReconciliationPaymentInstance = {
   recurrence?: string | null
   fundingPlaidAccountId?: string | null
   fundingAccountName?: string | null
+  amountIsEstimated?: boolean
+  providerName?: string | null
+  obligationType?: string | null
+  categoryCode?: string | null
+  contextNotes?: string | null
 }
 
 export type ReconciliationScoreFactor = {
@@ -84,6 +90,8 @@ export type ReconciliationMatch = {
   satisfiesAmount: 'full' | 'partial' | 'none'
   reasons: string[]
   recommendedActionText: string
+  amountBehavior: 'fixed' | 'estimated'
+  requiresManualConfirmation: boolean
 }
 
 export type ReconciliationResult = {
@@ -96,24 +104,6 @@ export type ReconciliationResult = {
 }
 
 const DATE_WINDOW_DAYS = 10
-
-const PAYMENT_ALIASES: Record<string, string[]> = {
-  agua: ['AGUA', 'AAA', 'PRASA'],
-  lares: ['LARES', 'COOP LARES'],
-  luma: ['LUMA', 'LUZ', 'UTILITY', 'ELECTRICITY'],
-  luz: ['LUMA', 'LUZ', 'UTILITY', 'ELECTRICITY'],
-  synchrony: [
-    'SYNCHRONY',
-    'CREDIT CARD PAYMENT',
-    'CR CARD PAYMENT',
-    'EFT PMT',
-    'CARDMEMBER',
-    'U S BANK',
-    'US BANK',
-    'U.S. BANK',
-    'POPULAR CR CARD PAYMENT',
-  ],
-}
 
 function normalize(value: string | null | undefined) {
   return String(value || '')
@@ -175,29 +165,34 @@ function amountReasons(
 ) {
   const transactionAmount = Math.abs(Number(transaction.amount || 0))
   const paymentAmount = Math.abs(Number(payment.amount || 0))
-  const difference = Math.abs(transactionAmount - paymentAmount)
+  const difference = Number(Math.abs(transactionAmount - paymentAmount).toFixed(2))
   const percentDifference =
     paymentAmount > 0 ? difference / paymentAmount : Number.POSITIVE_INFINITY
 
   if (difference <= 0.009) {
+    const fixed = payment.amountIsEstimated !== true
     return {
-      score: 15,
+      score: fixed ? 25 : 15,
       exact: true,
       amountDifference: difference,
-      reasons: ['Exact amount match.'],
+      reasons: [fixed
+        ? 'Exact amount strongly matches the fixed expected amount.'
+        : 'Exact amount matches the estimated expected amount.'],
       factors: [
         factor({
           code: 'amount_exact',
           label: 'Amount',
-          score: 15,
+          score: fixed ? 25 : 15,
           passed: true,
-          details: 'Exact amount match.',
+          details: fixed
+            ? 'Exact amount strongly matches the fixed expected amount.'
+            : 'Exact amount matches the estimated expected amount.',
         }),
       ],
     }
   }
 
-  if (difference <= 1) {
+  if (payment.amountIsEstimated === true && difference <= 1) {
     return {
       score: 10,
       exact: false,
@@ -215,7 +210,7 @@ function amountReasons(
     }
   }
 
-  if (percentDifference <= 0.05) {
+  if (payment.amountIsEstimated === true && percentDifference <= 0.05) {
     return {
       score: 7,
       exact: false,
@@ -237,14 +232,18 @@ function amountReasons(
     score: 0,
     exact: false,
     amountDifference: difference,
-    reasons: ['Amount does not closely match.'],
+    reasons: [payment.amountIsEstimated === true
+      ? 'Amount differs materially from the estimate.'
+      : 'Amount differs from the fixed expected amount.'],
     factors: [
       factor({
         code: 'amount_mismatch',
         label: 'Amount',
         score: 0,
         passed: false,
-        details: 'Amount does not closely match.',
+        details: payment.amountIsEstimated === true
+          ? 'Amount differs materially from the estimate.'
+          : 'Amount differs from the fixed expected amount.',
       }),
     ],
   }
@@ -316,18 +315,6 @@ function dateReasons(
   }
 }
 
-function aliasesForPayment(paymentName: string) {
-  const normalizedPaymentName = normalize(paymentName).toLowerCase()
-
-  return [
-    normalize(paymentName),
-    normalizeMerchantAlias(paymentName),
-    ...(PAYMENT_ALIASES[normalizedPaymentName] || []),
-  ]
-    .map((alias) => normalizeMerchantAlias(alias) || normalize(alias))
-    .filter(Boolean)
-}
-
 function nameReasons(
   transaction: ReconciliationTransaction,
   payment: ReconciliationPaymentInstance
@@ -365,13 +352,19 @@ function nameReasons(
     score += 20
     reasons.push('Transaction name contains payment name.')
   } else {
-    const alias = aliasesForPayment(paymentName).find((candidate) =>
-      transactionName.includes(candidate) || transactionAlias.includes(candidate)
+    const match = obligationMatchTerms({
+      name: payment.name,
+      providerName: payment.providerName,
+    }).find((candidate) =>
+      transactionName.includes(candidate.value) || transactionAlias.includes(candidate.value)
     )
 
-    if (alias) {
+    if (match?.source === 'provider') {
+      score += 22
+      reasons.push(`Transaction name matches obligation provider: ${match.value}.`)
+    } else if (match) {
       score += 18
-      reasons.push(`Transaction name matches known alias: ${alias}.`)
+      reasons.push(`Transaction name matches known obligation alias: ${match.value}.`)
     }
   }
 
@@ -393,7 +386,11 @@ function nameReasons(
     reasons,
     factors: [
       factor({
-        code: score > 0 ? 'merchant_pattern_match' : 'merchant_pattern_weak',
+        code: score > 0
+          ? reasons.some((reason) => reason.includes('provider'))
+            ? 'provider_match'
+            : 'merchant_pattern_match'
+          : 'merchant_pattern_weak',
         label: 'Merchant pattern',
         score,
         passed: score > 0,
@@ -401,6 +398,39 @@ function nameReasons(
           reasons.join(' ') || 'No merchant pattern connected payment to transaction.',
       }),
     ],
+  }
+}
+
+function obligationContextReasons(
+  transaction: ReconciliationTransaction,
+  payment: ReconciliationPaymentInstance
+) {
+  const transactionIdentityType = transactionIdentity(transaction).identityType
+  const obligationType = normalize(payment.obligationType).toLowerCase()
+  const category = normalize(payment.categoryCode)
+  const transactionCategory = normalize(transaction.category)
+  const utilityContext = obligationType === 'utility' && (
+    transactionIdentityType === 'utility' ||
+    transactionCategory.includes('UTILIT')
+  )
+  const categoryTokens = category.split(/[^A-Z0-9]+/).filter((token) => token.length >= 5)
+  const categoryOverlap = categoryTokens.some((token) => transactionCategory.includes(token))
+  const passed = utilityContext || categoryOverlap
+
+  return {
+    score: passed ? 8 : 0,
+    reasons: passed
+      ? ['Transaction category or identity is compatible with the obligation context.']
+      : ['No structured obligation type/category signal matched the transaction.'],
+    factors: [factor({
+      code: passed ? 'obligation_context_match' : 'obligation_context_neutral',
+      label: 'Obligation context',
+      score: passed ? 8 : 0,
+      passed,
+      details: passed
+        ? `Transaction context is compatible with ${payment.obligationType || payment.categoryCode || 'the obligation'}.`
+        : 'No structured obligation type/category signal matched the transaction.',
+    })],
   }
 }
 
@@ -501,12 +531,12 @@ function institutionReasons(
 ) {
   const institution = normalize(transaction.institutionName)
   const paymentName = normalize(payment.name)
-  const aliases = paymentName ? aliasesForPayment(paymentName) : []
-  const matchedAlias = aliases.find((alias) => institution.includes(alias))
+  const aliases = obligationMatchTerms({ name: payment.name, providerName: payment.providerName })
+  const matchedAlias = aliases.find((alias) => institution.includes(alias.value))
 
   if (institution && (institution.includes(paymentName) || matchedAlias)) {
     const details = matchedAlias
-      ? `Institution matches payment alias: ${matchedAlias}.`
+      ? `Institution matches ${matchedAlias.source === 'provider' ? 'obligation provider' : 'obligation alias'}: ${matchedAlias.value}.`
       : 'Institution contains payment name.'
 
     return {
@@ -555,8 +585,8 @@ function accountReasons(
     ].filter(Boolean).join(' ')
   )
   const paymentName = normalize(payment.name)
-  const aliases = paymentName ? aliasesForPayment(paymentName) : []
-  const matchedAlias = aliases.find((alias) => accountSignal.includes(alias))
+  const aliases = obligationMatchTerms({ name: payment.name, providerName: payment.providerName })
+  const matchedAlias = aliases.find((alias) => accountSignal.includes(alias.value))
   const hasPaymentAccount =
     accountSignal &&
     (accountSignal.includes(paymentName) ||
@@ -566,7 +596,7 @@ function accountReasons(
 
   if (hasPaymentAccount) {
     const details = matchedAlias
-      ? `Payment account matches alias: ${matchedAlias}.`
+      ? `Payment account matches ${matchedAlias.source === 'provider' ? 'obligation provider' : 'obligation alias'}: ${matchedAlias.value}.`
       : 'Payment account is compatible with payment.'
 
     return {
@@ -677,6 +707,7 @@ function scoreMatch(
   const institution = institutionReasons(transaction, payment)
   const account = accountReasons(transaction, payment)
   const fundingAccount = fundingAccountReasons(transaction, payment)
+  const obligationContext = obligationContextReasons(transaction, payment)
   const debtReductionCredit = classifyDebtReductionCredit({
     description: transaction.name,
     amount: transaction.amount,
@@ -705,6 +736,7 @@ function scoreMatch(
     account.score +
     fundingAccount.score +
     name.score +
+    obligationContext.score +
     creditScore +
     amount.score +
     date.score +
@@ -715,18 +747,19 @@ function scoreMatch(
     institution.score > 0 ||
     account.score > 0 ||
     fundingAccount.score > 0 ||
-    name.score > 0
-  const exactAmountRequired = !amount.exact && !debtReductionCredit
+    name.score > 0 ||
+    obligationContext.score > 0
+  const requiresManualConfirmation = !amount.exact && !debtReductionCredit
   const creditEvidenceEligible = Boolean(debtReductionCredit && creditAccountConnected)
-  const cappedConfidence = exactAmountRequired
-    ? 0
-    : identity.incompatible || !hasNonAmountSignal
+  const cappedConfidence = identity.incompatible || !hasNonAmountSignal
       ? Math.min(rawConfidence, 49)
       : rawConfidence
   const confidence = Math.max(0, Math.min(100, cappedConfidence))
   const amountCapReason =
-    exactAmountRequired
-      ? ['Exact amount is required. Partial or split-payment semantics are not enabled.']
+    requiresManualConfirmation
+      ? [payment.amountIsEstimated === true
+        ? 'The amount differs from the estimate and requires manual confirmation.'
+        : 'The amount differs from a fixed obligation and requires manual confirmation.']
       : []
   const identityCapReason =
     identity.incompatible
@@ -742,6 +775,7 @@ function scoreMatch(
     ...account.factors,
     ...fundingAccount.factors,
     ...name.factors,
+    ...obligationContext.factors,
     factor({
       code: debtReductionCredit ? 'debt_reduction_credit' : 'debt_reduction_credit_missing',
       label: 'Debt-reduction credit',
@@ -806,11 +840,8 @@ function scoreMatch(
       !misplacedCredit &&
       !identity.incompatible &&
       hasNonAmountSignal &&
-      (!exactAmountRequired || creditEvidenceEligible),
+      (!debtReductionCredit || creditEvidenceEligible),
     ineligibilityReasons: [
-      ...(exactAmountRequired
-        ? ['Exact amount is mandatory for normal single-payment reconciliation.']
-        : []),
       ...(debtReductionCredit && !creditAccountConnected
         ? ['Debt-reduction credit is not connected to this obligation account.']
         : []),
@@ -841,6 +872,7 @@ function scoreMatch(
       ...account.reasons,
       ...fundingAccount.reasons,
       ...name.reasons,
+      ...obligationContext.reasons,
       ...identity.reasons,
       ...identityCapReason,
       ...amountOnlyCapReason,
@@ -848,6 +880,8 @@ function scoreMatch(
       ...paymentTimeline.reasons,
     ],
     recommendedActionText: recommendedAction(payment),
+    amountBehavior: payment.amountIsEstimated === true ? 'estimated' : 'fixed',
+    requiresManualConfirmation,
   }
 }
 

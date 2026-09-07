@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-label="Mansor One">
+  <defs>
+    <linearGradient id="background" x1="128" y1="96" x2="896" y2="928" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#6366f1"/>
+      <stop offset="1" stop-color="#8b5cf6"/>
+    </linearGradient>
+  </defs>
+  <rect width="1024" height="1024" rx="224" fill="#050814"/>
+  <rect x="112" y="112" width="800" height="800" rx="192" fill="url(#background)"/>
+  <text x="512" y="676" fill="white" font-family="Arial, Helvetica, sans-serif" font-size="480" font-weight="800" text-anchor="middle">M</text>
+</svg>

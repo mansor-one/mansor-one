@@ -71,7 +71,7 @@ test('amount-only or merchant-incompatible evidence never auto-closes an obligat
   assert.ok(result.allMatches[0].confidence < 50)
 })
 
-test('$359 U.S. Bank obligation rejects the unrelated $46 candidate', () => {
+test('$359 U.S. Bank obligation keeps a different amount manual and never auto-reconciles it', () => {
   const result = buildReconciliationMatches({
     transactions: [{
       source: 'plaid_imports', id: 'us-bank-46',
@@ -86,15 +86,10 @@ test('$359 U.S. Bank obligation rejects the unrelated $46 candidate', () => {
   })
 
   const [match] = result.allMatches
-  assert.equal(match.eligible, false)
-  assert.equal(match.confidence, 0)
-  assert.equal(
-    result.highConfidenceMatches.length +
-      result.likelyMatches.length +
-      result.possibleMatches.length,
-    0
-  )
-  assert.match(match.ineligibilityReasons.join(' '), /Exact amount is mandatory/)
+  assert.equal(match.amountBehavior, 'fixed')
+  assert.equal(match.requiresManualConfirmation, true)
+  assert.match(match.reasons.join(' '), /fixed obligation.*manual confirmation/i)
+  assert.equal(selectAutomaticReconciliations(result.allMatches).length, 0)
 })
 
 test('$359 exact amount within the U.S. Bank grace window is eligible', () => {
@@ -136,7 +131,7 @@ test('rejected obligation-transaction pair does not reappear', () => {
   assert.equal(result.allMatches.length, 0)
 })
 
-test('near, partial, or split amounts stay ineligible without explicit semantics', () => {
+test('fixed nearby amounts remain manual despite otherwise strong evidence', () => {
   const result = buildReconciliationMatches({
     transactions: [{
       source: 'plaid_imports', id: 'partial', name: 'U.S. BANK PAYMENT',
@@ -150,8 +145,62 @@ test('near, partial, or split amounts stay ineligible without explicit semantics
     }],
   })
 
-  assert.equal(result.allMatches[0].eligible, false)
+  assert.equal(result.allMatches[0].requiresManualConfirmation, true)
+  assert.equal(result.allMatches[0].amountBehavior, 'fixed')
   assert.equal(selectAutomaticReconciliations(result.allMatches).length, 0)
+})
+
+test('fixed exact amount is a very strong amount signal', () => {
+  const [match] = buildReconciliationMatches({
+    transactions: [{ source: 'plaid_imports', id: 'aaa-exact', name: 'AAA MOVIL', amount: 29.88, date: '2026-08-22', institutionName: 'FirstBank', accountName: 'Cuenta Perfecta', category: 'RENT_AND_UTILITIES' }],
+    payments: [{ id: 'water', name: 'Agua', providerName: 'AAA', amount: 29.88, amountIsEstimated: false, status: 'pending', effective_due_date: '2026-08-22', recurrence: 'monthly', obligationType: 'utility', categoryCode: 'utilities_water' }],
+  }).allMatches
+  assert.equal(match.amountBehavior, 'fixed')
+  assert.equal(match.requiresManualConfirmation, false)
+  assert.equal(match.scoreFactors.find((factor) => factor.code === 'amount_exact')?.score, 25)
+  assert.ok(match.reasons.some((reason) => /fixed expected amount/i.test(reason)))
+})
+
+test('fixed different amount remains visible but requires explicit confirmation', () => {
+  const [match] = buildReconciliationMatches({
+    transactions: [{ source: 'plaid_imports', id: 'aaa-40', name: 'AAA MOVIL', amount: 40, date: '2026-08-22', institutionName: 'FirstBank', accountName: 'Cuenta Perfecta', category: 'RENT_AND_UTILITIES' }],
+    payments: [{ id: 'water', name: 'Agua', providerName: 'AAA', amount: 29.88, amountIsEstimated: false, status: 'pending', effective_due_date: '2026-08-22', recurrence: 'monthly', obligationType: 'utility', categoryCode: 'utilities_water' }],
+  }).allMatches
+  assert.equal(match.eligible, true)
+  assert.equal(match.amountDifference, 10.12)
+  assert.equal(match.requiresManualConfirmation, true)
+  assert.ok(match.reasons.some((reason) => /fixed obligation.*manual confirmation/i.test(reason)))
+  assert.equal(selectAutomaticReconciliations([match]).length, 0)
+})
+
+test('estimated exact and nearby amounts retain graduated signals', () => {
+  const matches = buildReconciliationMatches({
+    transactions: [
+      { source: 'plaid_imports', id: 'exact', name: 'UTILITY CO', amount: 100, date: '2026-08-22' },
+      { source: 'plaid_imports', id: 'near', name: 'UTILITY CO', amount: 100.5, date: '2026-08-22' },
+    ],
+    payments: [{ id: 'estimated-utility', name: 'Utility Co', amount: 100, amountIsEstimated: true, status: 'pending', effective_due_date: '2026-08-22', recurrence: 'monthly', obligationType: 'utility' }],
+  }).allMatches
+  const exact = matches.find((match) => match.transactionId === 'exact')
+  const near = matches.find((match) => match.transactionId === 'near')
+  assert.equal(exact?.amountBehavior, 'estimated')
+  assert.equal(exact?.requiresManualConfirmation, false)
+  assert.equal(exact?.scoreFactors.find((factor) => factor.code === 'amount_exact')?.score, 15)
+  assert.equal(near?.amountBehavior, 'estimated')
+  assert.equal(near?.requiresManualConfirmation, true)
+  assert.equal(near?.scoreFactors.find((factor) => factor.code === 'amount_close')?.score, 10)
+  assert.equal(selectAutomaticReconciliations(matches).some((match) => match.transactionId === 'near'), false)
+})
+
+test('provider and configured habitual account contribute structured reasons', () => {
+  const [match] = buildReconciliationMatches({
+    transactions: [{ source: 'plaid_imports', id: 'aaa', name: 'AAA MOVIL', amount: 29.88, date: '2026-08-22', institutionName: 'FirstBank', accountName: 'Cuenta Perfecta' }],
+    payments: [{ id: 'water', name: 'Agua', providerName: 'AAA', amount: 29.88, amountIsEstimated: false, status: 'pending', effective_due_date: '2026-08-22', fundingAccountName: 'Cuenta Perfecta', recurrence: 'monthly' }],
+  }).allMatches
+  assert.ok(match.scoreFactors.some((factor) => factor.code === 'provider_match' && factor.passed))
+  assert.ok(match.reasons.some((reason) => /obligation provider: AAA/i.test(reason)))
+  assert.ok(match.scoreFactors.some((factor) => factor.code === 'funding_account_match' && factor.passed))
+  assert.ok(match.reasons.some((reason) => /reported funding account/i.test(reason)))
 })
 
 test('Chase Pay Yourself Back credit is eligible as partial debt-reduction evidence', () => {
